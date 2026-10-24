@@ -1,43 +1,61 @@
 use crate::api;
 use crate::components::form::{Check, TextField};
-use crate::state::{Session, Toasts};
+use crate::state::{AuthState, Toasts};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use leptos_router::components::A;
+use wartide_protocol::user::{UpdateProfileRequest, UpdateSettingsRequest};
 
 #[component]
 pub fn Settings() -> impl IntoView {
-    let session = Session::expect();
+    let auth = AuthState::expect();
     let toasts = Toasts::expect();
-    let Some(user) = session.user.get_untracked() else {
-        return view! { <div class="page"><p>"Please log in to edit settings."</p></div> }
-            .into_any();
-    };
-    let display = RwSignal::new(user.display_name.clone());
-    let bio = RwSignal::new(user.bio.clone());
+    let display = RwSignal::new(String::new());
+    let bio = RwSignal::new(String::new());
+    let country = RwSignal::new(String::new());
+    let timezone = RwSignal::new(String::new());
     let notify = RwSignal::new(true);
-    let (old, new) = (RwSignal::new(String::new()), RwSignal::new(String::new()));
-    let save = {
-        let user = user.clone();
-        move |_| {
-            let mut u = user.clone();
-            u.display_name = display.get_untracked();
-            u.bio = bio.get_untracked();
-            spawn_local(async move {
-                match api::save_settings(&u, notify.get_untracked()).await {
-                    Ok(()) => {
-                        session.user.set(Some(u));
-                        toasts.info("Settings saved");
-                    }
-                    Err(e) => toasts.error(e),
+    let loaded = RwSignal::new(false);
+
+    spawn_local(async move {
+        if let Some(name) = auth.username() {
+            match api::profile(&name).await {
+                Ok(p) => {
+                    display.set(p.display_name);
+                    bio.set(p.bio.unwrap_or_default());
+                    country.set(p.country.unwrap_or_default());
+                    timezone.set(p.timezone.unwrap_or_default());
                 }
-            });
+                Err(e) => toasts.api_error(&e),
+            }
         }
-    };
-    let change = move |_| {
+        match api::settings().await {
+            Ok(s) => notify.set(s.email_turn_notifications),
+            Err(e) => toasts.api_error(&e),
+        }
+        loaded.set(true);
+    });
+
+    let save = move |_| {
+        let opt = |s: String| Some(s.trim().to_string());
+        let req = UpdateProfileRequest {
+            display_name: opt(display.get_untracked()).filter(|s| !s.is_empty()),
+            avatar: None,
+            bio: opt(bio.get_untracked()),
+            country: opt(country.get_untracked()),
+            timezone: opt(timezone.get_untracked()),
+        };
         spawn_local(async move {
-            match api::change_password(&old.get_untracked(), &new.get_untracked()).await {
-                Ok(()) => toasts.info("Password changed"),
-                Err(e) => toasts.error(e),
+            let s = api::update_settings(&UpdateSettingsRequest {
+                email_turn_notifications: Some(notify.get_untracked()),
+            })
+            .await;
+            match (api::update_profile(&req).await, s) {
+                (Ok(_), Ok(_)) => {
+                    auth.refresh().await;
+                    toasts.info("Settings saved");
+                }
+                (Err(e), _) | (_, Err(e)) => toasts.api_error(&e),
             }
         });
     };
@@ -49,16 +67,16 @@ pub fn Settings() -> impl IntoView {
                 <label>"Bio"
                     <textarea rows="3" prop:value=move || bio.get() on:input:target=move |ev| bio.set(ev.target().value())></textarea>
                 </label>
+                <TextField label="Country" value=country />
+                <TextField label="Time zone" value=timezone placeholder="Europe/Berlin" />
                 <Check label="Email me when it is my turn" value=notify />
-                <button on:click=save>"Save"</button>
+                <button type="submit" disabled=move || !loaded.get() on:click=save>"Save"</button>
             </form>
-            <form class="card col" on:submit=|ev| ev.prevent_default()>
+            <div class="card col">
                 <h2>"Password"</h2>
-                <TextField label="Current password" value=old kind="password" />
-                <TextField label="New password" value=new kind="password" />
-                <button on:click=change>"Change password"</button>
-            </form>
+                <p class="muted">"To change your password, request a reset link by email."</p>
+                <A href="/forgot"><span class="btn">"Send me a reset link"</span></A>
+            </div>
         </div>
     }
-    .into_any()
 }

@@ -1,5 +1,6 @@
 use crate::state::{ToastKind, Toasts};
 use leptos::prelude::*;
+use leptos_router::components::A;
 
 #[component]
 pub fn ToastHost() -> impl IntoView {
@@ -15,7 +16,13 @@ pub fn ToastHost() -> impl IntoView {
                         ToastKind::Warn => "toast warn",
                         ToastKind::Error => "toast error",
                     };
-                    view! { <div class=class>{t.text}</div> }
+                    let id = t.id;
+                    view! {
+                        <div class=class on:click=move |_| toasts.items.update(|v| v.retain(|x| x.id != id))>
+                            {t.text}
+                            {t.href.map(|h| view! { " " <A href=h>"Open"</A> })}
+                        </div>
+                    }
                 }
             />
         </div>

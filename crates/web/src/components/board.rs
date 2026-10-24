@@ -1,8 +1,8 @@
 //! SVG game board with pan/zoom. Decoupled from the engine through [`BoardModel`].
 use super::unit_icon::UnitBadge;
 use super::viewport::ViewBox;
-use crate::geometry::{Geometry, LocKind};
-use crate::mock::{Power, UnitKind};
+use crate::map::{sea_shade, LocKind, SharedMap};
+use crate::model::{Power, PowerExt, UnitKind};
 use leptos::prelude::*;
 use std::collections::HashMap;
 use wasm_bindgen::JsCast;
@@ -23,7 +23,7 @@ pub enum Highlight {
 }
 
 /// View-model for the board; to be filled from the engine's `GameState`.
-/// Keys are geometry location ids.
+/// Keys are geometry location ids (same ids as `map.json`).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct BoardModel {
     pub owners: HashMap<String, Power>,
@@ -65,11 +65,11 @@ type Pointers = Vec<(i32, f64, f64)>;
 
 #[component]
 pub fn Board(
-    geometry: Geometry,
+    map: SharedMap,
     #[prop(into)] model: Signal<BoardModel>,
     on_select: Callback<Option<String>>,
 ) -> impl IntoView {
-    let base = ViewBox::new(geometry.view_box);
+    let base = ViewBox::new(map.geo.view_box);
     let view = RwSignal::new(base);
     let hover = RwSignal::new(None::<String>);
     let dragging = RwSignal::new(false);
@@ -138,15 +138,24 @@ pub fn Board(
         view.update(|v| v.zoom_at(f, w / 2.0, h / 2.0, w, h, &base));
     };
 
-    let mut sea_idx = 0;
-    let locs = geometry
+    // Zoom level: 0 = whole map, 1 = labels for land, 2 = labels for sea zones too.
+    let level = Memo::new(move |_| {
+        let z = view.get().w / base.w;
+        if z < 0.35 {
+            2
+        } else if z < 0.65 {
+            1
+        } else {
+            0
+        }
+    });
+
+    let locs = map
+        .geo
         .locations
         .iter()
         .map(|l| {
-            let alt = l.kind == LocKind::Sea && {
-                sea_idx += 1;
-                sea_idx % 2 == 0
-            };
+            let alt = l.kind == LocKind::Sea && sea_shade(&l.id);
             let (id, kind) = (l.id.clone(), l.kind);
             let (id_c, id_h, id_s) = (id.clone(), id.clone(), id.clone());
             view! {
@@ -165,52 +174,62 @@ pub fn Board(
         })
         .collect_view();
 
-    let overlays = geometry
+    let overlays = map
+        .geo
         .locations
         .iter()
         .map(|l| {
-            let (lx, ly) = l.label.unwrap_or_default();
-            let (ax, ay) = l.anchor.unwrap_or_default();
             let sea = l.kind == LocKind::Sea;
             let id = l.id.clone();
-            let ipc = l.ipc.filter(|_| !sea);
+            let info = map.data.info.get(&l.id).cloned();
+            let (lx, ly) = l.label;
+            let (ax, ay) = l.anchor;
+            let name = info
+                .as_ref()
+                .map(|i| if sea { i.short.clone() } else { i.name.clone() })
+                .unwrap_or_else(|| l.id.clone());
+            let ipc = info.as_ref().map(|i| i.ipc).filter(|n| !sea && *n > 0);
+            let min_level = if sea { 2 } else { 1 };
             view! {
-                <text class=if sea { "lbl sea" } else { "lbl" } x=lx y=ly>{l.name.clone()}</text>
-                {ipc.map(|n| view! {
-                    <g>
-                        <circle class="ipc-bg" cx=lx cy=ly + 11.0 r="7" />
-                        <text class="ipc" x=lx y=ly + 14.0>{n}</text>
-                    </g>
-                })}
-                {move || {
-                    let stacks = model.with(|m| m.stacks.get(&id).cloned().unwrap_or_default());
-                    let n = stacks.len().min(6) as f64;
-                    stacks
-                        .into_iter()
-                        .take(6)
-                        .enumerate()
-                        .map(|(i, s)| view! {
-                            <foreignObject
-                                x=ax - 24.0
-                                y=ay - n * 10.5 + i as f64 * 21.0
-                                width="48"
-                                height="20"
-                                style="pointer-events:none;overflow:visible"
-                            >
-                                <UnitBadge kind=s.kind power=s.power count=s.count />
-                            </foreignObject>
-                        })
-                        .collect_view()
-                }}
+                <g class="ov" style=format!("transform:translate({lx}px,{ly}px) scale(var(--zs))")>
+                    <text class={if sea { "lbl sea" } else { "lbl" }} y="-4" style:display={move || if level.get() >= min_level { "inline" } else { "none" }}>
+                        {name}
+                    </text>
+                    {ipc.map(|n| view! {
+                        <g class="ipc-g">
+                            <circle class="ipc-bg" cy="8" r="7" />
+                            <text class="ipc" y="11.5">{n}</text>
+                        </g>
+                    })}
+                </g>
+                <g class="ov" style=format!("transform:translate({ax}px,{ay}px) scale(var(--zs))")>
+                    {move || {
+                        let stacks = model.with(|m| m.stacks.get(&id).cloned().unwrap_or_default());
+                        let n = stacks.len().min(6) as f64;
+                        stacks
+                            .into_iter()
+                            .take(6)
+                            .enumerate()
+                            .map(|(i, s)| view! {
+                                <foreignObject
+                                    x="-24"
+                                    y=-n * 10.5 + i as f64 * 21.0
+                                    width="48"
+                                    height="20"
+                                    style="pointer-events:none;overflow:visible"
+                                >
+                                    <UnitBadge kind=s.kind power=s.power count=s.count />
+                                </foreignObject>
+                            })
+                            .collect_view()
+                    }}
+                </g>
             }
         })
         .collect_view();
 
-    let names: HashMap<String, (String, Option<u32>)> = geometry
-        .locations
-        .iter()
-        .map(|l| (l.id.clone(), (l.name.clone(), l.ipc)))
-        .collect();
+    let map_h = map.clone();
+    let decor = map.geo.decor.clone();
 
     view! {
         <div
@@ -223,7 +242,12 @@ pub fn Board(
             on:pointerleave=on_up
             on:wheel=on_wheel
         >
-            <svg class="board-svg" viewBox=move || view.get().attr()>
+            <svg
+                class="board-svg"
+                viewBox=move || view.get().attr()
+                style=move || format!("--zs:{:.3}", (view.get().w / base.w * 1.1).clamp(0.2, 1.0))
+            >
+                {decor.map(|d| view! { <path class="decor" d=d /> })}
                 {locs}
                 {overlays}
             </svg>
@@ -235,17 +259,55 @@ pub fn Board(
                     {move || {
                         hover
                             .get()
-                            .and_then(|id| names.get(&id).cloned().map(|(n, i)| (id, n, i)))
-                            .map(|(id, n, ipc)| {
+                            .and_then(|id| map_h.data.info.get(&id).cloned().map(|i| (id, i)))
+                            .map(|(id, i)| {
                                 let owner = model
                                     .with(|m| m.owners.get(&id).map(|p| p.name()))
-                                    .unwrap_or("");
-                                format!("{n} {owner} {}", ipc.map(|i| format!("({i} IPC)")).unwrap_or_default())
+                                    .map(|n| format!(" - {n}"))
+                                    .unwrap_or_default();
+                                let ipc = if i.ipc > 0 { format!(" ({} IPC)", i.ipc) } else { String::new() };
+                                format!("{}{owner}{ipc}", i.name)
                             })
                             .unwrap_or_else(|| "Hover a territory".into())
                     }}
                 </span>
             </div>
         </div>
+    }
+}
+
+/// Static, non-interactive map (lobby / landing preview) coloured by original owners.
+#[component]
+pub fn MapPreview(map: SharedMap) -> impl IntoView {
+    let model = BoardModel {
+        owners: map
+            .data
+            .info
+            .iter()
+            .filter_map(|(id, i)| i.owner.map(|p| (id.clone(), p)))
+            .collect(),
+        ..Default::default()
+    };
+    let vb = ViewBox::new(map.geo.view_box).attr();
+    let paths = map
+        .geo
+        .locations
+        .iter()
+        .map(|l| {
+            let c = loc_class(
+                l.kind,
+                l.kind == LocKind::Sea && sea_shade(&l.id),
+                &l.id,
+                &model,
+            );
+            view! { <path d=l.path.clone() class=c style="pointer-events:none" /> }
+        })
+        .collect_view();
+    let decor = map.geo.decor.clone();
+    view! {
+        <svg class="board-svg preview" viewBox=vb>
+            {decor.map(|d| view! { <path class="decor" d=d /> })}
+            {paths}
+        </svg>
     }
 }

@@ -2,7 +2,7 @@
 use super::battle::BattleBoard;
 use super::board::Stack;
 use super::unit_icon::{UnitBadge, UnitIcon};
-use crate::mock::{Phase, Power, UnitKind};
+use crate::model::{Phase, Power, UnitKind};
 use leptos::prelude::*;
 
 #[component]

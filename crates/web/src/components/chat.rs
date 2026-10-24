@@ -1,38 +1,116 @@
-use crate::mock::{Channel, ChatMsg, LogEntry, Power};
+use crate::api;
+use crate::model::LogEntry;
+use crate::realtime::Realtime;
+use crate::state::Toasts;
 use leptos::prelude::*;
+use leptos::task::spawn_local;
+use wartide_protocol::chat::{ChatChannel, ChatMessage, ChatSender, SendChatRequest};
+use wartide_protocol::game::{GameId, GameStatus, GameSummary};
 
-/// Chat drawer with All / Team / Power tabs. TODO(protocol): send via POST + WS push.
+fn channel_label(c: ChatChannel) -> &'static str {
+    match c {
+        ChatChannel::All => "All",
+        ChatChannel::Team => "Team",
+        ChatChannel::Power => "Power",
+        ChatChannel::Lobby => "Lobby",
+    }
+}
+
+fn push_unique(list: &mut Vec<ChatMessage>, m: ChatMessage) {
+    if !list.iter().any(|x| x.id == m.id) {
+        list.push(m);
+        list.sort_by_key(|x| x.created_at);
+    }
+}
+
+/// Chat drawer: history via `GET /games/{id}/chat`, live messages via the WebSocket,
+/// sending via `POST /games/{id}/chat`.
 #[component]
-pub fn ChatDrawer(messages: RwSignal<Vec<ChatMsg>>, me: String, my_power: Power) -> impl IntoView {
-    let tab = RwSignal::new(Channel::All);
+pub fn ChatDrawer(game_id: GameId, summary: Signal<GameSummary>) -> impl IntoView {
+    let toasts = Toasts::expect();
+    let rt = Realtime::expect();
+    let messages = RwSignal::new(Vec::<ChatMessage>::new());
+    let tab = RwSignal::new(ChatChannel::All);
     let draft = RwSignal::new(String::new());
-    let send = {
-        let me = me.clone();
-        move || {
-            let text = draft.get_untracked();
-            if text.trim().is_empty() {
-                return;
+    let lobby = Memo::new(move |_| summary.with(|s| s.status == GameStatus::Lobby));
+    Effect::new(move |_| {
+        tab.set(if lobby.get() {
+            ChatChannel::Lobby
+        } else {
+            ChatChannel::All
+        });
+    });
+
+    // History; refetched when the socket reconnects or the game changes.
+    Effect::new(move |_| {
+        rt.game_tick.track();
+        spawn_local(async move {
+            match api::chat(game_id).await {
+                Ok(v) => messages.update(|l| v.into_iter().for_each(|m| push_unique(l, m))),
+                Err(e) => toasts.api_error(&e),
             }
-            let msg = ChatMsg {
-                channel: tab.get_untracked(),
-                author: me.clone(),
-                power: Some(my_power),
-                bot: false,
-                text,
-            };
-            messages.update(|m| m.push(msg));
-            draft.set(String::new());
+        });
+    });
+    Effect::new(move |_| {
+        if let Some(m) = rt.chat_in.get() {
+            if m.game_id == game_id {
+                messages.update(|l| push_unique(l, m));
+            }
         }
+    });
+
+    let send = move || {
+        let body = draft.get_untracked();
+        if body.trim().is_empty() {
+            return;
+        }
+        let channel = tab.get_untracked();
+        let power = summary.with_untracked(|s| {
+            s.my_seat
+                .and_then(|i| s.seats.iter().find(|x| x.seat == i))
+                .and_then(|seat| {
+                    seat.powers
+                        .iter()
+                        .copied()
+                        .find(|p| Some(*p) == s.current_power)
+                        .or_else(|| seat.powers.first().copied())
+                })
+        });
+        let req = SendChatRequest {
+            channel,
+            body,
+            power: matches!(channel, ChatChannel::Power | ChatChannel::Team)
+                .then_some(power)
+                .flatten(),
+        };
+        draft.set(String::new());
+        spawn_local(async move {
+            match api::send_chat(game_id, &req).await {
+                Ok(m) => messages.update(|l| push_unique(l, m)),
+                Err(e) => {
+                    draft.set(req.body.clone());
+                    toasts.api_error(&e)
+                }
+            }
+        });
     };
-    let send2 = send.clone();
-    let tab_btn = move |c: Channel, label: &'static str| {
-        view! { <span class="tab" class:on=move || tab.get() == c on:click=move |_| tab.set(c)>{label}</span> }
+    let send2 = send;
+    let tabs = move || {
+        let list: &[ChatChannel] = if lobby.get() {
+            &[ChatChannel::Lobby, ChatChannel::All]
+        } else {
+            &[ChatChannel::All, ChatChannel::Team, ChatChannel::Power]
+        };
+        list.iter()
+            .map(|c| {
+                let c = *c;
+                view! { <span class="tab" class:on=move || tab.get() == c on:click=move |_| tab.set(c)>{channel_label(c)}</span> }
+            })
+            .collect_view()
     };
     view! {
         <div class="chat">
-            <div class="tabs">
-                {tab_btn(Channel::All, "All")} {tab_btn(Channel::Team, "Team")} {tab_btn(Channel::Power, "Power")}
-            </div>
+            <div class="tabs">{tabs}</div>
             <div class="msgs">
                 {move || {
                     messages
@@ -40,12 +118,15 @@ pub fn ChatDrawer(messages: RwSignal<Vec<ChatMsg>>, me: String, my_power: Power)
                         .into_iter()
                         .filter(|m| m.channel == tab.get())
                         .map(|m| {
-                            let color = m.power.map(|p| p.color()).unwrap_or("#888");
+                            let (who, class) = match &m.sender {
+                                ChatSender::User(u) => (u.display_name.clone(), "msg"),
+                                ChatSender::Bot { name } => (format!("{name} [bot]"), "msg bot"),
+                                ChatSender::System => ("System".to_string(), "msg system"),
+                            };
                             view! {
-                                <div class=if m.bot { "msg bot" } else { "msg" } style=format!("--pc:{color}")>
-                                    <strong>{m.author}</strong>
-                                    {if m.bot { " [bot]" } else { "" }}
-                                    ": " {m.text}
+                                <div class=class>
+                                    <strong>{who}</strong>
+                                    ": " {m.body}
                                 </div>
                             }
                         })

@@ -1,197 +1,317 @@
-//! Backend client. Everything the UI needs from the server goes through here so the switch to
-//! `wartide-protocol` DTOs (and real endpoints) is confined to this file.
-//! While `USE_MOCK` is true, functions return canned data from `crate::mock`.
-use crate::mock::{self, *};
-use futures::StreamExt;
-use gloo_net::http::Request;
-use gloo_net::websocket::{futures::WebSocket, Message};
-use serde::{de::DeserializeOwned, Serialize};
+//! Backend client: every REST call the UI makes lives here (see `crates/server/README.md`).
+//! Cookies are sent with `credentials: include`; failures are parsed into [`ApiError`].
+use gloo_net::http::{Method, RequestBuilder, Response};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use uuid::Uuid;
+use wartide_protocol::auth::*;
+use wartide_protocol::chat::*;
+use wartide_protocol::game::*;
+use wartide_protocol::group::*;
+use wartide_protocol::user::*;
+use wartide_protocol::ApiError;
+use web_sys::RequestCredentials;
 
-// TODO(protocol): flip to false once the server and `wartide-protocol` are wired in.
-pub const USE_MOCK: bool = true;
+pub type ApiResult<T> = Result<T, ApiError>;
 
-#[allow(dead_code)]
-async fn get_json<T: DeserializeOwned>(path: &str) -> Result<T, String> {
-    let resp = Request::get(path).send().await.map_err(|e| e.to_string())?;
-    if !resp.ok() {
-        return Err(format!("{} {}", resp.status(), resp.status_text()));
+/// Escape hatch for the in-game board only: `GameStateView` is still an opaque JSON value in the
+/// protocol, so the board, treasury, phase and action panels run on local mock data (original
+/// owners and starting units from `map.json`). Everything else talks to the real server.
+pub const USE_MOCK_GAME_STATE: bool = true;
+
+fn net_err(e: impl std::fmt::Display) -> ApiError {
+    ApiError {
+        code: "network".into(),
+        message: format!("Network error: {e}"),
     }
-    resp.json().await.map_err(|e| e.to_string())
 }
 
-#[allow(dead_code)]
-async fn post_json<B: Serialize, T: DeserializeOwned>(path: &str, body: &B) -> Result<T, String> {
-    let req = Request::post(path).json(body).map_err(|e| e.to_string())?;
-    let resp = req.send().await.map_err(|e| e.to_string())?;
-    if !resp.ok() {
-        return Err(resp.text().await.unwrap_or_else(|_| resp.status_text()));
+async fn raw(method: Method, path: &str, body: Option<serde_json::Value>) -> ApiResult<Response> {
+    let b = RequestBuilder::new(&format!("/api{path}"))
+        .method(method)
+        .credentials(RequestCredentials::Include);
+    let req = match body {
+        Some(v) => b.json(&v).map_err(net_err)?,
+        None => b.build().map_err(net_err)?,
+    };
+    let resp = req.send().await.map_err(net_err)?;
+    if resp.ok() {
+        return Ok(resp);
     }
-    resp.json().await.map_err(|e| e.to_string())
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    Err(
+        serde_json::from_str::<ApiError>(&text).unwrap_or_else(|_| ApiError {
+            code: format!("http_{status}"),
+            message: if status == 429 {
+                "Too many attempts, please wait a moment.".into()
+            } else {
+                format!("Request failed ({status})")
+            },
+        }),
+    )
+}
+
+fn to_value<B: Serialize>(b: &B) -> serde_json::Value {
+    serde_json::to_value(b).unwrap_or(serde_json::Value::Null)
+}
+
+async fn json<T: DeserializeOwned>(
+    method: Method,
+    path: &str,
+    body: Option<serde_json::Value>,
+) -> ApiResult<T> {
+    raw(method, path, body).await?.json().await.map_err(net_err)
+}
+
+async fn unit(method: Method, path: &str, body: Option<serde_json::Value>) -> ApiResult<()> {
+    raw(method, path, body).await.map(|_| ())
+}
+
+fn enc(s: &str) -> String {
+    js_sys::encode_uri_component(s).into()
+}
+
+fn mode_str(m: GameMode) -> &'static str {
+    match m {
+        GameMode::TwoPlayer => "two_player",
+        GameMode::FivePlayer => "five_player",
+    }
 }
 
 // ---- auth -------------------------------------------------------------------------------
 
-pub async fn login(username: &str, password: &str) -> Result<User, String> {
-    if username.trim().is_empty() || password.is_empty() {
-        return Err("Enter a username and password".into());
-    }
-    // TODO(protocol): POST /api/auth/login
-    Ok(user_named(username.trim()))
-}
-
-pub async fn register(username: &str, email: &str, password: &str) -> Result<(), String> {
-    if username.trim().len() < 3 || !email.contains('@') || password.len() < 8 {
-        return Err("Username 3+ chars, valid email, password 8+ chars".into());
-    }
-    // TODO(protocol): POST /api/auth/register
-    Ok(())
-}
-
-pub async fn verify_email(token: &str) -> Result<(), String> {
-    // TODO(protocol): POST /api/auth/verify
-    if token.is_empty() {
-        Err("Missing token".into())
-    } else {
-        Ok(())
-    }
-}
-
-pub async fn forgot_password(email: &str) -> Result<(), String> {
-    // TODO(protocol): POST /api/auth/forgot
-    if email.contains('@') {
-        Ok(())
-    } else {
-        Err("Enter a valid email".into())
-    }
-}
-
-pub async fn reset_password(token: &str, password: &str) -> Result<(), String> {
-    // TODO(protocol): POST /api/auth/reset
-    if token.is_empty() || password.len() < 8 {
-        Err("Token and 8+ char password required".into())
-    } else {
-        Ok(())
-    }
-}
-
-// ---- lobby ------------------------------------------------------------------------------
-
-pub async fn my_games() -> Result<Vec<GameSummary>, String> {
-    // TODO(protocol): GET /api/games?mine=1
-    Ok(mock::my_games())
-}
-
-pub async fn create_game(g: &NewGame) -> Result<String, String> {
-    // TODO(protocol): POST /api/games
-    let _ = g;
-    Ok("g1".into())
-}
-
-pub async fn join_by_code(code: &str) -> Result<String, String> {
-    // TODO(protocol): POST /api/games/join {code}
-    if code.trim().len() < 4 {
-        Err("Invite codes are at least 4 characters".into())
-    } else {
-        Ok("g3".into())
-    }
-}
-
-/// Join (`true`) or leave (`false`) the public matchmaking queue for `players` (2 or 5).
-pub async fn queue(players: u8, join: bool) -> Result<String, String> {
-    // TODO(protocol): POST/DELETE /api/matchmaking
-    Ok(if join {
-        format!("Queued for {players}-player: 3 waiting")
-    } else {
-        "Left queue".into()
-    })
-}
-
-// ---- game -------------------------------------------------------------------------------
-
-pub async fn game(id: &str) -> Result<GameDetail, String> {
-    // TODO(protocol): GET /api/games/{id} -> GameState + seats
-    Ok(mock::game_detail(id))
-}
-
-pub async fn submit_action(game_id: &str, summary: &str) -> Result<(), String> {
-    // TODO(protocol): POST /api/games/{id}/actions {action}
-    let _ = (game_id, summary);
-    Ok(())
-}
-
-/// Subscribe to server pushes for a game. TODO(protocol): decode `ServerMsg` frames.
-pub fn subscribe(game_id: &str, on_text: impl Fn(String) + 'static) {
-    if USE_MOCK {
-        return;
-    }
-    let proto = if web_sys::window()
-        .and_then(|w| w.location().protocol().ok())
-        .as_deref()
-        == Some("https:")
-    {
-        "wss"
-    } else {
-        "ws"
+pub async fn register(username: &str, email: &str, password: &str) -> ApiResult<SessionUser> {
+    let body = RegisterRequest {
+        email: email.trim().into(),
+        username: username.trim().into(),
+        password: password.into(),
     };
-    let host = web_sys::window()
-        .and_then(|w| w.location().host().ok())
-        .unwrap_or_default();
-    let url = format!("{proto}://{host}/ws/games/{game_id}");
-    wasm_bindgen_futures::spawn_local(async move {
-        let Ok(ws) = WebSocket::open(&url) else {
-            return;
-        };
-        let (_tx, mut rx) = ws.split();
-        while let Some(Ok(Message::Text(t))) = rx.next().await {
-            on_text(t);
-        }
-    });
+    json(Method::POST, "/auth/register", Some(to_value(&body))).await
 }
 
-// ---- social -----------------------------------------------------------------------------
-
-pub async fn profile(name: &str) -> Result<Profile, String> {
-    // TODO(protocol): GET /api/users/{name}
-    Ok(mock::profile(name))
+pub async fn login(login: &str, password: &str) -> ApiResult<SessionUser> {
+    let body = LoginRequest {
+        login: login.trim().into(),
+        password: password.into(),
+    };
+    json(Method::POST, "/auth/login", Some(to_value(&body))).await
 }
 
-pub async fn leaderboard(ladder: &str) -> Result<Vec<LeaderRow>, String> {
-    // TODO(protocol): GET /api/ladders/{ladder}
-    Ok(mock::leaderboard(ladder))
+pub async fn logout() -> ApiResult<()> {
+    unit(Method::POST, "/auth/logout", None).await
 }
 
-pub async fn groups() -> Result<Vec<Group>, String> {
-    // TODO(protocol): GET /api/groups
-    Ok(mock::groups())
+pub async fn verify_email(token: &str) -> ApiResult<()> {
+    let body = VerifyEmailRequest {
+        token: token.into(),
+    };
+    unit(Method::POST, "/auth/verify-email", Some(to_value(&body))).await
 }
 
-pub async fn group(slug: &str) -> Result<Group, String> {
-    // TODO(protocol): GET /api/groups/{slug}
-    mock::groups()
-        .into_iter()
-        .find(|g| g.slug == slug)
-        .ok_or_else(|| "Group not found".into())
+pub async fn resend_verification() -> ApiResult<()> {
+    unit(Method::POST, "/auth/resend-verification", None).await
 }
 
-pub async fn create_group(name: &str) -> Result<String, String> {
-    // TODO(protocol): POST /api/groups
-    if name.trim().is_empty() {
-        Err("Name required".into())
-    } else {
-        Ok(name.trim().to_lowercase().replace(' ', "-"))
-    }
+pub async fn forgot_password(email: &str) -> ApiResult<()> {
+    let body = ForgotPasswordRequest {
+        email: email.trim().into(),
+    };
+    unit(Method::POST, "/auth/forgot-password", Some(to_value(&body))).await
 }
 
-pub async fn save_settings(_user: &User, _email_notifications: bool) -> Result<(), String> {
-    // TODO(protocol): PUT /api/me
-    Ok(())
+pub async fn reset_password(token: &str, new_password: &str) -> ApiResult<()> {
+    let body = ResetPasswordRequest {
+        token: token.into(),
+        new_password: new_password.into(),
+    };
+    unit(Method::POST, "/auth/reset-password", Some(to_value(&body))).await
 }
 
-pub async fn change_password(old: &str, new: &str) -> Result<(), String> {
-    // TODO(protocol): POST /api/me/password
-    if old.is_empty() || new.len() < 8 {
-        Err("New password must be 8+ characters".into())
-    } else {
-        Ok(())
-    }
+// ---- me / users -------------------------------------------------------------------------
+
+pub async fn me() -> ApiResult<SessionUser> {
+    json(Method::GET, "/me", None).await
+}
+
+pub async fn update_profile(req: &UpdateProfileRequest) -> ApiResult<PublicProfile> {
+    json(Method::PATCH, "/me/profile", Some(to_value(req))).await
+}
+
+pub async fn settings() -> ApiResult<UserSettings> {
+    json(Method::GET, "/me/settings", None).await
+}
+
+pub async fn update_settings(req: &UpdateSettingsRequest) -> ApiResult<UserSettings> {
+    json(Method::PATCH, "/me/settings", Some(to_value(req))).await
+}
+
+pub async fn profile(username: &str) -> ApiResult<PublicProfile> {
+    json(Method::GET, &format!("/users/{}", enc(username)), None).await
+}
+
+pub async fn leaderboard(mode: GameMode) -> ApiResult<Vec<LeaderboardEntry>> {
+    json(
+        Method::GET,
+        &format!("/leaderboard?mode={}", mode_str(mode)),
+        None,
+    )
+    .await
+}
+
+// ---- groups -----------------------------------------------------------------------------
+
+pub async fn groups() -> ApiResult<Vec<Group>> {
+    json(Method::GET, "/groups", None).await
+}
+
+pub async fn group_by_slug(slug: &str) -> ApiResult<Group> {
+    json(Method::GET, &format!("/groups/by-slug/{}", enc(slug)), None).await
+}
+
+pub async fn create_group(name: &str, description: Option<String>) -> ApiResult<Group> {
+    let body = CreateGroupRequest {
+        name: name.trim().into(),
+        description,
+    };
+    json(Method::POST, "/groups", Some(to_value(&body))).await
+}
+
+pub async fn join_group(invite_code: &str) -> ApiResult<Group> {
+    let body = JoinGroupRequest {
+        invite_code: invite_code.trim().into(),
+    };
+    json(Method::POST, "/groups/join", Some(to_value(&body))).await
+}
+
+pub async fn leave_group(id: Uuid) -> ApiResult<()> {
+    unit(Method::POST, &format!("/groups/{id}/leave"), None).await
+}
+
+pub async fn rotate_invite(id: Uuid) -> ApiResult<Group> {
+    json(Method::POST, &format!("/groups/{id}/invite/rotate"), None).await
+}
+
+pub async fn group_members(id: Uuid) -> ApiResult<Vec<GroupMember>> {
+    json(Method::GET, &format!("/groups/{id}/members"), None).await
+}
+
+pub async fn set_member_role(id: Uuid, user_id: Uuid, role: GroupRole) -> ApiResult<()> {
+    let body = SetMemberRoleRequest { role };
+    unit(
+        Method::PUT,
+        &format!("/groups/{id}/members/{user_id}/role"),
+        Some(to_value(&body)),
+    )
+    .await
+}
+
+pub async fn remove_member(id: Uuid, user_id: Uuid) -> ApiResult<()> {
+    unit(
+        Method::DELETE,
+        &format!("/groups/{id}/members/{user_id}"),
+        None,
+    )
+    .await
+}
+
+pub async fn group_leaderboard(id: Uuid, mode: GameMode) -> ApiResult<Vec<LeaderboardEntry>> {
+    json(
+        Method::GET,
+        &format!("/groups/{id}/leaderboard?mode={}", mode_str(mode)),
+        None,
+    )
+    .await
+}
+
+// ---- games ------------------------------------------------------------------------------
+
+pub async fn games(status: &str) -> ApiResult<Vec<GameSummary>> {
+    json(Method::GET, &format!("/games?status={status}"), None).await
+}
+
+pub async fn game(id: GameId) -> ApiResult<GameSummary> {
+    json(Method::GET, &format!("/games/{id}"), None).await
+}
+
+pub async fn game_state(id: GameId) -> ApiResult<GameStateResponse> {
+    json(Method::GET, &format!("/games/{id}/state"), None).await
+}
+
+pub async fn game_actions(id: GameId, since: i64) -> ApiResult<Vec<GameActionEnvelope>> {
+    json(
+        Method::GET,
+        &format!("/games/{id}/actions?since={since}"),
+        None,
+    )
+    .await
+}
+
+pub async fn submit_action(id: GameId, action: serde_json::Value) -> ApiResult<GameActionEnvelope> {
+    let body = SubmitActionRequest { action };
+    json(
+        Method::POST,
+        &format!("/games/{id}/actions"),
+        Some(to_value(&body)),
+    )
+    .await
+}
+
+pub async fn create_game(req: &CreatePrivateGameRequest) -> ApiResult<GameSummary> {
+    json(Method::POST, "/games", Some(to_value(req))).await
+}
+
+pub async fn join_game(code: &str) -> ApiResult<GameSummary> {
+    let body = JoinByInviteRequest {
+        code: code.trim().into(),
+    };
+    json(Method::POST, "/games/join", Some(to_value(&body))).await
+}
+
+pub async fn start_game(id: GameId) -> ApiResult<GameSummary> {
+    json(Method::POST, &format!("/games/{id}/start"), None).await
+}
+
+pub async fn resign_game(id: GameId) -> ApiResult<GameSummary> {
+    json(Method::POST, &format!("/games/{id}/resign"), None).await
+}
+
+pub async fn abandon_game(id: GameId) -> ApiResult<GameSummary> {
+    json(Method::POST, &format!("/games/{id}/abandon"), None).await
+}
+
+// ---- chat -------------------------------------------------------------------------------
+
+pub async fn chat(id: GameId) -> ApiResult<Vec<ChatMessage>> {
+    json(Method::GET, &format!("/games/{id}/chat"), None).await
+}
+
+pub async fn send_chat(id: GameId, req: &SendChatRequest) -> ApiResult<ChatMessage> {
+    json(
+        Method::POST,
+        &format!("/games/{id}/chat"),
+        Some(to_value(req)),
+    )
+    .await
+}
+
+// ---- matchmaking ------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct QueueStatus {
+    pub queued: bool,
+    #[serde(default)]
+    pub mode: Option<GameMode>,
+}
+
+pub async fn queue_join(mode: GameMode) -> ApiResult<()> {
+    let body = MatchmakingRequest { mode };
+    unit(Method::POST, "/matchmaking/queue", Some(to_value(&body))).await
+}
+
+pub async fn queue_leave() -> ApiResult<()> {
+    unit(Method::DELETE, "/matchmaking/queue", None).await
+}
+
+pub async fn queue_status() -> ApiResult<QueueStatus> {
+    json(Method::GET, "/matchmaking/queue", None).await
 }

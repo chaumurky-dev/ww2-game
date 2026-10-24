@@ -1,5 +1,5 @@
 use super::unit_icon::UnitBadge;
-use crate::mock::{Power, UnitKind};
+use crate::model::{Power, UnitKind};
 use leptos::prelude::*;
 
 fn d6() -> u8 {

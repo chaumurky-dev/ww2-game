@@ -1,6 +1,6 @@
 use super::countdown::Countdown;
 use super::power_badge::PowerBadge;
-use crate::mock::{Phase, Power, Treasury};
+use crate::model::{Phase, Power, PowerExt, Treasury};
 use leptos::prelude::*;
 
 /// Top bar: round, current power, seven-phase stepper, treasury and deadline.
@@ -10,7 +10,7 @@ pub fn PhaseBar(
     power: Power,
     phase: Phase,
     treasury: Vec<Treasury>,
-    deadline_ms: f64,
+    deadline_ms: Option<f64>,
 ) -> impl IntoView {
     let steps = Phase::ALL
         .iter()
@@ -42,8 +42,10 @@ pub fn PhaseBar(
             <span class="pill hot" title="Treasury of the acting power">{format!("{mine} IPC")}</span>
             <span class="row" style="gap:.2rem">{all}</span>
             <span class="spacer"></span>
-            <span class="muted">"Deadline "</span>
-            <Countdown deadline_ms=deadline_ms />
+            {deadline_ms.map(|d| view! {
+                <span class="muted">"Deadline "</span>
+                <Countdown deadline_ms=d />
+            })}
         </div>
     }
 }
