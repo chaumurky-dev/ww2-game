@@ -118,7 +118,7 @@ pub fn research(
     if state.turn.researched {
         return illegal("research dice were already bought this turn");
     }
-    let cost = dice * RESEARCH_DIE_COST;
+    let cost = dice.saturating_mul(RESEARCH_DIE_COST);
     if cost > state.treasury[p] {
         return Err(RuleError::InsufficientFunds {
             need: cost,

@@ -113,8 +113,8 @@ pub const NEW_COMPLEX_CAP: u32 = 4;
 pub fn purchase_cost(state: &GameState, p: Power, items: &[PurchaseItem]) -> u32 {
     items
         .iter()
-        .map(|i| unit_cost(state, p, i.unit) * i.count)
-        .sum()
+        .map(|i| unit_cost(state, p, i.unit).saturating_mul(i.count))
+        .fold(0u32, u32::saturating_add)
 }
 
 /// Set the purchase list (replacing any earlier one this turn).
@@ -130,7 +130,7 @@ pub fn purchase(
     let mut merged: Vec<PurchaseItem> = vec![];
     for it in items.iter().filter(|i| i.count > 0) {
         match merged.iter_mut().find(|m| m.unit == it.unit) {
-            Some(m) => m.count += it.count,
+            Some(m) => m.count = m.count.saturating_add(it.count),
             None => merged.push(*it),
         }
     }
@@ -147,7 +147,7 @@ pub fn purchase(
     if complexes > 0 && state.settings.original_complexes_only {
         return illegal("new industrial complexes are disabled in this game");
     }
-    if state.new_complexes_placed + complexes > NEW_COMPLEX_CAP {
+    if state.new_complexes_placed.saturating_add(complexes) > NEW_COMPLEX_CAP {
         return illegal("only four new industrial complexes can ever be bought");
     }
     state.treasury[p] = have - cost;

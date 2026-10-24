@@ -3,6 +3,7 @@
 use crate::dice::{d6, rng_from_seed};
 use crate::*;
 
+mod audit_tests;
 mod bombing_tests;
 mod combat_tests;
 mod economy_tests;
