@@ -1,0 +1,11 @@
+target
+**/target
+.git
+.env
+node_modules
+crates/web/dist
+infra
+.github
+docs
+*.md
+!README.md

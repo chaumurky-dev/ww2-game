@@ -1,0 +1,49 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: wartide
+      POSTGRES_PASSWORD: wartide
+      POSTGRES_DB: wartide
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wartide -d wartide"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  # Full containerised app: `docker compose --profile app up --build`
+  app:
+    profiles: ["app"]
+    build:
+      context: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    environment:
+      PORT: "8080"
+      DATABASE_URL: postgres://wartide:wartide@postgres:5432/wartide
+      BASE_URL: http://localhost:8080
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_USER: ""
+      SMTP_PASS: ""
+      SMTP_FROM: "Wartide <noreply@wartide.local>"
+      SESSION_SECRET: local-dev-session-secret-change-me-0123456789abcdef0123456789abcdef
+      WEB_DIST_DIR: /app/dist
+    ports:
+      - "8080:8080"
+
+volumes:
+  pgdata:
