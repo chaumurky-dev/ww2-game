@@ -13,6 +13,7 @@ def run(rebuild=False, quiet=False):
     land = pickle.load(open(p, "rb"))
     land_px = {k: proj.project_geom(g) for k, g in land.items()}
     seeds = sea.load_seeds()
+    land_px = sea.fill_gaps(land_px, seeds)
     zones, water = sea.build_sea(land_px, seeds)
     m = json.load(open(MAP))
     lid = {t["id"] for t in m["territories"]}; sid = {s["id"] for s in m["sea_zones"]}

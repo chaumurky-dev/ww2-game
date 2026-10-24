@@ -16,6 +16,24 @@ def load_seeds():
     return json.load(open(os.path.join(HERE, "sea_zone_seeds.json")))
 
 
+def fill_gaps(land_px, seeds, max_area=120.0):
+    """Tiny water slivers left between neighbouring territories (dataset misalignment) are merged into the nearest territory."""
+    land_union = unary_union(list(land_px.values()))
+    water = FRAME.difference(land_union)
+    seedpts = [Point(proj.project(wrap_lon(lon), lat)) for lst in seeds["zones"].values() for lon, lat in lst]
+    keys = [k for k in land_px if k != "__decor__"]
+    add = {}
+    for w in polys(water):
+        if w.area >= max_area or any(w.contains(p) for p in seedpts):
+            continue
+        k = min(keys, key=lambda k: land_px[k].distance(w))
+        add.setdefault(k, []).append(w.buffer(0.02))
+    out = dict(land_px)
+    for k, lst in add.items():
+        out[k] = unary_union([land_px[k]] + lst)
+    return out
+
+
 def build_sea(land_px, seeds):
     """land_px: dict id -> projected geometry. Returns dict zone -> geometry (void excluded) and the water geom."""
     land_union = unary_union(list(land_px.values()))
@@ -51,7 +69,7 @@ def contact_len(a, b, tol=0.05):
     return inter.length
 
 
-def graph(land_px, zones, min_contact=3.0):
+def graph(land_px, zones, min_contact=8.0):
     """Return found adjacencies: dict of frozenset({a,b}) -> length. Land-sea and sea-sea (wrap aware), land-land."""
     found = {}
     zid = [z for z in zones if z != "__void__" and not zones[z].is_empty]

@@ -70,7 +70,7 @@
  "caroline_islands": {
   "units": [
    "FSM",
-   "PLW"
+   "PLW@133,6,135,9"
   ],
   "buffer": 1.0
  },
@@ -118,12 +118,13 @@
   "units": [
    "COL",
    "VEN",
-   "ECU"
+   "ECU@-82,-5,-75,2"
   ]
  },
  "congo": {
   "units": [
-   "COD"
+   "COD",
+   "AGO@11,-6,14,-4"
   ]
  },
  "cuba": {
@@ -474,7 +475,8 @@
  },
  "rio_del_oro": {
   "units": [
-   "SAH"
+   "SAH",
+   "MAR@-18,20,-8,27.67"
   ]
  },
  "russia": {
@@ -535,7 +537,8 @@
  },
  "solomon_islands": {
   "units": [
-   "SLB"
+   "SLB",
+   "PNG@154.5,-7,156.5,-5"
   ],
   "buffer": 0.4
  },
