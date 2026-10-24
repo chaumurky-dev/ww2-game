@@ -1,0 +1,686 @@
+{
+ "afghanistan": {
+  "units": [
+   "AFG"
+  ]
+ },
+ "alaska": {
+  "units": [
+   "USA:Alaska"
+  ]
+ },
+ "algeria": {
+  "units": [
+   "MAR",
+   "DZA",
+   "TUN"
+  ]
+ },
+ "anglo_egypt_sudan": {
+  "units": [
+   "EGY",
+   "SDN",
+   "SDS"
+  ]
+ },
+ "angola": {
+  "units": [
+   "AGO"
+  ]
+ },
+ "argentina_chile": {
+  "units": [
+   "ARG",
+   "CHL",
+   "PRY",
+   "URY"
+  ]
+ },
+ "australia": {
+  "units": [
+   "AUS"
+  ]
+ },
+ "borneo_celebes": {
+  "units": [
+   "IDN:Kalimantan Barat",
+   "IDN:Kalimantan Selatan",
+   "IDN:Kalimantan Tengah",
+   "IDN:Kalimantan Timur",
+   "IDN:Gorontalo",
+   "IDN:Sulawesi Barat",
+   "IDN:Sulawesi Selatan",
+   "IDN:Sulawesi Tengah",
+   "IDN:Sulawesi Tenggara",
+   "IDN:Sulawesi Utara",
+   "IDN:Maluku",
+   "IDN:Maluku Utara",
+   "BRN",
+   "MYS@108,0,120,8"
+  ]
+ },
+ "brazil": {
+  "units": [
+   "BRA",
+   "GUY",
+   "SUR",
+   "FRA@-56,1.5,-50,7"
+  ]
+ },
+ "caroline_islands": {
+  "units": [
+   "FSM",
+   "PLW"
+  ],
+  "buffer": 1.0
+ },
+ "caucasus": {
+  "units": [
+   "GEO",
+   "ARM",
+   "AZE",
+   "RUS:Rostov",
+   "RUS:Krasnodar",
+   "RUS:Stavropol'",
+   "RUS:Adygey",
+   "RUS:Karachay-Cherkess",
+   "RUS:Kabardin-Balkar",
+   "RUS:North Ossetia",
+   "RUS:Ingush",
+   "RUS:Chechnya",
+   "RUS:Dagestan",
+   "RUS:Kalmyk",
+   "RUS:Voronezh",
+   "RUS:Bryansk",
+   "RUS:Orel",
+   "RUS:Kursk",
+   "RUS:Belgorod"
+  ]
+ },
+ "china": {
+  "units": [
+   "CHN:Yunnan",
+   "CHN:Guizhou",
+   "CHN:Sichuan",
+   "CHN:Chongqing",
+   "CHN:Hunan",
+   "CHN:Hubei",
+   "CHN:Henan",
+   "CHN:Anhui",
+   "CHN:Jiangxi",
+   "CHN:Shaanxi",
+   "CHN:Shanxi",
+   "CHN:Gansu",
+   "CHN:Ningxia"
+  ]
+ },
+ "columbia": {
+  "units": [
+   "COL",
+   "VEN",
+   "ECU"
+  ]
+ },
+ "congo": {
+  "units": [
+   "COD"
+  ]
+ },
+ "cuba": {
+  "units": [
+   "CUB",
+   "JAM",
+   "HTI",
+   "DOM",
+   "PRI"
+  ]
+ },
+ "east_indies": {
+  "units": [
+   "IDN:Aceh",
+   "IDN:Sumatera Utara",
+   "IDN:Sumatera Barat",
+   "IDN:Riau",
+   "IDN:Jambi",
+   "IDN:Sumatera Selatan",
+   "IDN:Bengkulu",
+   "IDN:Lampung",
+   "IDN:Bangka-Belitung",
+   "IDN:Kepulauan Riau",
+   "IDN:Banten",
+   "IDN:Jakarta Raya",
+   "IDN:Jawa Barat",
+   "IDN:Jawa Tengah",
+   "IDN:Yogyakarta",
+   "IDN:Jawa Timur",
+   "IDN:Bali",
+   "IDN:Nusa Tenggara Barat",
+   "IDN:Nusa Tenggara Timur",
+   "TLS",
+   "SGP"
+  ]
+ },
+ "eastern_canada": {
+  "units": [
+   "CAN:Ontario",
+   "CAN:Québec",
+   "CAN:New Brunswick",
+   "CAN:Nova Scotia",
+   "CAN:Prince Edward Island",
+   "CAN:Newfoundland and Labrador"
+  ]
+ },
+ "eastern_europe": {
+  "units": [
+   "POL",
+   "CZE",
+   "SVK",
+   "HUN",
+   "ROU",
+   "BGR"
+  ]
+ },
+ "eastern_usa": {
+  "units": [
+   "USA:Wisconsin",
+   "USA:Illinois",
+   "USA:Michigan",
+   "USA:Indiana",
+   "USA:Ohio",
+   "USA:Kentucky",
+   "USA:Tennessee",
+   "USA:Mississippi",
+   "USA:Alabama",
+   "USA:Georgia",
+   "USA:Florida",
+   "USA:South Carolina",
+   "USA:North Carolina",
+   "USA:Virginia",
+   "USA:West Virginia",
+   "USA:Maryland",
+   "USA:Delaware",
+   "USA:District of Columbia",
+   "USA:Pennsylvania",
+   "USA:New Jersey",
+   "USA:New York",
+   "USA:Connecticut",
+   "USA:Rhode Island",
+   "USA:Massachusetts",
+   "USA:Vermont",
+   "USA:New Hampshire",
+   "USA:Maine"
+  ]
+ },
+ "eire": {
+  "units": [
+   "IRL"
+  ]
+ },
+ "evenki_national_okrug": {
+  "units": [
+   "RUS:Krasnoyarsk"
+  ]
+ },
+ "finland_norway": {
+  "units": [
+   "FIN",
+   "NOR"
+  ]
+ },
+ "french_equatorial_africa": {
+  "units": [
+   "CMR",
+   "GAB",
+   "GNQ",
+   "COG",
+   "CAF",
+   "TCD",
+   "NGA"
+  ]
+ },
+ "french_indo_china": {
+  "units": [
+   "THA",
+   "LAO",
+   "KHM",
+   "VNM",
+   "MYS@98,0,106,8"
+  ]
+ },
+ "french_west_africa": {
+  "units": [
+   "MRT",
+   "MLI",
+   "SEN",
+   "GMB",
+   "GIN",
+   "GNB",
+   "SLE",
+   "LBR",
+   "CIV",
+   "BFA",
+   "GHA",
+   "TGO",
+   "BEN",
+   "NER"
+  ]
+ },
+ "germany": {
+  "units": [
+   "DEU",
+   "AUT"
+  ]
+ },
+ "gibraltar": {
+  "units": [],
+  "discs": [
+   [
+    -5.35,
+    36.1,
+    0.55
+   ]
+  ]
+ },
+ "hawaiian_islands": {
+  "units": [
+   "USA:Hawaii"
+  ],
+  "buffer": 0.35
+ },
+ "india": {
+  "units": [
+   "IND",
+   "PAK",
+   "BGD",
+   "NPL",
+   "BTN",
+   "LKA",
+   "MMR"
+  ]
+ },
+ "italian_east_africa": {
+  "units": [
+   "ETH",
+   "ERI",
+   "SOM",
+   "SOL",
+   "DJI"
+  ]
+ },
+ "japan": {
+  "units": [
+   "JPN@~122,24,132,30"
+  ]
+ },
+ "karelia_s_s_r": {
+  "units": [
+   "EST",
+   "LVA",
+   "LTU",
+   "BLR",
+   "RUS:Karelia",
+   "RUS:Murmansk",
+   "RUS:Leningrad",
+   "RUS:City of St. Petersburg",
+   "RUS:Pskov",
+   "RUS:Novgorod",
+   "RUS:Arkhangel'sk",
+   "RUS:Nenets",
+   "RUS:Komi",
+   "RUS:Vologda",
+   "RUS:Kaliningrad"
+  ]
+ },
+ "kazakh_s_s_r": {
+  "units": [
+   "KAZ",
+   "UZB",
+   "TKM",
+   "KGZ",
+   "TJK"
+  ]
+ },
+ "kenya_rhodesia": {
+  "units": [
+   "KEN",
+   "UGA",
+   "TZA",
+   "ZMB",
+   "ZWE",
+   "MWI",
+   "RWA",
+   "BDI"
+  ]
+ },
+ "kwangtung": {
+  "units": [
+   "CHN:Guangdong",
+   "CHN:Guangxi",
+   "CHN:Hainan",
+   "CHN:Fujian",
+   "CHN:Zhejiang",
+   "CHN:Shanghai",
+   "CHN:Jiangsu",
+   "CHN:Shandong",
+   "CHN:Hebei",
+   "CHN:Beijing",
+   "CHN:Tianjin",
+   "HKG",
+   "MAC",
+   "TWN"
+  ]
+ },
+ "libya": {
+  "units": [
+   "LBY"
+  ]
+ },
+ "madagascar": {
+  "units": [
+   "MDG"
+  ]
+ },
+ "manchuria": {
+  "units": [
+   "CHN:Heilongjiang",
+   "CHN:Jilin",
+   "CHN:Liaoning",
+   "CHN:Inner Mongol",
+   "PRK",
+   "KOR"
+  ]
+ },
+ "mexico": {
+  "units": [
+   "MEX"
+  ]
+ },
+ "midway": {
+  "units": [],
+  "discs": [
+   [
+    -177.4,
+    28.2,
+    1.1
+   ]
+  ]
+ },
+ "mongolia": {
+  "units": [
+   "MNG"
+  ]
+ },
+ "mozambique": {
+  "units": [
+   "MOZ"
+  ]
+ },
+ "new_guinea": {
+  "units": [
+   "PNG",
+   "IDN:Papua",
+   "IDN:Papua Barat"
+  ]
+ },
+ "new_zealand": {
+  "units": [
+   "NZL"
+  ]
+ },
+ "novosibirsk": {
+  "units": [
+   "RUS:Omsk",
+   "RUS:Novosibirsk",
+   "RUS:Tomsk",
+   "RUS:Kemerovo",
+   "RUS:Altay",
+   "RUS:Gorno-Altay",
+   "RUS:Khakass",
+   "RUS:Tuva"
+  ]
+ },
+ "okinawa": {
+  "units": [
+   "JPN@122,24,132,30"
+  ],
+  "buffer": 0.5
+ },
+ "panama": {
+  "units": [
+   "PAN",
+   "CRI",
+   "NIC",
+   "HND",
+   "SLV",
+   "GTM",
+   "BLZ"
+  ]
+ },
+ "persia": {
+  "units": [
+   "IRN"
+  ]
+ },
+ "peru": {
+  "units": [
+   "PER",
+   "BOL"
+  ]
+ },
+ "philippines": {
+  "units": [
+   "PHL"
+  ]
+ },
+ "rio_del_oro": {
+  "units": [
+   "SAH"
+  ]
+ },
+ "russia": {
+  "units": [
+   "RUS:Moskva",
+   "RUS:Moskovskaya",
+   "RUS:Vladimir",
+   "RUS:Ivanovo",
+   "RUS:Kostroma",
+   "RUS:Yaroslavl'",
+   "RUS:Tver'",
+   "RUS:Smolensk",
+   "RUS:Kaluga",
+   "RUS:Tula",
+   "RUS:Ryazan'",
+   "RUS:Tambov",
+   "RUS:Lipetsk",
+   "RUS:Penza",
+   "RUS:Saratov",
+   "RUS:Volgograd",
+   "RUS:Astrakhan'",
+   "RUS:Nizhegorod",
+   "RUS:Mordovia",
+   "RUS:Chuvash",
+   "RUS:Mariy-El",
+   "RUS:Tatarstan",
+   "RUS:Ul'yanovsk",
+   "RUS:Samara",
+   "RUS:Orenburg",
+   "RUS:Bashkortostan",
+   "RUS:Udmurt",
+   "RUS:Perm'",
+   "RUS:Kirov",
+   "RUS:Sverdlovsk",
+   "RUS:Chelyabinsk",
+   "RUS:Kurgan",
+   "RUS:Tyumen'",
+   "RUS:Khanty-Mansiy",
+   "RUS:Yamal-Nenets"
+  ]
+ },
+ "saudi_arabia": {
+  "units": [
+   "SAU",
+   "YEM",
+   "OMN",
+   "ARE",
+   "QAT",
+   "BHR"
+  ]
+ },
+ "sinkiang": {
+  "units": [
+   "CHN:Xinjiang",
+   "CHN:Xizang",
+   "CHN:Qinghai"
+  ]
+ },
+ "solomon_islands": {
+  "units": [
+   "SLB"
+  ],
+  "buffer": 0.4
+ },
+ "south_africa": {
+  "units": [
+   "ZAF",
+   "NAM",
+   "BWA",
+   "LSO",
+   "SWZ"
+  ]
+ },
+ "southern_europe": {
+  "units": [
+   "ITA",
+   "SVN",
+   "HRV",
+   "BIH",
+   "SRB",
+   "MNE",
+   "ALB",
+   "MKD",
+   "KOS",
+   "GRC"
+  ]
+ },
+ "soviet_far_east": {
+  "units": [
+   "RUS:Primor'ye",
+   "RUS:Khabarovsk",
+   "RUS:Yevrey",
+   "RUS:Sakhalin",
+   "RUS:Kamchatka",
+   "RUS:Chukchi Autonomous Okrug",
+   "RUS:Maga Buryatdan"
+  ]
+ },
+ "spain": {
+  "units": [
+   "ESP",
+   "PRT"
+  ]
+ },
+ "sweden": {
+  "units": [
+   "SWE"
+  ]
+ },
+ "switzerland": {
+  "units": [
+   "CHE"
+  ]
+ },
+ "syria_iraq": {
+  "units": [
+   "SYR",
+   "IRQ",
+   "JOR",
+   "ISR",
+   "PSX",
+   "LBN",
+   "KWT"
+  ]
+ },
+ "turkey": {
+  "units": [
+   "TUR"
+  ]
+ },
+ "ukraine_s_s_r": {
+  "units": [
+   "UKR",
+   "MDA",
+   "RUS:Crimea",
+   "RUS:Sevastopol"
+  ]
+ },
+ "united_kingdom": {
+  "units": [
+   "GBR"
+  ]
+ },
+ "wake_island": {
+  "units": [],
+  "discs": [
+   [
+    166.6,
+    19.3,
+    1.1
+   ]
+  ]
+ },
+ "western_canada": {
+  "units": [
+   "CAN:Manitoba",
+   "CAN:Saskatchewan",
+   "CAN:Alberta",
+   "CAN:British Columbia",
+   "CAN:Yukon",
+   "CAN:Northwest Territories",
+   "CAN:Nunavut"
+  ]
+ },
+ "western_europe": {
+  "units": [
+   "FRA@-6,41,10.5,52",
+   "BEL",
+   "NLD",
+   "LUX",
+   "DNK"
+  ]
+ },
+ "western_usa": {
+  "units": [
+   "USA:California",
+   "USA:Oregon",
+   "USA:Washington",
+   "USA:Nevada",
+   "USA:Idaho",
+   "USA:Montana",
+   "USA:Wyoming",
+   "USA:Utah",
+   "USA:Colorado",
+   "USA:Arizona",
+   "USA:New Mexico",
+   "USA:Texas",
+   "USA:Oklahoma",
+   "USA:Kansas",
+   "USA:Nebraska",
+   "USA:North Dakota",
+   "USA:South Dakota",
+   "USA:Minnesota",
+   "USA:Iowa",
+   "USA:Missouri",
+   "USA:Arkansas",
+   "USA:Louisiana"
+  ]
+ },
+ "yakut_s_s_r": {
+  "units": [
+   "RUS:Sakha (Yakutia)",
+   "RUS:Irkutsk",
+   "RUS:Buryat",
+   "RUS:Chita",
+   "RUS:Amur"
+  ]
+ }
+}

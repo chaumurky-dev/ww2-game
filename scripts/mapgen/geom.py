@@ -1,0 +1,185 @@
+"""Stage 1: build territory polygons (+ decor land) from Natural Earth, wrapped on a 10E-centred world."""
+import json, os, pickle, sys
+import shapely
+from shapely import affinity
+from shapely.geometry import box, Point, Polygon, MultiPolygon
+from shapely.ops import unary_union
+import ne
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+CENTER = 10.0
+LON_MIN = CENTER - 180.0     # -170
+LON_MAX = CENTER + 180.0     #  190
+LAT_MAX = 80.0
+LAT_MIN = -65.3
+WORLD = box(LON_MIN, LAT_MIN, LON_MAX, LAT_MAX)
+SIMPLIFY_TOL = 0.4
+MIN_AREA = 0.3
+
+
+def wrap_lon(lon):
+    return lon + 360.0 if lon < LON_MIN else lon
+
+
+def wrap_geom(g):
+    """Re-centre a lon/lat geometry (in -180..180) on CENTER by cutting at LON_MIN."""
+    if g.is_empty:
+        return g
+    east = g.intersection(box(LON_MIN, -90, 180.0001, 90))
+    west = g.intersection(box(-180.0001, -90, LON_MIN, 90))
+    if not west.is_empty:
+        west = affinity.translate(west, xoff=360.0)
+    return unary_union([east, west]) if not west.is_empty else east
+
+
+def polys(g):
+    if g.is_empty:
+        return []
+    if g.geom_type == "Polygon":
+        return [g]
+    if g.geom_type in ("MultiPolygon", "GeometryCollection"):
+        out = []
+        for p in g.geoms:
+            out += polys(p)
+        return out
+    return []
+
+
+def clean(g):
+    g = shapely.make_valid(g) if not g.is_valid else g
+    return unary_union(polys(g))
+
+
+def parse_unit(u):
+    """'RUS' | 'RUS:Moskva' | 'MYS@x0,y0,x1,y1' | 'JPN@~x0,y0,x1,y1' -> (a3, adm1 or None, bbox or None, invert)"""
+    if ":" in u:
+        a, n = u.split(":", 1)
+        return a, n, None, False
+    if "@" in u:
+        a, b = u.split("@", 1)
+        inv = b.startswith("~")
+        bb = [float(x) for x in b.lstrip("~").split(",")]
+        return a, None, bb, inv
+    return u, None, None, False
+
+
+def build(verbose=True):
+    regions = json.load(open(os.path.join(HERE, "territory_regions.json")))
+    countries = ne.load("ne_50m_admin_0_countries")
+    admin1 = ne.load("ne_50m_admin_1_states_provinces")
+    c0 = {}
+    for at, g in countries:
+        a3 = at["ADM0_A3"]
+        c0[a3] = clean(g) if a3 not in c0 else unary_union([c0[a3], clean(g)])
+    # a3 aliases between datasets
+    a1 = {}
+    for at, g in admin1:
+        a1.setdefault(at["adm0_a3"], {})[at["name"]] = clean(g)
+
+    # claims[a3] = list of (territory or None, geom-in-lonlat)
+    unit_terr = {}      # (a3, adm1) -> territory
+    bare = {}           # a3 -> territory with bare code
+    bbox_claims = {}    # a3 -> [(terr, bbox, invert)]
+    for tid, spec in regions.items():
+        for u in spec.get("units", []):
+            a3, n, bb, inv = parse_unit(u)
+            if n:
+                if n not in a1.get(a3, {}):
+                    raise SystemExit(f"unknown admin-1 {u} for {tid}")
+                unit_terr[(a3, n)] = tid
+            elif bb:
+                bbox_claims.setdefault(a3, []).append((tid, bb, inv))
+            else:
+                if a3 not in c0:
+                    raise SystemExit(f"unknown country {u} for {tid}")
+                bare[a3] = tid
+
+    parts = {tid: [] for tid in regions}
+    parts["__decor__"] = []
+    unclaimed_a1 = []
+
+    for a3, geom in c0.items():
+        geom_w = wrap_geom(geom)
+        if a3 in a1 and any(k[0] == a3 for k in unit_terr):
+            pieces = []
+            for n, g in a1[a3].items():
+                tid = unit_terr.get((a3, n), bare.get(a3, "__decor__"))
+                if (a3, n) not in unit_terr:
+                    unclaimed_a1.append((a3, n, tid))
+                gg = wrap_geom(g).intersection(geom_w)
+                pieces.append((tid, gg))
+            covered = unary_union([p for _, p in pieces])
+            left = clean(geom_w.difference(covered))
+            for lp in polys(left):
+                if lp.area < 1e-9:
+                    continue
+                best = min(pieces, key=lambda tp: tp[1].distance(lp))
+                pieces.append((best[0], lp))
+            for tid, g in pieces:
+                parts[tid].append(g)
+        elif a3 in bbox_claims:
+            rest = geom_w
+            for tid, bb, inv in bbox_claims[a3]:
+                bx = box(*bb)
+                bx = box(wrap_lon(bb[0]), bb[1], wrap_lon(bb[2]), bb[3])
+                if inv:
+                    sel = geom_w.difference(bx)
+                else:
+                    sel = geom_w.intersection(bx)
+                parts[tid].append(sel)
+                rest = rest.difference(sel)
+            parts[bare.get(a3, "__decor__")].append(rest)
+        else:
+            parts[bare.get(a3, "__decor__")].append(geom_w)
+
+    if verbose and unclaimed_a1:
+        print("admin-1 units not explicitly claimed (went to bare/decor):")
+        for x in unclaimed_a1:
+            print("   ", x)
+
+    terr = {}
+    for tid, lst in parts.items():
+        g = clean(unary_union(lst)) if lst else Polygon()
+        spec = regions.get(tid, {})
+        discs = [Point(wrap_lon(x), y).buffer(r, 12) for x, y, r in spec.get("discs", [])]
+        if discs:
+            g = unary_union([g] + discs)
+        if spec.get("buffer"):
+            g = g.buffer(spec["buffer"], 6)
+        terr[tid] = g
+    # carve discs out of other territories (gibraltar etc.), priority to discs
+    for tid, spec in regions.items():
+        if spec.get("discs") or spec.get("buffer"):
+            for other in terr:
+                if other != tid:
+                    terr[other] = terr[other].difference(terr[tid])
+    for k in terr:
+        terr[k] = clean(terr[k].intersection(WORLD))
+    # drop tiny islands (keep tiny territories whole)
+    for k, g in terr.items():
+        ps = polys(g)
+        if not ps:
+            continue
+        if k == "__decor__" or g.area > 4.0:
+            big = [p for p in ps if p.area >= MIN_AREA]
+            terr[k] = unary_union(big or [max(ps, key=lambda p: p.area)])
+    return terr
+
+
+def simplify_all(terr, tol=SIMPLIFY_TOL):
+    keys = [k for k in terr if not terr[k].is_empty]
+    geoms = [terr[k] for k in keys]
+    simp = shapely.coverage_simplify(geoms, tol)
+    out = {}
+    for k, g in zip(keys, simp):
+        g = clean(g)
+        out[k] = g
+    return out
+
+
+if __name__ == "__main__":
+    t = build()
+    s = simplify_all(t)
+    pickle.dump(s, open(os.path.join(HERE, "data", "land.pkl"), "wb"))
+    for k, g in sorted(s.items()):
+        print(k, round(g.area, 1), len(polys(g)))
