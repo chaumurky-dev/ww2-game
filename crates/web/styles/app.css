@@ -245,7 +245,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .dieface i { border-radius: 50%; place-self: center; width: 5px; height: 5px; }
 .dieface i.pip { background: #f3e6c4; }
 .dieface.hit { box-shadow: 0 0 0 3px #4d9a3a, 0 0 8px #6cc653; }
-.dieface.miss { opacity: .72; }
+.dieface.miss { background: #4a443a; border-color: #2b2620; }
+.dieface.miss i.pip { background: #d9ccaa; }
 .dieface.roll { animation: dieroll .5s cubic-bezier(.2, .8, .3, 1) both; }
 @keyframes dieroll { 0% { transform: translateY(-18px) rotate(-220deg) scale(.4); opacity: 0; } 70% { opacity: 1; } 100% { transform: none; } }
 .actionlog .log { max-height: 10rem; }

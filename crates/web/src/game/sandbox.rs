@@ -20,7 +20,18 @@ fn actor(st: &GameState) -> Option<Power> {
 
 /// Fresh sandbox context whose backend applies actions with the local engine.
 pub fn sandbox_ctx(toasts: Toasts) -> GameCtx {
-    let viewer = Signal::derive(|| Power::ALL.to_vec());
+    // `/sandbox?as=ussr,uk` restricts the viewer to those powers (the others are "waiting").
+    let mine: Vec<Power> = web_sys::window()
+        .and_then(|w| w.location().search().ok())
+        .and_then(|q| {
+            q.trim_start_matches('?')
+                .split('&')
+                .find_map(|kv| kv.strip_prefix("as=").map(str::to_string))
+        })
+        .map(|v| v.split(',').filter_map(Power::from_id).collect::<Vec<_>>())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| Power::ALL.to_vec());
+    let viewer = Signal::derive(move || mine.clone());
     let ctx = GameCtx::new(GameState::new(GameSettings::default()), viewer);
     ctx.set_backend(Callback::new(move |actions: Vec<Action>| {
         for a in actions {
@@ -74,10 +85,15 @@ pub fn Sandbox() -> impl IntoView {
             {move || map.get().map(|r| match r {
                 Ok(m) => view! {
                     <GameScreen map=m deadline_ms=Signal::derive(|| None)
-                        top=ViewFn::from(|| view! {
+                        top=ViewFn::from(move || view! {
                             <div class="sandbox-note">
                                 <strong>"Sandbox"</strong>
-                                " - offline, you play all five powers with the local rules engine."
+                                {move || if ctx.viewer.with(|v| v.len() == 5) {
+                                    " - offline, you play all five powers with the local rules engine.".to_string()
+                                } else {
+                                    format!(" - offline, you play {} (others wait; add ?as=ussr,uk to choose).",
+                                        ctx.viewer.with(|v| v.iter().map(|p| p.name()).collect::<Vec<_>>().join(", ")))
+                                }}
                             </div>
                         }) />
                 }.into_any(),

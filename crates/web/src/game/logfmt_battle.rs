@@ -45,6 +45,7 @@ pub(super) fn battle_arm(e: &Event, who: &mut Option<Power>, text: &mut Option<S
         Event::BattleRound { location, round } => {
             *text = Some(format!("Round {round} of the battle at {}", l(*location)));
         }
+        Event::HitsScored { hits: 0, .. } => {}
         Event::HitsScored { location, by, hits } => {
             *who = Some(*by);
             *text = Some(format!(

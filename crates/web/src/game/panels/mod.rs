@@ -33,7 +33,7 @@ pub fn SidePanel() -> impl IntoView {
     view! {
         {move || {
             let st = ctx.state.get();
-            let income = ctx.income.get();
+            let income = ctx.income.get().filter(|_| st.phase <= Phase::Purchase);
             let income_note = income.map(|(p, amount, treasury)| view! {
                 <div class="income-note">
                     {format!("{} collected {amount} IPC (treasury {treasury}).", p.name())}

@@ -3,6 +3,8 @@ pub mod battle;
 pub mod conv;
 pub mod ctx;
 pub mod dice;
+#[cfg(test)]
+mod fuzz_tests;
 pub mod live;
 pub mod log;
 #[cfg(test)]
