@@ -1,10 +1,10 @@
 use crate::api;
 use crate::components::form::{Check, TextField};
+use crate::components::modal::Modal;
 use crate::state::{AuthState, Toasts};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::hooks::use_navigate;
-use crate::components::modal::Modal;
 use wartide_protocol::user::{UpdateProfileRequest, UpdateSettingsRequest};
 
 #[component]

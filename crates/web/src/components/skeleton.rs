@@ -12,7 +12,10 @@ pub fn Skeleton(#[prop(default = 3)] lines: usize) -> impl IntoView {
 
 /// Muted empty-state box with an optional call to action slot.
 #[component]
-pub fn Empty(#[prop(into)] text: String, #[prop(optional)] children: Option<Children>) -> impl IntoView {
+pub fn Empty(
+    #[prop(into)] text: String,
+    #[prop(optional)] children: Option<Children>,
+) -> impl IntoView {
     view! {
         <div class="empty">
             <p class="muted">{text}</p>
@@ -27,9 +30,9 @@ pub fn Pager(page: RwSignal<u32>, total: i64, per_page: i64) -> impl IntoView {
     let pages = ((total + per_page.max(1) - 1) / per_page.max(1)).max(1) as u32;
     view! {
         <div class="row pager">
-            <button class="secondary small" disabled=move || page.get() <= 1 on:click=move |_| page.update(|p| *p = p.saturating_sub(1).max(1))>"Previous"</button>
+            <button class="secondary small" disabled=move || page.get() <= 1 on:click=move |_| { page.update(|p| *p = p.saturating_sub(1).max(1)); }>"Previous"</button>
             <span class="muted">{move || format!("Page {} of {pages}", page.get())}</span>
-            <button class="secondary small" disabled=move || page.get() >= pages on:click=move |_| page.update(|p| *p += 1)>"Next"</button>
+            <button class="secondary small" disabled=move || page.get() >= pages on:click=move |_| { page.update(|p| *p += 1); }>"Next"</button>
         </div>
     }
 }

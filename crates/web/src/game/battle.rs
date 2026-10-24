@@ -116,7 +116,7 @@ fn CasualtyPicker(hits: u32, sub_hits: u32, eligible: Vec<UnitId>) -> impl IntoV
             <div class="row">
                 <span class="muted">{move || format!("{} / {need} selected", total.get())}</span>
                 <span class="spacer"></span>
-                <button disabled=move || !ok() on:click=move |_| {
+                <button class="primary" disabled=move || !ok() on:click=move |_| {
                     let units: Vec<UnitId> = rows_btn.iter().flat_map(|(_, ids, s)| ids.iter().copied().take(s.get_untracked() as usize)).collect();
                     ctx.send(Action::SelectCasualties { units });
                 }>"Remove casualties"</button>
@@ -151,7 +151,7 @@ fn controls(ctx: GameCtx, st: &GameState, b: &Battle) -> AnyView {
             view! {
                 <div class="decision">
                     <strong>"Press the attack or break off?"</strong>
-                    <div class="row"><button on:click=move |_| ctx.send(Action::PressAttack)>"Press attack"</button></div>
+                    <div class="row"><button class="primary" on:click=move |_| ctx.send(Action::PressAttack)>"Press attack"</button></div>
                     {if b.amphibious {
                         view! { <div class="muted">"Amphibious assaults cannot retreat."</div> }.into_any()
                     } else if dests.is_empty() {
@@ -173,7 +173,7 @@ fn controls(ctx: GameCtx, st: &GameState, b: &Battle) -> AnyView {
                 <div class="decision">
                     <strong>"Withdraw your submarines?"</strong>
                     <div class="row">
-                        <button on:click=move |_| ctx.send(Action::WithdrawSubs { subs: vec![], to: None })>"Stay and fight"</button>
+                        <button class="primary" on:click=move |_| ctx.send(Action::WithdrawSubs { subs: vec![], to: None })>"Stay and fight"</button>
                         {wopts.into_iter().map(|to| { let subs = subs.clone(); view! {
                             <button class="secondary" on:click=move |_| ctx.send(Action::WithdrawSubs { subs: subs.clone(), to: Some(to) })>{format!("Withdraw to {}", loc_name(to))}</button>
                         }}).collect_view()}

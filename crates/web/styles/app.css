@@ -308,3 +308,8 @@ button.danger { background: var(--bad); }
   .modal { max-height: 94dvh; }
   .chat { max-height: none; }
 }
+.seat-cfg > .row { flex-wrap: nowrap; }
+.seat-cfg select { flex: 1 1 8rem; min-width: 0; width: auto; }
+.seat-label { flex: 0 0 11rem; }
+@media (max-width: 800px) { .seat-cfg > .row { flex-wrap: wrap; } .seat-label { flex-basis: 100%; } }
+td { vertical-align: top; } td:nth-child(2) { white-space: nowrap; }

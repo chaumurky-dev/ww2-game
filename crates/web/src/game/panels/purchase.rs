@@ -80,7 +80,7 @@ pub fn PurchasePanel(power: Power) -> impl IntoView {
         <div class="row">
             <span>{move || format!("Total {} / {} IPC", total.get(), budget)}</span>
             <span class="spacer"></span>
-            <button disabled=over on:click=move |_| {
+            <button class="primary" disabled=over on:click=move |_| {
                 let it = items();
                 if it.is_empty() {
                     ctx.send(Action::EndPhase);

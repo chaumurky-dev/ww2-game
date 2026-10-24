@@ -19,6 +19,6 @@ pub fn Stepper(value: RwSignal<u32>, #[prop(into)] max: Signal<u32>) -> impl Int
 pub fn EndPhase(#[prop(into)] label: String, #[prop(optional)] secondary: bool) -> impl IntoView {
     let ctx = expect_context::<GameCtx>();
     view! {
-        <button class:secondary=secondary on:click=move |_| ctx.send(Action::EndPhase)>{label}</button>
+        <button class:secondary=secondary class:primary=!secondary on:click=move |_| ctx.send(Action::EndPhase)>{label}</button>
     }
 }

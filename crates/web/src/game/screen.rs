@@ -8,9 +8,9 @@ use super::topbar::TopBar;
 use crate::components::board::{Board, BoardModel};
 use crate::map::SharedMap;
 use leptos::prelude::*;
-use wasm_bindgen::JsCast;
 use wartide_engine::query::{battles_pending, legal_placements};
 use wartide_engine::{pending_decision, Decision, LocationId, Phase};
+use wasm_bindgen::JsCast;
 
 fn overlay(ctx: GameCtx) -> Overlay {
     let st = ctx.state.get();
@@ -76,15 +76,11 @@ fn board_click(ctx: GameCtx, loc: LocationId) {
 
 /// Click the first enabled primary button of the side panel (Enter shortcut).
 fn click_primary() -> bool {
-    let btn = web_sys::window()
-        .and_then(|w| w.document())
-        .and_then(|d| {
-            d.query_selector(
-                ".sidepanel button:not(.secondary):not(.small):not(.chip):not([disabled])",
-            )
+    let btn = web_sys::window().and_then(|w| w.document()).and_then(|d| {
+        d.query_selector(".sidepanel button.primary:not([disabled])")
             .ok()
             .flatten()
-        });
+    });
     match btn.and_then(|b| b.dyn_into::<web_sys::HtmlElement>().ok()) {
         Some(b) => {
             b.click();
@@ -94,20 +90,33 @@ fn click_primary() -> bool {
     }
 }
 
-/// Esc clears the selection; Enter presses the primary button (unless typing or on a button).
+/// Esc clears the selection; Enter presses the primary button of the side panel unless the
+/// user is typing or focus sits on a link / a button outside the panel.
 fn keyboard(ctx: GameCtx, e: web_sys::KeyboardEvent) {
-    let tag = e
+    let el = e
         .target()
-        .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+        .and_then(|t| t.dyn_into::<web_sys::Element>().ok());
+    let tag = el
+        .as_ref()
         .map(|el| el.tag_name().to_uppercase())
         .unwrap_or_default();
-    if matches!(tag.as_str(), "INPUT" | "TEXTAREA" | "SELECT") || e.ctrl_key() || e.meta_key() {
+    if matches!(tag.as_str(), "INPUT" | "TEXTAREA" | "SELECT" | "A")
+        || e.ctrl_key()
+        || e.meta_key()
+        || e.alt_key()
+    {
         return;
     }
     match e.key().as_str() {
         "Escape" => ctx.sel.set(Sel::default()),
-        "Enter" if !matches!(tag.as_str(), "BUTTON" | "A") && click_primary() => {
-            e.prevent_default();
+        "Enter" => {
+            let in_panel = tag != "BUTTON"
+                || el
+                    .and_then(|el| el.closest(".sidepanel").ok().flatten())
+                    .is_some();
+            if in_panel && click_primary() {
+                e.prevent_default();
+            }
         }
         _ => {}
     }

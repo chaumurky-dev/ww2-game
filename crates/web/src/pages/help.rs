@@ -10,7 +10,9 @@ fn unit_note(k: UnitType) -> &'static str {
     match k {
         UnitType::Infantry => "Cheap, holds ground. Can be carried by transports.",
         UnitType::Armor => "Fast land striker; may blitz through empty enemy land.",
-        UnitType::Fighter => "Flies out and must land at the end of the turn; can sit on a carrier.",
+        UnitType::Fighter => {
+            "Flies out and must land at the end of the turn; can sit on a carrier."
+        }
         UnitType::Bomber => "Long-range flyer; can raid enemy industry instead of fighting.",
         UnitType::Battleship => "Tough warship; can shell a coast during an amphibious landing.",
         UnitType::Carrier => "Holds two friendly fighters at sea.",

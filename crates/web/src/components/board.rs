@@ -101,8 +101,21 @@ pub fn Board(
             .iter()
             .map(|l| (l.id.clone(), l.anchor))
             .collect();
+        // The view before the first focus; restored when the battle is over.
+        let saved = StoredValue::new(None::<ViewBox>);
         Effect::new(move |_| {
-            if let Some((x, y)) = f.get().and_then(|id| anchors.get(&id).copied()) {
+            let target = f.get();
+            if target.is_none() {
+                if let Some(v) = saved.get_value() {
+                    saved.set_value(None);
+                    view.set(v);
+                }
+                return;
+            }
+            if let Some((x, y)) = target.and_then(|id| anchors.get(&id).copied()) {
+                if saved.get_value().is_none() {
+                    saved.set_value(Some(view.get_untracked()));
+                }
                 let (w, h) = (base.w * 0.33, base.h * 0.33);
                 view.set(ViewBox {
                     x: x - w / 2.0,

@@ -5,6 +5,14 @@ use leptos_router::components::A;
 #[component]
 pub fn ToastHost() -> impl IntoView {
     let toasts = Toasts::expect();
+    // A "your turn" link that points at the page we are already on is pointless: drop it.
+    let path = leptos_router::hooks::use_location().pathname;
+    Effect::new(move |_| {
+        let here = path.get();
+        toasts
+            .items
+            .update(|v| v.retain(|t| t.href.as_deref() != Some(here.as_str())));
+    });
     view! {
         <div class="toasts" aria-live="polite">
             <For

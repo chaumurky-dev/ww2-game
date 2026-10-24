@@ -119,7 +119,7 @@ pub fn MovePanel(power: Power, combat: bool) -> impl IntoView {
                 } else {
                     view! { <div class="tag bad">"No landing spot there"</div> }.into_any()
                 })}
-                <button on:click=move |_| ctx.send(Action::Move { units: units.clone(), path: path.clone() })>
+                <button class="primary" on:click=move |_| ctx.send(Action::Move { units: units.clone(), path: path.clone() })>
                     {format!("Move {n} unit{}", if n == 1 { "" } else { "s" })}
                 </button>
             </div>

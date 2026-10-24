@@ -19,6 +19,11 @@ const PRESETS: [(u32, &str); 6] = [
     (604_800, "1 week"),
 ];
 
+fn persona_label(p: &BotPersona) -> String {
+    let style = format!("{:?}", p.style);
+    format!("{} - {}", p.name, style.to_lowercase())
+}
+
 /// One seat: its kind (`me` / `open` / `bot`) and the chosen persona id (empty = default).
 #[derive(Clone, Copy)]
 struct Seat {
@@ -72,7 +77,7 @@ fn SeatRow(
                                 {move || personas.get().into_iter().map(|p| {
                                     let id = p.id.clone();
                                     let id2 = p.id.clone();
-                                    view! { <option value=id selected=move || seat.persona.get() == id2>{format!("{} ({:?})", p.name, p.style).to_lowercase()}</option> }
+                                    view! { <option value=id selected=move || seat.persona.get() == id2>{persona_label(&p)}</option> }
                                 }).collect_view()}
                             </select>
                         </Show>
@@ -120,7 +125,7 @@ pub fn CreateGameForm(open: RwSignal<bool>) -> impl IntoView {
         .collect();
     let timeout = RwSignal::new(172_800_u32);
     let weapons = RwSignal::new(true);
-    let axis_econ = RwSignal::new(false);
+    let axis_econ = RwSignal::new(true);
     let axis_th = RwSignal::new(String::from("84"));
     let ally_econ = RwSignal::new(false);
     let ally_th = RwSignal::new(String::from("84"));
@@ -131,7 +136,8 @@ pub fn CreateGameForm(open: RwSignal<bool>) -> impl IntoView {
     let subs = RwSignal::new(false);
     let group = RwSignal::new(String::new());
     let groups = LocalResource::new(|| async { api::groups().await.unwrap_or_default() });
-    let personas_res = LocalResource::new(|| async { api::bot_personas().await.unwrap_or_default() });
+    let personas_res =
+        LocalResource::new(|| async { api::bot_personas().await.unwrap_or_default() });
     let personas = Signal::derive(move || personas_res.get().unwrap_or_default());
 
     let seats_c = seats.clone();

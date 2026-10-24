@@ -1,8 +1,8 @@
 use crate::api;
 use crate::components::skeleton::{Empty, Skeleton};
 use crate::model::*;
-use leptos_router::components::A;
 use leptos::prelude::*;
+use leptos_router::components::A;
 use leptos_router::hooks::use_params_map;
 use wartide_protocol::user::PublicProfile;
 

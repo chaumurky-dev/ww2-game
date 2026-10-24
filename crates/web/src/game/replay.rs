@@ -139,12 +139,7 @@ async fn load(id: GameId) -> Result<Replay, String> {
 }
 
 #[component]
-pub fn ReplayGame(
-    game_id: GameId,
-    map: SharedMap,
-    top: ViewFn,
-    bottom: ViewFn,
-) -> impl IntoView {
+pub fn ReplayGame(game_id: GameId, map: SharedMap, top: ViewFn, bottom: ViewFn) -> impl IntoView {
     let toasts = Toasts::expect();
     let replay = StoredValue::new(None::<Replay>);
     let ready = RwSignal::new(false);
@@ -152,10 +147,7 @@ pub fn ReplayGame(
     let step = RwSignal::new(0usize);
     let playing = RwSignal::new(false);
     let len = RwSignal::new(0usize);
-    let ctx = GameCtx::new(
-        GameState::new(Default::default()),
-        Signal::derive(Vec::new),
-    );
+    let ctx = GameCtx::new(GameState::new(Default::default()), Signal::derive(Vec::new));
     provide_context(ctx);
     spawn_local(async move {
         match load(game_id).await {

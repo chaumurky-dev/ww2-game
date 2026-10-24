@@ -36,7 +36,7 @@ pub fn CombatPanel(power: Power) -> impl IntoView {
                             <strong>{loc_name(loc)}</strong>
                             <div class="muted">{odds_txt.unwrap_or_else(|| "No contest".into())}</div>
                         </div>
-                        <button disabled=!ok title=if ok { "" } else { "Resolve other battles first" }
+                        <button class="primary" disabled=!ok title=if ok { "" } else { "Resolve other battles first" }
                             on:click=move |_| ctx.send(Action::BeginBattle { location: loc })>"Begin battle"</button>
                     </div>
                 }

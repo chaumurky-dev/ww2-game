@@ -167,7 +167,19 @@ pub fn deadline_ms(g: &GameSummary) -> Option<f64> {
 }
 
 pub fn seat_label(s: &SeatAssignment) -> String {
-    if s.is_bot {
+    if s.resigned && s.is_bot {
+        let who = s
+            .user
+            .as_ref()
+            .map(|u| u.display_name.as_str())
+            .unwrap_or("player");
+        let bot = s
+            .bot_name
+            .as_deref()
+            .or(s.bot_persona.as_deref())
+            .unwrap_or("bot");
+        format!("{who} (left, {bot} plays)")
+    } else if s.is_bot {
         match s.bot_name.as_ref().or(s.bot_persona.as_ref()) {
             Some(p) => format!("bot ({p})"),
             None => "bot".into(),

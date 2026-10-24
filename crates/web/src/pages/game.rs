@@ -1,10 +1,10 @@
 use crate::api;
 use crate::components::chat::ChatDrawer;
 use crate::components::modal::Modal;
-use crate::components::skeleton::Skeleton;
-use crate::game::replay::ReplayGame;
 use crate::components::power_badge::PowerBadge;
+use crate::components::skeleton::Skeleton;
 use crate::game::live::LiveGame;
+use crate::game::replay::ReplayGame;
 use crate::game::sandbox::sandbox_ctx;
 use crate::game::screen::GameScreen;
 use crate::map::SharedMap;
