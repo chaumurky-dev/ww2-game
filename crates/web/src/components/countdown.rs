@@ -24,7 +24,8 @@ pub fn format_remaining(ms: f64) -> String {
 #[component]
 pub fn Countdown(deadline_ms: f64) -> impl IntoView {
     let now = RwSignal::new(now_ms());
-    if let Ok(handle) = set_interval_with_handle(move || now.set(now_ms()), Duration::from_secs(1)) {
+    if let Ok(handle) = set_interval_with_handle(move || now.set(now_ms()), Duration::from_secs(1))
+    {
         on_cleanup(move || handle.clear());
     }
     let left = move || deadline_ms - now.get();

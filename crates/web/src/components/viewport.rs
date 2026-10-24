@@ -9,7 +9,12 @@ pub struct ViewBox {
 
 impl ViewBox {
     pub fn new(v: [f64; 4]) -> Self {
-        Self { x: v[0], y: v[1], w: v[2], h: v[3] }
+        Self {
+            x: v[0],
+            y: v[1],
+            w: v[2],
+            h: v[3],
+        }
     }
 
     pub fn attr(&self) -> String {

@@ -31,7 +31,9 @@ impl Session {
     pub fn provide() -> Self {
         // TODO(protocol): restore the session from GET /api/auth/me (cookie/JWT) instead.
         let restored = store_get(USER_KEY).map(|name| crate::mock::user_named(&name));
-        let s = Session { user: RwSignal::new(restored) };
+        let s = Session {
+            user: RwSignal::new(restored),
+        };
         provide_context(s);
         s
     }
@@ -70,7 +72,10 @@ pub struct Toasts {
 
 impl Toasts {
     pub fn provide() -> Self {
-        let t = Toasts { items: RwSignal::new(vec![]), next: RwSignal::new(0) };
+        let t = Toasts {
+            items: RwSignal::new(vec![]),
+            next: RwSignal::new(0),
+        };
         provide_context(t);
         t
     }
@@ -80,7 +85,13 @@ impl Toasts {
     pub fn push(&self, kind: ToastKind, text: impl Into<String>) {
         let id = self.next.get_untracked();
         self.next.set(id + 1);
-        self.items.update(|v| v.push(Toast { id, kind, text: text.into() }));
+        self.items.update(|v| {
+            v.push(Toast {
+                id,
+                kind,
+                text: text.into(),
+            })
+        });
         let items = self.items;
         Timeout::new(4500, move || items.update(|v| v.retain(|t| t.id != id))).forget();
     }

@@ -63,7 +63,10 @@ fn rough_center(path: &str) -> (f64, f64) {
         return (0.0, 0.0);
     }
     let n = pairs.len() as f64;
-    (pairs.iter().map(|p| p[0]).sum::<f64>() / n, pairs.iter().map(|p| p[1]).sum::<f64>() / n)
+    (
+        pairs.iter().map(|p| p[0]).sum::<f64>() / n,
+        pairs.iter().map(|p| p[1]).sum::<f64>() / n,
+    )
 }
 
 impl Geometry {
@@ -72,7 +75,10 @@ impl Geometry {
         let view_box = match raw.view_box {
             RawViewBox::Arr(a) => a,
             RawViewBox::Str(s) => {
-                let v: Vec<f64> = s.split_whitespace().filter_map(|t| t.parse().ok()).collect();
+                let v: Vec<f64> = s
+                    .split_whitespace()
+                    .filter_map(|t| t.parse().ok())
+                    .collect();
                 <[f64; 4]>::try_from(v).map_err(|_| "bad viewBox".to_string())?
             }
         };
@@ -85,7 +91,10 @@ impl Geometry {
             l.anchor.get_or_insert(c);
             l.label.get_or_insert(c);
         }
-        Ok(Geometry { view_box, locations })
+        Ok(Geometry {
+            view_box,
+            locations,
+        })
     }
 
     pub fn find(&self, id: &str) -> Option<&Location> {
@@ -102,7 +111,10 @@ async fn fetch_text(url: &str) -> Option<String> {
 
 /// Load the real geometry if present, else the bundled placeholder.
 pub async fn load() -> Result<Geometry, String> {
-    for url in ["/assets/map_geometry.json", "/assets/map_geometry.placeholder.json"] {
+    for url in [
+        "/assets/map_geometry.json",
+        "/assets/map_geometry.placeholder.json",
+    ] {
         if let Some(text) = fetch_text(url).await {
             if let Ok(g) = Geometry::parse(&text) {
                 return Ok(g);

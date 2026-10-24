@@ -14,7 +14,8 @@ cargo clippy -p wartide-web --target wasm32-unknown-unknown -- -D warnings
 ```
 
 Note: with Homebrew's `rust` shadowing rustup, put `~/.rustup/toolchains/stable-*/bin` first on `PATH`
-so the wasm target is found.
+so the wasm target is found. If `rust-lld` aborts with a missing `libLLVM.dylib`, set
+`DYLD_FALLBACK_LIBRARY_PATH=$HOME/.rustup/toolchains/stable-x86_64-apple-darwin/lib` for the build.
 
 ## Layout
 

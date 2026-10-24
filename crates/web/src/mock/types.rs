@@ -11,7 +11,13 @@ pub enum Power {
 }
 
 impl Power {
-    pub const ALL: [Power; 5] = [Power::Ussr, Power::Germany, Power::Uk, Power::Japan, Power::Usa];
+    pub const ALL: [Power; 5] = [
+        Power::Ussr,
+        Power::Germany,
+        Power::Uk,
+        Power::Japan,
+        Power::Usa,
+    ];
     pub fn id(self) -> &'static str {
         match self {
             Power::Ussr => "ussr",
@@ -199,7 +205,12 @@ pub enum Persona {
 }
 
 impl Persona {
-    pub const ALL: [Persona; 4] = [Persona::Balanced, Persona::Aggressive, Persona::Cautious, Persona::Economist];
+    pub const ALL: [Persona; 4] = [
+        Persona::Balanced,
+        Persona::Aggressive,
+        Persona::Cautious,
+        Persona::Economist,
+    ];
     pub fn label(self) -> &'static str {
         match self {
             Persona::Balanced => "Balanced",

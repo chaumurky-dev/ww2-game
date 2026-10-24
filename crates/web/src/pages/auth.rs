@@ -36,7 +36,9 @@ pub fn Forgot() -> impl IntoView {
     let go = move |_| {
         spawn_local(async move {
             let r = api::forgot_password(&email.get_untracked()).await;
-            msg.set(Some(r.map(|_| "If that address exists, a reset link is on its way.".into())));
+            msg.set(Some(r.map(|_| {
+                "If that address exists, a reset link is on its way.".into()
+            })));
         });
     };
     view! {
@@ -61,7 +63,9 @@ pub fn Reset() -> impl IntoView {
         let t = t.clone();
         spawn_local(async move {
             let r = api::reset_password(&t, &pw.get_untracked()).await;
-            msg.set(Some(r.map(|_| "Password updated. You can log in now.".into())));
+            msg.set(Some(
+                r.map(|_| "Password updated. You can log in now.".into()),
+            ));
         });
     };
     view! {

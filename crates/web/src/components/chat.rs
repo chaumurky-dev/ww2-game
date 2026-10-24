@@ -13,7 +13,13 @@ pub fn ChatDrawer(messages: RwSignal<Vec<ChatMsg>>, me: String, my_power: Power)
             if text.trim().is_empty() {
                 return;
             }
-            let msg = ChatMsg { channel: tab.get_untracked(), author: me.clone(), power: Some(my_power), bot: false, text };
+            let msg = ChatMsg {
+                channel: tab.get_untracked(),
+                author: me.clone(),
+                power: Some(my_power),
+                bot: false,
+                text,
+            };
             messages.update(|m| m.push(msg));
             draft.set(String::new());
         }

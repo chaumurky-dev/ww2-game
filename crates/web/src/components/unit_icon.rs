@@ -11,7 +11,9 @@ fn glyph_path(kind: UnitKind) -> &'static str {
         UnitKind::Battleship => "M2 16l3 4h14l3-4zM6 11h12v4H6zM10 6h4v5h-4zM13 8h8v2h-8z",
         UnitKind::Carrier => "M1 17l3 3h16l3-3zM2 13h20v3H2zM15 8h4v5h-4z",
         UnitKind::Transport => "M2 16l3 4h14l3-4zM5 9h10v7H5zM16 11h3v5h-3z",
-        UnitKind::Submarine => "M2 14a5 4 0 015-4h10a5 4 0 015 4 5 4 0 01-5 4H7a5 4 0 01-5-4zM10 5h4v5h-4z",
+        UnitKind::Submarine => {
+            "M2 14a5 4 0 015-4h10a5 4 0 015 4 5 4 0 01-5 4H7a5 4 0 01-5-4zM10 5h4v5h-4z"
+        }
         UnitKind::AaGun => "M4 20h16v-3H4zM8 17l2-4h4l2 4zM12 13L19 4l2 1-6 9z",
         UnitKind::IndustrialComplex => "M2 21V10l6 4v-4l6 4v-4l6 4V5h3v16z",
     }
@@ -23,7 +25,9 @@ fn glyph_path(kind: UnitKind) -> &'static str {
 pub fn UnitIcon(kind: UnitKind, #[prop(optional)] power: Option<Power>) -> impl IntoView {
     let loaded = RwSignal::new(false);
     let src = format!("/assets/units/{}.png", kind.id());
-    let tint = power.map(|p| format!("--pc:{};", p.color())).unwrap_or_default();
+    let tint = power
+        .map(|p| format!("--pc:{};", p.color()))
+        .unwrap_or_default();
     let style = format!("{tint}--src:url({src})");
     view! {
         <span class="unit-icon" style=style title=kind.name()>

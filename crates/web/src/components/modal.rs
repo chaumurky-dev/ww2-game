@@ -2,7 +2,11 @@ use leptos::prelude::*;
 
 /// Simple modal dialog; closes on backdrop click or the close button.
 #[component]
-pub fn Modal(open: RwSignal<bool>, #[prop(into)] title: String, children: ChildrenFn) -> impl IntoView {
+pub fn Modal(
+    open: RwSignal<bool>,
+    #[prop(into)] title: String,
+    children: ChildrenFn,
+) -> impl IntoView {
     let title = StoredValue::new(title);
     view! {
         <Show when=move || open.get()>

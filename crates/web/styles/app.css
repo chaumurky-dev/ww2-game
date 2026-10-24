@@ -150,7 +150,9 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .unit-icon { display: inline-block; width: 1.3rem; height: 1.3rem; vertical-align: middle; position: relative; }
 .unit-icon .mask { position: absolute; inset: 0; background: var(--pc, #fff); -webkit-mask: var(--src) center / contain no-repeat; mask: var(--src) center / contain no-repeat; }
 .unit-icon svg { width: 100%; height: 100%; fill: var(--pc, currentColor); }
-.unit-icon.on-badge { --pc: #fff; }
+.on-badge .unit-icon { --pc: #fff; }
+.topbar { row-gap: .3rem; }
+.topbar .countdown { white-space: nowrap; }
 .die { display: inline-grid; place-items: center; width: 1.9rem; height: 1.9rem; border: 2px solid var(--line); background: #fffdf5; border-radius: 6px; font-weight: 700; margin: 0 .15rem; color: var(--ink); }
 .die.hit { background: var(--ok); color: #fff; }
 .dice-roll { animation: tumble .5s ease-out; }

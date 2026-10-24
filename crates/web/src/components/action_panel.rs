@@ -20,7 +20,12 @@ fn Stepper(value: RwSignal<u32>, #[prop(default = 99)] max: u32) -> impl IntoVie
 fn PurchasePanel(ipc: u32, on_action: Callback<String>) -> impl IntoView {
     let qty: Vec<RwSignal<u32>> = UnitKind::ALL.iter().map(|_| RwSignal::new(0)).collect();
     let q2 = qty.clone();
-    let total = Memo::new(move |_| -> u32 { q2.iter().zip(UnitKind::ALL).map(|(q, k)| q.get() * k.cost()).sum() });
+    let total = Memo::new(move |_| -> u32 {
+        q2.iter()
+            .zip(UnitKind::ALL)
+            .map(|(q, k)| q.get() * k.cost())
+            .sum()
+    });
     let rows = UnitKind::ALL
         .iter()
         .zip(qty.iter().copied())
@@ -36,7 +41,9 @@ fn PurchasePanel(ipc: u32, on_action: Callback<String>) -> impl IntoView {
         })
         .collect_view();
     let over = move || total.get() > ipc;
-    let confirm = move |_: web_sys::MouseEvent| on_action.run(format!("Purchased units for {} IPC", total.get()));
+    let confirm = move |_: web_sys::MouseEvent| {
+        on_action.run(format!("Purchased units for {} IPC", total.get()))
+    };
     view! {
         <h3>"Purchase units"</h3>
         <table>
@@ -58,12 +65,21 @@ fn MovePanel(
     destinations: Vec<(String, String)>,
     on_action: Callback<String>,
 ) -> impl IntoView {
-    let dest = RwSignal::new(destinations.first().map(|d| d.0.clone()).unwrap_or_default());
+    let dest = RwSignal::new(
+        destinations
+            .first()
+            .map(|d| d.0.clone())
+            .unwrap_or_default(),
+    );
     let opts = destinations
         .iter()
         .map(|(id, name)| view! { <option value=id.clone()>{name.clone()}</option> })
         .collect_view();
-    let title = if combat { "Combat movement" } else { "Non-combat movement" };
+    let title = if combat {
+        "Combat movement"
+    } else {
+        "Non-combat movement"
+    };
     view! {
         <h3>{title}</h3>
         {move || match selected.get() {

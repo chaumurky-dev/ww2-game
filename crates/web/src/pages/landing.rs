@@ -12,7 +12,11 @@ pub fn Landing() -> impl IntoView {
     let toasts = Toasts::expect();
     let navigate = use_navigate();
     let (lu, lp) = (RwSignal::new(String::new()), RwSignal::new(String::new()));
-    let (ru, re, rp) = (RwSignal::new(String::new()), RwSignal::new(String::new()), RwSignal::new(String::new()));
+    let (ru, re, rp) = (
+        RwSignal::new(String::new()),
+        RwSignal::new(String::new()),
+        RwSignal::new(String::new()),
+    );
     let error = RwSignal::new(None::<String>);
     let busy = RwSignal::new(false);
 
@@ -35,8 +39,16 @@ pub fn Landing() -> impl IntoView {
     };
     let do_register = move |_| {
         spawn_local(async move {
-            match api::register(&ru.get_untracked(), &re.get_untracked(), &rp.get_untracked()).await {
-                Ok(()) => toasts.info("Account created. Check your email for the verification link."),
+            match api::register(
+                &ru.get_untracked(),
+                &re.get_untracked(),
+                &rp.get_untracked(),
+            )
+            .await
+            {
+                Ok(()) => {
+                    toasts.info("Account created. Check your email for the verification link.")
+                }
                 Err(e) => error.set(Some(e)),
             }
         });

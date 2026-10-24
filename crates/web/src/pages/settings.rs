@@ -9,7 +9,8 @@ pub fn Settings() -> impl IntoView {
     let session = Session::expect();
     let toasts = Toasts::expect();
     let Some(user) = session.user.get_untracked() else {
-        return view! { <div class="page"><p>"Please log in to edit settings."</p></div> }.into_any();
+        return view! { <div class="page"><p>"Please log in to edit settings."</p></div> }
+            .into_any();
     };
     let display = RwSignal::new(user.display_name.clone());
     let bio = RwSignal::new(user.bio.clone());

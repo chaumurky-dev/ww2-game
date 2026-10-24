@@ -91,7 +91,9 @@ pub fn Board(
     let on_move = move |ev: web_sys::PointerEvent| {
         let (x, y, id) = (ev.client_x() as f64, ev.client_y() as f64, ev.pointer_id());
         let old = pts.get_value();
-        let Some(i) = old.iter().position(|p| p.0 == id) else { return };
+        let Some(i) = old.iter().position(|p| p.0 == id) else {
+            return;
+        };
         let (cw, ch) = size.get_value();
         match old.len() {
             1 => {
@@ -107,7 +109,9 @@ pub fn Board(
                 let d_old = (old[i].1 - o.1).hypot(old[i].2 - o.2).max(1.0);
                 let d_new = (x - o.1).hypot(y - o.2).max(1.0);
                 moved.update_value(|m| *m += 100.0);
-                let (left, top) = rect_of(ev.current_target()).map(|r| (r.0, r.1)).unwrap_or((0.0, 0.0));
+                let (left, top) = rect_of(ev.current_target())
+                    .map(|r| (r.0, r.1))
+                    .unwrap_or((0.0, 0.0));
                 let (mx, my) = ((x + o.1) / 2.0 - left, (y + o.2) / 2.0 - top);
                 view.update(|v| v.zoom_at(d_old / d_new, mx, my, cw, ch, &base));
             }
@@ -202,8 +206,11 @@ pub fn Board(
         })
         .collect_view();
 
-    let names: HashMap<String, (String, Option<u32>)> =
-        geometry.locations.iter().map(|l| (l.id.clone(), (l.name.clone(), l.ipc))).collect();
+    let names: HashMap<String, (String, Option<u32>)> = geometry
+        .locations
+        .iter()
+        .map(|l| (l.id.clone(), (l.name.clone(), l.ipc)))
+        .collect();
 
     view! {
         <div

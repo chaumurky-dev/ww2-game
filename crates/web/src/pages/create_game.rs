@@ -49,7 +49,11 @@ pub fn CreateGameForm(open: RwSignal<bool>) -> impl IntoView {
     let name = RwSignal::new(String::from("My new campaign"));
     let seats: Vec<SeatCfg> = Power::ALL
         .iter()
-        .map(|p| SeatCfg { power: *p, kind: RwSignal::new(if *p == Power::Ussr { "me" } else { "open" }.into()), persona: RwSignal::new(0) })
+        .map(|p| SeatCfg {
+            power: *p,
+            kind: RwSignal::new(if *p == Power::Ussr { "me" } else { "open" }.into()),
+            persona: RwSignal::new(0),
+        })
         .collect();
     let timeout = RwSignal::new(172_800_u32);
     let weapons = RwSignal::new(true);

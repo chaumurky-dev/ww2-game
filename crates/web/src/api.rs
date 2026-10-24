@@ -49,17 +49,29 @@ pub async fn register(username: &str, email: &str, password: &str) -> Result<(),
 
 pub async fn verify_email(token: &str) -> Result<(), String> {
     // TODO(protocol): POST /api/auth/verify
-    if token.is_empty() { Err("Missing token".into()) } else { Ok(()) }
+    if token.is_empty() {
+        Err("Missing token".into())
+    } else {
+        Ok(())
+    }
 }
 
 pub async fn forgot_password(email: &str) -> Result<(), String> {
     // TODO(protocol): POST /api/auth/forgot
-    if email.contains('@') { Ok(()) } else { Err("Enter a valid email".into()) }
+    if email.contains('@') {
+        Ok(())
+    } else {
+        Err("Enter a valid email".into())
+    }
 }
 
 pub async fn reset_password(token: &str, password: &str) -> Result<(), String> {
     // TODO(protocol): POST /api/auth/reset
-    if token.is_empty() || password.len() < 8 { Err("Token and 8+ char password required".into()) } else { Ok(()) }
+    if token.is_empty() || password.len() < 8 {
+        Err("Token and 8+ char password required".into())
+    } else {
+        Ok(())
+    }
 }
 
 // ---- lobby ------------------------------------------------------------------------------
@@ -77,13 +89,21 @@ pub async fn create_game(g: &NewGame) -> Result<String, String> {
 
 pub async fn join_by_code(code: &str) -> Result<String, String> {
     // TODO(protocol): POST /api/games/join {code}
-    if code.trim().len() < 4 { Err("Invite codes are at least 4 characters".into()) } else { Ok("g3".into()) }
+    if code.trim().len() < 4 {
+        Err("Invite codes are at least 4 characters".into())
+    } else {
+        Ok("g3".into())
+    }
 }
 
 /// Join (`true`) or leave (`false`) the public matchmaking queue for `players` (2 or 5).
 pub async fn queue(players: u8, join: bool) -> Result<String, String> {
     // TODO(protocol): POST/DELETE /api/matchmaking
-    Ok(if join { format!("Queued for {players}-player: 3 waiting") } else { "Left queue".into() })
+    Ok(if join {
+        format!("Queued for {players}-player: 3 waiting")
+    } else {
+        "Left queue".into()
+    })
 }
 
 // ---- game -------------------------------------------------------------------------------
@@ -104,11 +124,23 @@ pub fn subscribe(game_id: &str, on_text: impl Fn(String) + 'static) {
     if USE_MOCK {
         return;
     }
-    let proto = if web_sys::window().and_then(|w| w.location().protocol().ok()).as_deref() == Some("https:") { "wss" } else { "ws" };
-    let host = web_sys::window().and_then(|w| w.location().host().ok()).unwrap_or_default();
+    let proto = if web_sys::window()
+        .and_then(|w| w.location().protocol().ok())
+        .as_deref()
+        == Some("https:")
+    {
+        "wss"
+    } else {
+        "ws"
+    };
+    let host = web_sys::window()
+        .and_then(|w| w.location().host().ok())
+        .unwrap_or_default();
     let url = format!("{proto}://{host}/ws/games/{game_id}");
     wasm_bindgen_futures::spawn_local(async move {
-        let Ok(ws) = WebSocket::open(&url) else { return };
+        let Ok(ws) = WebSocket::open(&url) else {
+            return;
+        };
         let (_tx, mut rx) = ws.split();
         while let Some(Ok(Message::Text(t))) = rx.next().await {
             on_text(t);
@@ -135,12 +167,19 @@ pub async fn groups() -> Result<Vec<Group>, String> {
 
 pub async fn group(slug: &str) -> Result<Group, String> {
     // TODO(protocol): GET /api/groups/{slug}
-    mock::groups().into_iter().find(|g| g.slug == slug).ok_or_else(|| "Group not found".into())
+    mock::groups()
+        .into_iter()
+        .find(|g| g.slug == slug)
+        .ok_or_else(|| "Group not found".into())
 }
 
 pub async fn create_group(name: &str) -> Result<String, String> {
     // TODO(protocol): POST /api/groups
-    if name.trim().is_empty() { Err("Name required".into()) } else { Ok(name.trim().to_lowercase().replace(' ', "-")) }
+    if name.trim().is_empty() {
+        Err("Name required".into())
+    } else {
+        Ok(name.trim().to_lowercase().replace(' ', "-"))
+    }
 }
 
 pub async fn save_settings(_user: &User, _email_notifications: bool) -> Result<(), String> {
@@ -150,5 +189,9 @@ pub async fn save_settings(_user: &User, _email_notifications: bool) -> Result<(
 
 pub async fn change_password(old: &str, new: &str) -> Result<(), String> {
     // TODO(protocol): POST /api/me/password
-    if old.is_empty() || new.len() < 8 { Err("New password must be 8+ characters".into()) } else { Ok(()) }
+    if old.is_empty() || new.len() < 8 {
+        Err("New password must be 8+ characters".into())
+    } else {
+        Ok(())
+    }
 }

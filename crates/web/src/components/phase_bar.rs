@@ -25,7 +25,11 @@ pub fn PhaseBar(
             view! { <span class=class>{p.label()}</span> }
         })
         .collect_view();
-    let mine = treasury.iter().find(|t| t.power == power).map(|t| t.ipc).unwrap_or(0);
+    let mine = treasury
+        .iter()
+        .find(|t| t.power == power)
+        .map(|t| t.ipc)
+        .unwrap_or(0);
     let all = treasury
         .into_iter()
         .map(|t| view! { <span class="pill" style=format!("border-color:{}", t.power.color())>{format!("{} {}", t.power.id().to_uppercase(), t.ipc)}</span> })

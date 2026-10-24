@@ -25,22 +25,33 @@ pub fn BattleBoard(
     #[prop(into)] on_resolved: Callback<String>,
 ) -> impl IntoView {
     // (unit, count, strength) per side
-    let att = [(UnitKind::Infantry, 4_u32, 1_u8), (UnitKind::Armor, 2, 3), (UnitKind::Fighter, 1, 3)];
+    let att = [
+        (UnitKind::Infantry, 4_u32, 1_u8),
+        (UnitKind::Armor, 2, 3),
+        (UnitKind::Fighter, 1, 3),
+    ];
     let def = [(UnitKind::Infantry, 3_u32, 2_u8), (UnitKind::AaGun, 1, 1)];
     let att_dice = RwSignal::new(Vec::<(u8, u8)>::new());
     let def_dice = RwSignal::new(Vec::<(u8, u8)>::new());
     let round = RwSignal::new(0_u32);
     let roll = move |_| {
         let roll_side = |units: &[(UnitKind, u32, u8)]| {
-            units.iter().flat_map(|(_, n, s)| (0..*n).map(move |_| (d6(), *s))).collect::<Vec<_>>()
+            units
+                .iter()
+                .flat_map(|(_, n, s)| (0..*n).map(move |_| (d6(), *s)))
+                .collect::<Vec<_>>()
         };
         att_dice.set(roll_side(&att));
         def_dice.set(roll_side(&def));
         round.update(|r| *r += 1);
     };
-    let hits = move |d: RwSignal<Vec<(u8, u8)>>| d.with(|v| v.iter().filter(|(r, s)| r <= s).count());
+    let hits =
+        move |d: RwSignal<Vec<(u8, u8)>>| d.with(|v| v.iter().filter(|(r, s)| r <= s).count());
     let side = |units: &[(UnitKind, u32, u8)], p: Power| {
-        units.iter().map(|(k, n, _)| view! { <UnitBadge kind=*k power=p count=*n /> }).collect_view()
+        units
+            .iter()
+            .map(|(k, n, _)| view! { <UnitBadge kind=*k power=p count=*n /> })
+            .collect_view()
     };
     let (place_a, place_b) = (place.clone(), place.clone());
     view! {

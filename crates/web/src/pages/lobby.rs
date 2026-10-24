@@ -34,7 +34,11 @@ pub fn Lobby() -> impl IntoView {
     let navigate = use_navigate();
     let games = LocalResource::new(|| async {
         api::my_games().await.map(|mut v| {
-            v.sort_by(|a, b| b.my_turn().cmp(&a.my_turn()).then(a.deadline_ms.total_cmp(&b.deadline_ms)));
+            v.sort_by(|a, b| {
+                b.my_turn()
+                    .cmp(&a.my_turn())
+                    .then(a.deadline_ms.total_cmp(&b.deadline_ms))
+            });
             v
         })
     });

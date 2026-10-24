@@ -45,16 +45,30 @@ fn GameView(detail: GameDetail, geometry: Geometry) -> impl IntoView {
     let round = sum.round;
     let game_id = sum.id.clone();
     let treasury = detail.treasury.clone();
-    let ipc = treasury.iter().find(|t| t.power == power).map(|t| t.ipc).unwrap_or(0);
-    let names = StoredValue::new(geometry.locations.iter().map(|l| (l.id.clone(), l.name.clone())).collect::<Vec<_>>());
+    let ipc = treasury
+        .iter()
+        .find(|t| t.power == power)
+        .map(|t| t.ipc)
+        .unwrap_or(0);
+    let names = StoredValue::new(
+        geometry
+            .locations
+            .iter()
+            .map(|l| (l.id.clone(), l.name.clone()))
+            .collect::<Vec<_>>(),
+    );
 
     let selected = Signal::derive(move || {
         let id = model.with(|m| m.selected.clone())?;
         let name = names.with_value(|n| n.iter().find(|x| x.0 == id).map(|x| x.1.clone()))?;
         let stacks: Vec<Stack> = model.with(|m| m.stacks.get(&id).cloned().unwrap_or_default());
-        Some((name, stacks.into_iter().filter(|s| s.power == my_power).collect()))
+        Some((
+            name,
+            stacks.into_iter().filter(|s| s.power == my_power).collect(),
+        ))
     });
-    let on_select = Callback::new(move |id: Option<String>| model.update(|m: &mut BoardModel| m.selected = id));
+    let on_select =
+        Callback::new(move |id: Option<String>| model.update(|m: &mut BoardModel| m.selected = id));
     let on_action = Callback::new(move |text: String| {
         let (gid, text2) = (game_id.clone(), text.clone());
         spawn_local(async move {
@@ -68,7 +82,11 @@ fn GameView(detail: GameDetail, geometry: Geometry) -> impl IntoView {
         phase.update(|p| *p = Phase::ALL[(p.index() + 1) % Phase::ALL.len()]);
     });
     let destinations = names.get_value();
-    let me = crate::state::Session::expect().user.get_untracked().map(|u| u.username).unwrap_or_else(|| "me".into());
+    let me = crate::state::Session::expect()
+        .user
+        .get_untracked()
+        .map(|u| u.username)
+        .unwrap_or_else(|| "me".into());
     api::subscribe(&sum.id, move |t| toasts.info(t));
 
     view! {
