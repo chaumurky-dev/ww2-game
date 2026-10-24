@@ -241,7 +241,7 @@ pub fn check_unit_ready(state: &GameState, u: &Unit, p: Power) -> Result<()> {
     if !cm && !u.kind.is_air() && u.moved_cm {
         return illegal("units that moved in combat movement may not move again");
     }
-    if u.kind == UnitType::Bomber && u.bombing {
+    if cm && u.kind == UnitType::Bomber && u.bombing {
         return illegal("bomber already raided");
     }
     Ok(())

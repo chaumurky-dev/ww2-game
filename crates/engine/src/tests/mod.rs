@@ -3,10 +3,15 @@
 use crate::dice::{d6, rng_from_seed};
 use crate::*;
 
+mod bombing_tests;
 mod combat_tests;
 mod economy_tests;
+mod flow_tests;
+mod fuzz_tests;
 mod misc_tests;
 mod movement_tests;
+mod naval_tests;
+mod transport_tests;
 
 pub fn loc(id: &str) -> LocationId {
     LocationId::from_id(id).unwrap_or_else(|| panic!("no location {id}"))
@@ -69,4 +74,15 @@ pub fn seed_for(want: &[u8]) -> u64 {
 
 pub fn count(st: &GameState, at: &str, kind: UnitType) -> usize {
     st.units_at(loc(at)).filter(|u| u.kind == kind).count()
+}
+
+/// `x` divisible by `n` (avoids version-dependent clippy lints on `%`).
+pub fn divisible(x: u64, n: u64) -> bool {
+    x.checked_rem(n) == Some(0)
+}
+
+/// End combat movement and check the Combat phase begins.
+pub fn go_combat(st: &mut GameState, p: Power) {
+    act(st, p, Action::EndPhase).unwrap();
+    assert_eq!(st.phase, Phase::Combat);
 }

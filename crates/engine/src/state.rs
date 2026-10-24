@@ -327,7 +327,7 @@ impl GameState {
     /// Has the owner of the AA gun / complex here (if any) enemy status vs `p`?
     pub fn enemy_aa_at(&self, p: Power, loc: LocationId) -> Option<&Unit> {
         self.units_at(loc)
-            .find(|u| u.kind == UnitType::AaGun && !u.owner.is_ally(p))
+            .find(|u| u.kind == UnitType::AaGun && u.loaded_on.is_none() && !u.owner.is_ally(p))
     }
     /// The industrial complex unit at a territory.
     pub fn complex_at(&self, loc: LocationId) -> Option<&Unit> {

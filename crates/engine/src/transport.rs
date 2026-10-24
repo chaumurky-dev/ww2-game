@@ -136,6 +136,14 @@ pub fn validate_unload(
     if ids.is_empty() {
         return illegal("nothing to unload");
     }
+    {
+        let mut seen = ids.to_vec();
+        seen.sort_unstable();
+        seen.dedup();
+        if seen.len() != ids.len() {
+            return illegal("duplicate unit");
+        }
+    }
     if map.is_sea(to) || !map.adjacent(t.location, to) {
         return illegal("destination must be an adjacent territory");
     }
