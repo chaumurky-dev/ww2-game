@@ -65,6 +65,7 @@ def parse_unit(u):
 
 def build(verbose=True):
     regions = json.load(open(os.path.join(HERE, "territory_regions.json")))
+    patches = regions.pop("_patches", [])
     countries = ne.load("ne_50m_admin_0_countries")
     admin1 = ne.load("ne_50m_admin_1_states_provinces")
     c0 = {}
@@ -153,6 +154,14 @@ def build(verbose=True):
             for other in terr:
                 if other != tid:
                     terr[other] = terr[other].difference(terr[tid])
+    for pt in patches:
+        poly = Polygon([(wrap_lon(x), y) for x, y in pt["poly"]])
+        src = terr[pt["from"]] if pt.get("from") else unary_union(list(terr.values()))
+        reg = poly.intersection(src).difference(terr[pt["to"]])
+        for o in terr:
+            if o != pt["to"]:
+                terr[o] = terr[o].difference(reg)
+        terr[pt["to"]] = clean(unary_union([terr[pt["to"]], reg]))
     for k in terr:
         terr[k] = clean(terr[k].intersection(WORLD))
     # drop tiny islands (keep tiny territories whole)

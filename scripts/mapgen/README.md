@@ -19,6 +19,7 @@ and a hand-placed Voronoi partition of the oceans.
 - `territory_regions.json`: per territory, Natural Earth units: `ISO3` (whole country), `ISO3:Admin1 name`,
   `ISO3@x0,y0,x1,y1` (country clipped to a lon/lat box), `ISO3@~x0,y0,x1,y1` (everything outside the box);
   optional `buffer` (degrees, to make tiny islands visible) and `discs` (synthetic islands: lon, lat, radius).
+  Top-level `_patches` hand-carve lon/lat boxes from existing land into a territory (`to`, optional `from`) to fix contacts a grouping cannot (Wakhan, Altai corner, NW Ontario, Aqaba frontage, a thin no-man's-land strip between Morocco and Rio del Oro).
   Unlisted land becomes neutral `decor` (Greenland, Iceland, ...), emitted as top-level `decor` path.
 - `sea_zone_seeds.json`: lon/lat seed points per sea zone (a zone is the union of its seeds' Voronoi cells
   clipped to water, computed in projected pixel space); `void` seeds mark Arctic water belonging to no zone;

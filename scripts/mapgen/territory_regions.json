@@ -214,7 +214,8 @@
  },
  "eire": {
   "units": [
-   "IRL"
+   "IRL",
+   "GBR@-8.3,54.0,-5.3,55.4"
   ]
  },
  "evenki_national_okrug": {
@@ -236,7 +237,8 @@
    "COG",
    "CAF",
    "TCD",
-   "NGA"
+   "NGA",
+   "NER"
   ]
  },
  "french_indo_china": {
@@ -245,7 +247,8 @@
    "LAO",
    "KHM",
    "VNM",
-   "MYS@98,0,106,8"
+   "MYS@98,0,106,8",
+   "MMR"
   ]
  },
  "french_west_africa": {
@@ -262,8 +265,7 @@
    "BFA",
    "GHA",
    "TGO",
-   "BEN",
-   "NER"
+   "BEN"
   ]
  },
  "germany": {
@@ -278,7 +280,7 @@
    [
     -5.35,
     36.1,
-    0.55
+    0.85
    ]
   ]
  },
@@ -295,8 +297,7 @@
    "BGD",
    "NPL",
    "BTN",
-   "LKA",
-   "MMR"
+   "LKA"
   ]
  },
  "italian_east_africa": {
@@ -459,7 +460,9 @@
  },
  "persia": {
   "units": [
-   "IRN"
+   "IRN",
+   "IRQ@45.5,28,49.5,34.5",
+   "KWT"
   ]
  },
  "peru": {
@@ -595,17 +598,16 @@
  "syria_iraq": {
   "units": [
    "SYR",
-   "IRQ",
+   "IRQ@~45.5,28,49.5,34.5",
    "JOR",
    "ISR",
    "PSX",
-   "LBN",
-   "KWT"
+   "LBN"
   ]
  },
  "turkey": {
   "units": [
-   "TUR"
+   "TUR@~26.0,40.0,29.3,42.3"
   ]
  },
  "ukraine_s_s_r": {
@@ -685,5 +687,119 @@
    "RUS:Chita",
    "RUS:Amur"
   ]
- }
+ },
+ "_patches": [
+  {
+   "to": "afghanistan",
+   "poly": [
+    [
+     73.0,
+     35.8
+    ],
+    [
+     76.5,
+     35.8
+    ],
+    [
+     76.5,
+     37.9
+    ],
+    [
+     73.0,
+     37.9
+    ]
+   ],
+   "note": "widen Wakhan corridor so the Afghanistan-China contact is visible"
+  },
+  {
+   "to": "novosibirsk",
+   "poly": [
+    [
+     85.5,
+     46.8
+    ],
+    [
+     91,
+     46.8
+    ],
+    [
+     91,
+     49.9
+    ],
+    [
+     85.5,
+     49.9
+    ]
+   ],
+   "note": "Altai corner so Novosibirsk touches Sinkiang"
+  },
+  {
+   "to": "western_canada",
+   "from": "eastern_canada",
+   "poly": [
+    [
+     -96,
+     47.5
+    ],
+    [
+     -89.4,
+     47.5
+    ],
+    [
+     -89.4,
+     53.5
+    ],
+    [
+     -96,
+     53.5
+    ]
+   ],
+   "note": "NW Ontario to western Canada so eastern Canada does not touch western U.S.A."
+  },
+  {
+   "to": "__decor__",
+   "poly": [
+    [
+     -18,
+     27.67
+    ],
+    [
+     -8,
+     27.67
+    ],
+    [
+     -8,
+     28.0
+    ],
+    [
+     -18,
+     28.0
+    ]
+   ],
+   "note": "thin no-man's-land strip separating Morocco (algeria) from Rio del Oro"
+  },
+  {
+   "to": "syria_iraq",
+   "from": "saudi_arabia",
+   "poly": [
+    [
+     34.5,
+     27.0
+    ],
+    [
+     38,
+     27.0
+    ],
+    [
+     38,
+     29.4
+    ],
+    [
+     34.5,
+     29.4
+    ]
+   ],
+   "note": "Red Sea/Aqaba frontage for Syria Iraq now that Iraq's Gulf coast belongs to Persia"
+  }
+ ]
 }

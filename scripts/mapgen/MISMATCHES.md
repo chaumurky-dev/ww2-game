@@ -14,9 +14,9 @@ Remaining EXTRA contacts are mostly unavoidable coastlines (Java Sea, Malacca St
 - EXTRA: east_indies -- sz_french_indo_china (10.5 px)
 - EXTRA: east_indies -- sz_north_australia (9.1 px)
 - EXTRA: french_indo_china -- sz_east_indies (28.0 px)
-- EXTRA: french_indo_china -- sz_indian_ocean (25.4 px)
+- EXTRA: india -- sz_french_indo_china (14.5 px)
 - EXTRA: kwangtung -- sz_french_indo_china (20.7 px)
-- EXTRA: kwangtung -- sz_japan (25.4 px)
+- EXTRA: kwangtung -- sz_japan (23.1 px)
 - EXTRA: manchuria -- sz_kwangtung (11.8 px)
 - EXTRA: manchuria -- sz_soviet_far_east (8.9 px)
 - EXTRA: new_guinea -- sz_solomon_islands (10.9 px)
@@ -24,24 +24,8 @@ Remaining EXTRA contacts are mostly unavoidable coastlines (Java Sea, Malacca St
 - EXTRA: sz_central_mediterranean -- western_europe (24.7 px)
 - EXTRA: sz_soviet_far_east -- yakut_s_s_r (13.1 px)
 
-## sea-sea: 1 missing, 2 extra
+## sea-sea: 0 missing, 0 extra
 
-- MISSING: sz_japan -- sz_philippines
-- EXTRA: sz_mexico -- sz_peru (20.8 px)
-- EXTRA: sz_mozambique -- sz_south_east_madagascar (17.4 px)
 
-## land-land (informational only; not iterated on): 6 missing, 7 extra
+## land-land (informational only; not iterated on): 0 missing, 0 extra
 
-- MISSING: afghanistan -- sinkiang
-- MISSING: algeria -- french_equatorial_africa
-- MISSING: french_indo_china -- sinkiang
-- MISSING: gibraltar -- spain
-- MISSING: novosibirsk -- sinkiang
-- MISSING: persia -- saudi_arabia
-- EXTRA: algeria -- rio_del_oro (29.3 px)
-- EXTRA: china -- india (72.0 px)
-- EXTRA: eastern_canada -- western_usa (36.0 px)
-- EXTRA: eastern_europe -- turkey (11.6 px)
-- EXTRA: eire -- united_kingdom (19.7 px)
-- EXTRA: french_west_africa -- libya (19.9 px)
-- EXTRA: southern_europe -- turkey (9.4 px)
