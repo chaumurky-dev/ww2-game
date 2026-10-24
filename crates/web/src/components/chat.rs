@@ -1,5 +1,4 @@
 use crate::api;
-use crate::model::LogEntry;
 use crate::realtime::Realtime;
 use crate::state::Toasts;
 use leptos::prelude::*;
@@ -142,25 +141,6 @@ pub fn ChatDrawer(game_id: GameId, summary: Signal<GameSummary>) -> impl IntoVie
                     on:keydown=move |ev| if ev.key() == "Enter" { send2() }
                 />
                 <button class="small" on:click=move |_| send()>"Send"</button>
-            </div>
-        </div>
-    }
-}
-
-#[component]
-pub fn ActionLog(entries: RwSignal<Vec<LogEntry>>) -> impl IntoView {
-    view! {
-        <div>
-            <h3>"Log"</h3>
-            <div class="log">
-                {move || {
-                    entries
-                        .get()
-                        .into_iter()
-                        .rev()
-                        .map(|e| view! { <div><span class="muted">{format!("R{} ", e.round)}</span>{e.text}</div> })
-                        .collect_view()
-                }}
             </div>
         </div>
     }

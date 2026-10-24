@@ -22,5 +22,6 @@ web-sys = { version = "0.3", features = [
 ] }
 js-sys = "0.3"
 wartide-protocol = { path = "../protocol" }
+wartide-engine = { path = "../engine" }
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 uuid = { version = "1", default-features = false, features = ["serde"] }

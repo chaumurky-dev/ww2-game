@@ -1,8 +1,8 @@
 //! Wartide web client shell (Leptos 0.8, CSR).
 pub mod api;
 pub mod components;
+pub mod game;
 pub mod map;
-pub mod mock;
 pub mod model;
 pub mod pages;
 pub mod realtime;
@@ -40,7 +40,8 @@ pub fn App() -> impl IntoView {
                     <Route path=path!("/forgot") view=auth::Forgot />
                     <Route path=path!("/reset") view=auth::Reset />
                     <Route path=path!("/lobby") view=|| view! { <Protected><lobby::Lobby /></Protected> } />
-                    <Route path=path!("/game/:id") view=|| view! { <Protected><game::GamePage /></Protected> } />
+                    <Route path=path!("/game/:id") view=|| view! { <Protected><pages::game::GamePage /></Protected> } />
+                    <Route path=path!("/sandbox") view=game::sandbox::Sandbox />
                     <Route path=path!("/profile/:username") view=profile::ProfilePage />
                     <Route path=path!("/groups") view=|| view! { <Protected><groups::GroupList /></Protected> } />
                     <Route path=path!("/groups/:slug") view=|| view! { <Protected><groups::GroupDetail /></Protected> } />

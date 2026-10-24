@@ -111,55 +111,6 @@ impl UnitKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Phase {
-    DevelopWeapons,
-    Purchase,
-    CombatMove,
-    Combat,
-    NonCombatMove,
-    Mobilize,
-    CollectIncome,
-}
-
-impl Phase {
-    pub const ALL: [Phase; 7] = [
-        Phase::DevelopWeapons,
-        Phase::Purchase,
-        Phase::CombatMove,
-        Phase::Combat,
-        Phase::NonCombatMove,
-        Phase::Mobilize,
-        Phase::CollectIncome,
-    ];
-    pub fn label(self) -> &'static str {
-        match self {
-            Phase::DevelopWeapons => "Research",
-            Phase::Purchase => "Purchase",
-            Phase::CombatMove => "Combat Move",
-            Phase::Combat => "Combat",
-            Phase::NonCombatMove => "Non-Combat",
-            Phase::Mobilize => "Place",
-            Phase::CollectIncome => "Income",
-        }
-    }
-    pub fn index(self) -> usize {
-        Phase::ALL.iter().position(|p| *p == self).unwrap_or(0)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Treasury {
-    pub power: Power,
-    pub ipc: u32,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LogEntry {
-    pub round: u32,
-    pub text: String,
-}
-
 // ---- helpers over protocol game types ----------------------------------------------------
 
 use wartide_protocol::game::{GameMode, GameStatus, GameSummary, SeatAssignment};

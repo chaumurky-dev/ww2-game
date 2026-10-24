@@ -81,8 +81,10 @@ pub fn CreateGameForm(open: RwSignal<bool>) -> impl IntoView {
             settings: GameSettings {
                 turn_timeout_secs: timeout.get_untracked(),
                 weapons_development: weapons.get_untracked(),
-                economic_victory: econ.get_untracked(),
-                economic_victory_threshold: threshold.get_untracked().parse().unwrap_or(84),
+                axis_economic_victory: econ
+                    .get_untracked()
+                    .then(|| threshold.get_untracked().parse().unwrap_or(84)),
+                ..Default::default()
             },
             group_id: group.get_untracked().parse::<Uuid>().ok(),
         };

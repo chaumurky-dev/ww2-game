@@ -13,10 +13,10 @@ use web_sys::RequestCredentials;
 
 pub type ApiResult<T> = Result<T, ApiError>;
 
-/// Escape hatch for the in-game board only: `GameStateView` is still an opaque JSON value in the
-/// protocol, so the board, treasury, phase and action panels run on local mock data (original
-/// owners and starting units from `map.json`). Everything else talks to the real server.
-pub const USE_MOCK_GAME_STATE: bool = true;
+/// Offline escape hatch: when true, `/game/:id` runs the same game screen on a local sandbox
+/// state (`wartide_engine::apply` in the browser) instead of `GET /games/{id}/state`. The
+/// sandbox is always available at `/sandbox` regardless of this flag.
+pub const USE_MOCK_GAME_STATE: bool = false;
 
 fn net_err(e: impl std::fmt::Display) -> ApiError {
     ApiError {

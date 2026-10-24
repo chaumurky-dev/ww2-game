@@ -1,5 +1,5 @@
 //! SVG game board with pan/zoom. Decoupled from the engine through [`BoardModel`].
-use super::unit_icon::UnitBadge;
+use super::unit_icon::{UnitBadge, UnitIcon};
 use super::viewport::ViewBox;
 use crate::map::{sea_shade, LocKind, SharedMap};
 use crate::model::{Power, PowerExt, UnitKind};
@@ -13,13 +13,24 @@ pub struct Stack {
     pub power: Power,
     pub kind: UnitKind,
     pub count: u32,
+    /// Units carried by this stack's ships (transports / carriers), by kind.
+    pub cargo: Vec<(UnitKind, u32)>,
+    /// How many units of this stack are currently picked for a move.
+    pub picked: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Highlight {
+    /// Legal destination.
     Move,
+    /// Legal destination that starts a battle.
     Attack,
+    /// Battle site.
     Battle,
+    /// Legal placement.
+    Place,
+    /// Holds units that can still act.
+    Movable,
 }
 
 /// View-model for the board; to be filled from the engine's `GameState`.
@@ -30,6 +41,8 @@ pub struct BoardModel {
     pub stacks: HashMap<String, Vec<Stack>>,
     pub highlights: HashMap<String, Highlight>,
     pub selected: Option<String>,
+    /// Hover text (multi-line) per location.
+    pub tips: HashMap<String, String>,
 }
 
 fn loc_class(kind: LocKind, sea_alt: bool, id: &str, m: &BoardModel) -> String {
@@ -47,6 +60,8 @@ fn loc_class(kind: LocKind, sea_alt: bool, id: &str, m: &BoardModel) -> String {
         Some(Highlight::Move) => c.push_str(" hl-move"),
         Some(Highlight::Attack) => c.push_str(" hl-attack"),
         Some(Highlight::Battle) => c.push_str(" hl-battle"),
+        Some(Highlight::Place) => c.push_str(" hl-place"),
+        Some(Highlight::Movable) => c.push_str(" hl-movable"),
         None => {}
     }
     if m.selected.as_deref() == Some(id) {
@@ -210,17 +225,26 @@ pub fn Board(
                             .into_iter()
                             .take(6)
                             .enumerate()
-                            .map(|(i, s)| view! {
+                            .map(|(i, s)| {
+                                let is_picked = s.picked > 0;
+                                view! {
                                 <foreignObject
                                     x="-24"
                                     y=-n * 10.5 + i as f64 * 21.0
-                                    width="48"
+                                    width="150"
                                     height="20"
                                     style="pointer-events:none;overflow:visible"
                                 >
-                                    <UnitBadge kind=s.kind power=s.power count=s.count />
+                                    <span class="stack-row" class:picked=is_picked>
+                                        <UnitBadge kind=s.kind power=s.power count=s.count />
+                                        {(!s.cargo.is_empty()).then(|| view! {
+                                            <span class="cargo" title="Cargo">
+                                                {s.cargo.iter().map(|(k, n)| view! { <span class="cg"><UnitIcon kind=*k />{format!("{n}")}</span> }).collect_view()}
+                                            </span>
+                                        })}
+                                    </span>
                                 </foreignObject>
-                            })
+                            }})
                             .collect_view()
                     }}
                 </g>
@@ -255,19 +279,11 @@ pub fn Board(
                 <button class="secondary small" on:click=move |_| zoom_btn(0.8)>"+"</button>
                 <button class="secondary small" on:click=move |_| zoom_btn(1.25)>"\u{2212}"</button>
                 <button class="secondary small" on:click=move |_| view.set(base)>"Reset"</button>
-                <span class="pill">
+                <span class="pill tip">
                     {move || {
                         hover
                             .get()
-                            .and_then(|id| map_h.data.info.get(&id).cloned().map(|i| (id, i)))
-                            .map(|(id, i)| {
-                                let owner = model
-                                    .with(|m| m.owners.get(&id).map(|p| p.name()))
-                                    .map(|n| format!(" - {n}"))
-                                    .unwrap_or_default();
-                                let ipc = if i.ipc > 0 { format!(" ({} IPC)", i.ipc) } else { String::new() };
-                                format!("{}{owner}{ipc}", i.name)
-                            })
+                            .map(|id| model.with(|m| m.tips.get(&id).cloned()).unwrap_or_else(|| map_h.data.name(&id).to_string()))
                             .unwrap_or_else(|| "Hover a territory".into())
                     }}
                 </span>
