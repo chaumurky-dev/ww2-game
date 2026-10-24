@@ -4,7 +4,9 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 use wartide_protocol::auth::*;
 
-use crate::error::AppResult;
+use std::time::Duration;
+
+use crate::error::{AppError, AppResult};
 use crate::extract::{cookie_value, AuthUser, SESSION_COOKIE};
 use crate::services::auth as svc;
 use crate::state::AppState;
@@ -85,4 +87,27 @@ pub async fn reset_password(
 ) -> AppResult<StatusCode> {
     svc::reset_password(&s, req).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn change_password(
+    State(s): State<AppState>,
+    AuthUser(u): AuthUser,
+    headers: HeaderMap,
+    Json(req): Json<ChangePasswordRequest>,
+) -> AppResult<StatusCode> {
+    s.limiter
+        .check(&format!("pw:{}", u.id), 5, Duration::from_secs(15 * 60))?;
+    let token = cookie_value(&headers, SESSION_COOKIE).ok_or(AppError::Unauthorized)?;
+    svc::change_password(&s, &u, &token, req).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn delete_me(State(s): State<AppState>, AuthUser(u): AuthUser) -> AppResult<Response> {
+    s.limiter
+        .check(&format!("del:{}", u.id), 3, Duration::from_secs(3600))?;
+    svc::delete_account(&s, &u).await?;
+    let mut res = StatusCode::NO_CONTENT.into_response();
+    res.headers_mut()
+        .insert(header::SET_COOKIE, session_cookie(&s, "", 0));
+    Ok(res)
 }

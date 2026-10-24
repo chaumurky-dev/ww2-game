@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use lettre::message::Mailbox;
+use lettre::message::{Mailbox, MultiPart};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 
@@ -10,7 +10,9 @@ use crate::config::Config;
 pub struct Email {
     pub to: String,
     pub subject: String,
+    /// Plain-text body (also the text alternative of HTML mails).
     pub body: String,
+    pub html: Option<String>,
 }
 
 /// Sends mail over SMTP (Mailpit locally, SES in prod). With no `SMTP_HOST` it only logs.
@@ -57,11 +59,25 @@ impl Mailer {
 
     /// Queue an email; delivery happens in a background task and failures are only logged.
     pub fn send(&self, to: &str, subject: &str, body: &str) {
-        let email = Email {
+        self.deliver(Email {
             to: to.to_string(),
             subject: subject.to_string(),
             body: body.to_string(),
-        };
+            html: None,
+        });
+    }
+
+    /// Queue a rendered template as a multipart text + HTML message.
+    pub fn send_rendered(&self, to: &str, mail: crate::email_templates::Rendered) {
+        self.deliver(Email {
+            to: to.to_string(),
+            subject: mail.subject,
+            body: mail.text,
+            html: Some(mail.html),
+        });
+    }
+
+    fn deliver(&self, email: Email) {
         if let Some(o) = &self.outbox {
             o.lock().unwrap().push(email.clone());
         }
@@ -74,11 +90,17 @@ impl Mailer {
             let build = || -> anyhow::Result<Message> {
                 let from: Mailbox = from.parse()?;
                 let to: Mailbox = email.to.parse()?;
-                Ok(Message::builder()
+                let b = Message::builder()
                     .from(from)
                     .to(to)
-                    .subject(email.subject.clone())
-                    .body(email.body.clone())?)
+                    .subject(email.subject.clone());
+                Ok(match &email.html {
+                    Some(html) => b.multipart(MultiPart::alternative_plain_html(
+                        email.body.clone(),
+                        html.clone(),
+                    ))?,
+                    None => b.body(email.body.clone())?,
+                })
             };
             match build() {
                 Ok(msg) => {

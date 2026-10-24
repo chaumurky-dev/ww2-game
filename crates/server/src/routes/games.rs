@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use serde::Deserialize;
@@ -17,6 +19,11 @@ pub async fn create(
     if req.settings.turn_timeout_secs == 0 {
         req.settings.turn_timeout_secs = s.config.default_turn_timeout_secs;
     }
+    s.limiter.check(
+        &format!("game_create:{}", u.id),
+        10,
+        Duration::from_secs(3600),
+    )?;
     Ok(Json(svc::create_private(&s, &u, req).await?))
 }
 
@@ -105,4 +112,25 @@ pub async fn abandon(
     Path(id): Path<Uuid>,
 ) -> AppResult<Json<GameSummary>> {
     Ok(Json(svc::abandon(&s, &u, id).await?))
+}
+
+#[derive(Deserialize)]
+pub struct PublicQuery {
+    /// `active` (default) or `finished`
+    pub status: Option<String>,
+    pub page: Option<i64>,
+}
+
+const PUBLIC_PER_PAGE: i64 = 20;
+
+/// Public (matchmade) games to watch, newest first.
+pub async fn list_public(
+    State(s): State<AppState>,
+    AuthUser(u): AuthUser,
+    Query(q): Query<PublicQuery>,
+) -> AppResult<Json<wartide_protocol::Paginated<GameSummary>>> {
+    let finished = q.status.as_deref() == Some("finished");
+    Ok(Json(
+        svc::list_public(&s, u.id, finished, q.page.unwrap_or(1), PUBLIC_PER_PAGE).await?,
+    ))
 }

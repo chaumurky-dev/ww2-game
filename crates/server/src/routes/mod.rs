@@ -2,9 +2,14 @@
 use axum::routing::{delete, get, patch, post, put};
 use axum::Router;
 
+use axum::response::IntoResponse;
+
+use crate::error::AppError;
 use crate::state::AppState;
 
+mod admin;
 mod auth;
+mod bots;
 mod chat;
 mod games;
 mod groups;
@@ -23,6 +28,7 @@ pub fn api_router(state: &AppState) -> Router<AppState> {
     if state.config.rate_limit {
         use tower_governor::governor::GovernorConfigBuilder;
         use tower_governor::key_extractor::SmartIpKeyExtractor;
+        use tower_governor::GovernorError;
         use tower_governor::GovernorLayer;
         let conf = GovernorConfigBuilder::default()
             .per_second(2)
@@ -30,13 +36,36 @@ pub fn api_router(state: &AppState) -> Router<AppState> {
             .key_extractor(SmartIpKeyExtractor)
             .finish()
             .expect("valid governor config");
-        auth_limited = auth_limited.layer(GovernorLayer::new(conf));
+        // 429s use the standard ApiError JSON body (`code: "rate_limited"`).
+        auth_limited = auth_limited.layer(GovernorLayer::new(conf).error_handler(|e| {
+            match e {
+                GovernorError::TooManyRequests { wait_time, .. } => {
+                    AppError::TooManyRequests(wait_time).into_response()
+                }
+                GovernorError::UnableToExtractKey => {
+                    AppError::bad("could not determine client address").into_response()
+                }
+                GovernorError::Other { code, msg, .. } => (
+                    code,
+                    axum::Json(wartide_protocol::ApiError {
+                        code: "bad_request".into(),
+                        message: msg.unwrap_or_default(),
+                    }),
+                )
+                    .into_response(),
+            }
+        }));
     }
 
     Router::new()
         .merge(auth_limited)
         .route("/auth/logout", post(auth::logout))
-        .route("/me", get(auth::me))
+        .route("/me", get(auth::me).delete(auth::delete_me))
+        .route("/me/password", post(auth::change_password))
+        .route("/bots/personas", get(bots::personas))
+        .route("/admin/stats", get(admin::stats))
+        .route("/admin/games/{id}/abandon", post(admin::abandon_game))
+        .route("/games/public", get(games::list_public))
         .route("/users/{username}", get(users::profile))
         .route("/me/profile", patch(users::update_profile))
         .route(

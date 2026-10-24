@@ -7,7 +7,7 @@ use wartide_protocol::game::*;
 use wartide_protocol::ws::ServerMessage;
 
 use crate::error::{AppError, AppResult};
-use crate::services::{games, ratings};
+use crate::services::{games, notify, ratings};
 use crate::state::AppState;
 
 pub const BASE_WINDOW: f64 = 100.0;
@@ -138,6 +138,7 @@ pub async fn run_once(state: &AppState) -> AppResult<Vec<Uuid>> {
             }
             group.shuffle(&mut rand::rng());
             let id = games::create_public(state, mode, &group).await?;
+            let name = games::load_game(state, id).await?.name;
             for u in &group {
                 state.hub.publish_user(
                     *u,
@@ -145,6 +146,9 @@ pub async fn run_once(state: &AppState) -> AppResult<Vec<Uuid>> {
                         game_id: GameId(id),
                     },
                 );
+                if let Err(e) = notify::email_match_found(state, *u, &name, id, mode).await {
+                    tracing::warn!(error = ?e, "match-found email failed");
+                }
             }
             created.push(id);
         }

@@ -328,7 +328,7 @@ pub async fn leaderboard_for_ladder(
     let rows = sqlx::query_as::<_, Rw>(
         "SELECT u.id, u.username, u.display_name, u.avatar, r.rating, r.deviation, r.games, r.wins, r.losses,
                 RANK() OVER (ORDER BY r.rating DESC) AS rank
-         FROM ratings r JOIN users u ON u.id=r.user_id WHERE r.ladder=$1 ORDER BY r.rating DESC LIMIT $2",
+         FROM ratings r JOIN users u ON u.id=r.user_id WHERE r.ladder=$1 AND u.deleted_at IS NULL ORDER BY r.rating DESC LIMIT $2",
     )
     .bind(ladder)
     .bind(limit)

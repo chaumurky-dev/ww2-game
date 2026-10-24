@@ -21,6 +21,7 @@ pub struct CurrentUser {
     pub display_name: String,
     pub avatar: Option<String>,
     pub email_verified: bool,
+    pub is_admin: bool,
     pub created_at: DateTime<Utc>,
 }
 
@@ -32,6 +33,7 @@ impl CurrentUser {
             display_name: self.display_name.clone(),
             avatar: self.avatar.clone(),
             email_verified: self.email_verified,
+            is_admin: self.is_admin,
             created_at: self.created_at,
         }
     }
@@ -66,9 +68,9 @@ pub async fn user_from_token(
 ) -> Result<Option<CurrentUser>, AppError> {
     let hash = hash_token(&state.config.session_secret, token);
     let u = sqlx::query_as::<_, CurrentUser>(
-        "SELECT u.id, u.email, u.username, u.display_name, u.avatar, u.email_verified, u.created_at
+        "SELECT u.id, u.email, u.username, u.display_name, u.avatar, u.email_verified, u.is_admin, u.created_at
          FROM sessions s JOIN users u ON u.id = s.user_id
-         WHERE s.token_hash = $1 AND s.expires_at > now()",
+         WHERE s.token_hash = $1 AND s.expires_at > now() AND u.deleted_at IS NULL",
     )
     .bind(hash)
     .fetch_optional(&state.db)
@@ -100,5 +102,19 @@ impl FromRequestParts<AppState> for VerifiedUser {
             return Err(AppError::EmailUnverified);
         }
         Ok(VerifiedUser(u))
+    }
+}
+
+/// Authenticated administrator (`users.is_admin`, set via SQL only).
+pub struct AdminUser(pub CurrentUser);
+
+impl FromRequestParts<AppState> for AdminUser {
+    type Rejection = AppError;
+    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, AppError> {
+        let AuthUser(u) = AuthUser::from_request_parts(parts, state).await?;
+        if !u.is_admin {
+            return Err(AppError::forbidden("administrator access required"));
+        }
+        Ok(AdminUser(u))
     }
 }

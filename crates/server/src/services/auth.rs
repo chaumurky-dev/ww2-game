@@ -6,6 +6,7 @@ use chrono::{Duration, Utc};
 use uuid::Uuid;
 use wartide_protocol::auth::*;
 
+use crate::email_templates;
 use crate::error::{is_unique_violation, AppError, AppResult};
 use crate::extract::CurrentUser;
 use crate::state::AppState;
@@ -83,11 +84,9 @@ pub async fn send_verification(
         state.config.base_url.trim_end_matches('/'),
         token
     );
-    state.mailer.send(
-        email,
-        "Verify your Wartide email",
-        &format!("Welcome to Wartide, {username}!\n\nConfirm your email address:\n{link}\n\nThe link expires in 48 hours."),
-    );
+    state
+        .mailer
+        .send_rendered(email, email_templates::verification(username, &link));
     Ok(())
 }
 
@@ -116,7 +115,7 @@ pub async fn register(state: &AppState, req: RegisterRequest) -> AppResult<Sessi
     let id = Uuid::new_v4();
     let res = sqlx::query_as::<_, CurrentUser>(
         "INSERT INTO users (id, email, username, display_name, password_hash) VALUES ($1,$2,$3,$3,$4)
-         RETURNING id, email, username, display_name, avatar, email_verified, created_at",
+         RETURNING id, email, username, display_name, avatar, email_verified, is_admin, created_at",
     )
     .bind(id)
     .bind(&email)
@@ -170,7 +169,7 @@ pub async fn resend_verification(state: &AppState, user: &CurrentUser) -> AppRes
 /// Returns the raw session token on success.
 pub async fn login(state: &AppState, req: LoginRequest) -> AppResult<(String, SessionUser)> {
     let row: Option<(Uuid, String)> = sqlx::query_as(
-        "SELECT id, password_hash FROM users WHERE lower(email)=lower($1) OR lower(username)=lower($1)",
+        "SELECT id, password_hash FROM users WHERE deleted_at IS NULL AND (lower(email)=lower($1) OR lower(username)=lower($1))",
     )
     .bind(req.login.trim())
     .fetch_optional(&state.db)
@@ -192,7 +191,7 @@ pub async fn login(state: &AppState, req: LoginRequest) -> AppResult<(String, Se
         .execute(&state.db)
         .await?;
     let user = sqlx::query_as::<_, CurrentUser>(
-        "SELECT id, email, username, display_name, avatar, email_verified, created_at FROM users WHERE id=$1",
+        "SELECT id, email, username, display_name, avatar, email_verified, is_admin, created_at FROM users WHERE id=$1",
     )
     .bind(id)
     .fetch_one(&state.db)
@@ -210,11 +209,12 @@ pub async fn logout(state: &AppState, token: &str) -> AppResult<()> {
 
 /// Always succeeds from the caller's point of view, to avoid leaking which emails exist.
 pub async fn forgot_password(state: &AppState, email: &str) -> AppResult<()> {
-    let row: Option<(Uuid, String, String)> =
-        sqlx::query_as("SELECT id, email, username FROM users WHERE lower(email)=lower($1)")
-            .bind(email.trim())
-            .fetch_optional(&state.db)
-            .await?;
+    let row: Option<(Uuid, String, String)> = sqlx::query_as(
+        "SELECT id, email, username FROM users WHERE deleted_at IS NULL AND lower(email)=lower($1)",
+    )
+    .bind(email.trim())
+    .fetch_optional(&state.db)
+    .await?;
     if let Some((id, email, username)) = row {
         let token = issue_email_token(state, id, "reset", Duration::hours(2)).await?;
         let link = format!(
@@ -222,12 +222,81 @@ pub async fn forgot_password(state: &AppState, email: &str) -> AppResult<()> {
             state.config.base_url.trim_end_matches('/'),
             token
         );
-        state.mailer.send(
-            &email,
-            "Reset your Wartide password",
-            &format!("Hi {username},\n\nReset your password here:\n{link}\n\nThe link expires in 2 hours. If you did not ask for this, ignore this email."),
-        );
+        state
+            .mailer
+            .send_rendered(&email, email_templates::password_reset(&username, &link));
     }
+    Ok(())
+}
+
+/// Change the password of a logged-in user. All other sessions are revoked; `keep_token` (the
+/// caller's current session token) survives.
+pub async fn change_password(
+    state: &AppState,
+    user: &CurrentUser,
+    keep_token: &str,
+    req: ChangePasswordRequest,
+) -> AppResult<()> {
+    check_password(&req.new_password)?;
+    let (hash,): (String,) = sqlx::query_as("SELECT password_hash FROM users WHERE id=$1")
+        .bind(user.id)
+        .fetch_one(&state.db)
+        .await?;
+    let current = req.current_password.clone();
+    let ok = tokio::task::spawn_blocking(move || verify_password(&current, &hash))
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    if !ok {
+        return Err(AppError::BadRequest(
+            "invalid_credentials",
+            "current password is incorrect".into(),
+        ));
+    }
+    let new_hash = tokio::task::spawn_blocking({
+        let p = req.new_password.clone();
+        move || hash_password(&p)
+    })
+    .await
+    .map_err(|e| AppError::Internal(e.into()))??;
+    sqlx::query("UPDATE users SET password_hash=$2 WHERE id=$1")
+        .bind(user.id)
+        .bind(new_hash)
+        .execute(&state.db)
+        .await?;
+    sqlx::query("DELETE FROM sessions WHERE user_id=$1 AND token_hash <> $2")
+        .bind(user.id)
+        .bind(hash_token(&state.config.session_secret, keep_token))
+        .execute(&state.db)
+        .await?;
+    Ok(())
+}
+
+/// Soft-delete: scrub identifying data but keep the row so games, seats and chat stay intact.
+pub async fn delete_account(state: &AppState, user: &CurrentUser) -> AppResult<()> {
+    let mut tx = state.db.begin().await?;
+    sqlx::query(
+        "UPDATE users SET
+            email = 'deleted-' || id::text || '@deleted.invalid',
+            username = 'deleted-' || id::text,
+            display_name = 'Deleted user',
+            password_hash = '!',
+            avatar = NULL, bio = NULL, country = NULL, timezone = NULL,
+            email_verified = FALSE, email_turn_notifications = FALSE, email_match_found = FALSE,
+            is_admin = FALSE, deleted_at = now()
+         WHERE id=$1 AND deleted_at IS NULL",
+    )
+    .bind(user.id)
+    .execute(&mut *tx)
+    .await?;
+    for q in [
+        "DELETE FROM sessions WHERE user_id=$1",
+        "DELETE FROM email_tokens WHERE user_id=$1",
+        "DELETE FROM matchmaking_queue WHERE user_id=$1",
+        "DELETE FROM group_members WHERE user_id=$1 AND role <> 'owner'",
+    ] {
+        sqlx::query(q).bind(user.id).execute(&mut *tx).await?;
+    }
+    tx.commit().await?;
     Ok(())
 }
 

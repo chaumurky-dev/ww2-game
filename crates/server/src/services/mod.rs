@@ -1,8 +1,11 @@
+pub mod admin;
 pub mod auth;
+pub mod bots;
 pub mod chat;
 pub mod games;
 pub mod groups;
 pub mod matchmaking;
+pub mod notify;
 pub mod ratings;
 pub mod rules;
 pub mod timeouts;

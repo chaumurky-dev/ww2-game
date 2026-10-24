@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
@@ -30,5 +32,7 @@ pub async fn send(
     Path(id): Path<Uuid>,
     Json(req): Json<SendChatRequest>,
 ) -> AppResult<(StatusCode, Json<ChatMessage>)> {
+    s.limiter
+        .check(&format!("chat:{}", u.id), 20, Duration::from_secs(60))?;
     Ok((StatusCode::CREATED, Json(svc::send(&s, &u, id, req).await?)))
 }

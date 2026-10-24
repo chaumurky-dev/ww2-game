@@ -18,8 +18,8 @@ pub enum AppError {
     NotFound(String),
     #[error("{1}")]
     Conflict(&'static str, String),
-    #[error("too many requests")]
-    TooManyRequests,
+    #[error("too many requests; try again in {0}s")]
+    TooManyRequests(u64),
     #[error(transparent)]
     Internal(#[from] anyhow::Error),
 }
@@ -47,7 +47,7 @@ impl AppError {
             AppError::EmailUnverified | AppError::Forbidden(_) => StatusCode::FORBIDDEN,
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
             AppError::Conflict(..) => StatusCode::CONFLICT,
-            AppError::TooManyRequests => StatusCode::TOO_MANY_REQUESTS,
+            AppError::TooManyRequests(_) => StatusCode::TOO_MANY_REQUESTS,
             AppError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -59,7 +59,7 @@ impl AppError {
             AppError::EmailUnverified => "email_unverified",
             AppError::Forbidden(_) => "forbidden",
             AppError::NotFound(_) => "not_found",
-            AppError::TooManyRequests => "rate_limited",
+            AppError::TooManyRequests(_) => "rate_limited",
             AppError::Internal(_) => "internal",
         }
     }
@@ -88,7 +88,16 @@ impl IntoResponse for AppError {
         if let AppError::Internal(e) = &self {
             tracing::error!(error = ?e, "internal error");
         }
-        (self.status(), Json(self.to_api())).into_response()
+        let retry = match &self {
+            AppError::TooManyRequests(secs) => Some(*secs),
+            _ => None,
+        };
+        let mut res = (self.status(), Json(self.to_api())).into_response();
+        if let Some(secs) = retry {
+            res.headers_mut()
+                .insert(axum::http::header::RETRY_AFTER, secs.into());
+        }
+        res
     }
 }
 

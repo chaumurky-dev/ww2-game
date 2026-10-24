@@ -83,20 +83,16 @@ async fn run(state: AppState, user_id: Uuid, socket: WebSocket) {
         };
         let reply = match serde_json::from_str::<ClientMessage>(&text) {
             Ok(ClientMessage::Subscribe { game_id }) => {
-                match games::seat_of(&state, game_id.0, user_id).await {
-                    Ok(Some(seat)) => {
+                match games::reader_access(&state, game_id.0, user_id).await {
+                    Ok((_, access)) => {
                         // subscribe before acknowledging so no update is missed
                         let rx = state.hub.subscribe_game(game_id.0);
-                        let h = forward(rx, out_tx.clone(), Some(Viewer::from_seat(&seat)));
+                        let h = forward(rx, out_tx.clone(), Some(Viewer::from_access(&access)));
                         if let Some(old) = subs.insert(game_id.0, h) {
                             old.abort();
                         }
                         ServerMessage::Subscribed { game_id }
                     }
-                    Ok(None) => ServerMessage::Error {
-                        code: "forbidden".into(),
-                        message: "not a player in this game".into(),
-                    },
                     Err(e) => ServerMessage::Error {
                         code: e.code().into(),
                         message: e.to_string(),

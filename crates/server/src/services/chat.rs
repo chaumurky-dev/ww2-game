@@ -21,6 +21,8 @@ fn team_str(t: Team) -> String {
 pub struct Viewer {
     pub team: Team,
     pub powers: Vec<Power>,
+    /// Spectators only see the `all` channel.
+    pub spectator: bool,
 }
 
 impl Viewer {
@@ -28,12 +30,31 @@ impl Viewer {
         Viewer {
             team: s.team(),
             powers: s.powers(),
+            spectator: false,
+        }
+    }
+
+    pub fn spectator() -> Self {
+        Viewer {
+            team: Team::Allies,
+            powers: Vec::new(),
+            spectator: true,
+        }
+    }
+
+    pub fn from_access(a: &games::Access) -> Self {
+        match a {
+            games::Access::Player(s) => Viewer::from_seat(s),
+            games::Access::Spectator => Viewer::spectator(),
         }
     }
 }
 
 /// Pure visibility rule used for REST reads and WS fan-out.
 pub fn visible_to(viewer: &Viewer, channel: ChatChannel, scope: Option<&str>) -> bool {
+    if viewer.spectator {
+        return channel == ChatChannel::All;
+    }
     match channel {
         ChatChannel::All | ChatChannel::Lobby => true,
         ChatChannel::Team => scope == Some(team_str(viewer.team).as_str()),
@@ -112,8 +133,20 @@ pub async fn history(
     game: Uuid,
     channel: Option<ChatChannel>,
 ) -> AppResult<Vec<ChatMessage>> {
-    let (_g, _seats, mine) = games::require_participant(state, game, user).await?;
-    let v = Viewer::from_seat(&mine);
+    let (_g, access) = games::reader_access(state, game, user).await?;
+    let v = Viewer::from_access(&access);
+    let channel = if v.spectator {
+        match channel {
+            None | Some(ChatChannel::All) => Some(ChatChannel::All),
+            Some(_) => {
+                return Err(AppError::forbidden(
+                    "spectators can only read the public chat channel",
+                ))
+            }
+        }
+    } else {
+        channel
+    };
     let powers: Vec<String> = v.powers.iter().map(|p| p.as_str().to_string()).collect();
     let rows = sqlx::query_as::<_, MsgRow>(
         "SELECT * FROM (
@@ -285,6 +318,15 @@ mod tests {
         assert!(visible_to(&axis_seat, ChatChannel::Power, Some("japan")));
         assert!(!visible_to(&uk_seat, ChatChannel::Power, Some("japan")));
         assert!(!visible_to(&uk_seat, ChatChannel::Power, None));
+    }
+
+    #[test]
+    fn spectators_only_see_all() {
+        let v = Viewer::spectator();
+        assert!(visible_to(&v, ChatChannel::All, None));
+        assert!(!visible_to(&v, ChatChannel::Team, Some("allies")));
+        assert!(!visible_to(&v, ChatChannel::Power, Some("uk")));
+        assert!(!visible_to(&v, ChatChannel::Lobby, None));
     }
 
     #[test]

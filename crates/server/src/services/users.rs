@@ -1,9 +1,13 @@
+use std::collections::HashMap;
+
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 use uuid::Uuid;
+use wartide_protocol::game::{GameKind, GameSummary};
 use wartide_protocol::user::*;
 
 use crate::error::{AppError, AppResult};
+use crate::services::games;
 use crate::state::AppState;
 
 #[derive(FromRow)]
@@ -32,7 +36,7 @@ struct StatsRow {
 pub async fn public_profile(state: &AppState, username: &str) -> AppResult<PublicProfile> {
     let p = sqlx::query_as::<_, ProfileRow>(
         "SELECT id, username, display_name, avatar, bio, country, timezone, created_at
-         FROM users WHERE lower(username)=lower($1)",
+         FROM users WHERE deleted_at IS NULL AND lower(username)=lower($1)",
     )
     .bind(username)
     .fetch_optional(&state.db)
@@ -49,6 +53,8 @@ pub async fn public_profile(state: &AppState, username: &str) -> AppResult<Publi
     .bind(p.id)
     .fetch_all(&state.db)
     .await?;
+    let streaks = win_streaks(state, p.id).await?;
+    let recent_games = recent_games(state, p.id).await?;
     Ok(PublicProfile {
         id: p.id,
         username: p.username,
@@ -60,17 +66,81 @@ pub async fn public_profile(state: &AppState, username: &str) -> AppResult<Publi
         created_at: p.created_at,
         stats: stats
             .into_iter()
-            .map(|s| LadderStats {
-                ladder: s.ladder,
-                rating: s.rating,
-                rating_deviation: s.deviation,
-                games_played: s.games,
-                wins: s.wins,
-                losses: s.losses,
-                rank_position: Some(s.rank_position),
+            .map(|s| {
+                let (cur, best) = streaks.get(&s.ladder).copied().unwrap_or((0, 0));
+                LadderStats {
+                    ladder: s.ladder,
+                    rating: s.rating,
+                    rating_deviation: s.deviation,
+                    games_played: s.games,
+                    wins: s.wins,
+                    losses: s.losses,
+                    rank_position: Some(s.rank_position),
+                    current_win_streak: cur,
+                    best_win_streak: best,
+                }
             })
             .collect(),
+        recent_games,
     })
+}
+
+/// Returns (current, best) consecutive-win counts per public ladder, from finished rated games.
+/// Games without a winner (abandoned) are ignored.
+pub fn streaks(results: &[bool]) -> (i32, i32) {
+    let (mut cur, mut best) = (0, 0);
+    for won in results {
+        if *won {
+            cur += 1;
+            best = best.max(cur);
+        } else {
+            cur = 0;
+        }
+    }
+    (cur, best)
+}
+
+async fn win_streaks(state: &AppState, user: Uuid) -> AppResult<HashMap<String, (i32, i32)>> {
+    // oldest -> newest; the team is derived from the first power of the user's seat
+    let rows: Vec<(String, bool)> = sqlx::query_as(
+        "SELECT g.ladder,
+                (g.winner_team = CASE WHEN s.powers[1] IN ('germany','japan') THEN 'axis' ELSE 'allies' END) AS won
+         FROM games g JOIN game_seats s ON s.game_id = g.id AND s.user_id = $1 AND NOT s.is_bot
+         WHERE g.status='finished' AND g.winner_team IS NOT NULL AND g.ladder LIKE 'public:%'
+         ORDER BY g.updated_at ASC, g.id",
+    )
+    .bind(user)
+    .fetch_all(&state.db)
+    .await?;
+    let mut by: HashMap<String, Vec<bool>> = HashMap::new();
+    for (ladder, won) in rows {
+        by.entry(ladder).or_default().push(won);
+    }
+    Ok(by.into_iter().map(|(l, r)| (l, streaks(&r))).collect())
+}
+
+/// Last 10 finished or active public/group games of a user. Group games are redacted so the
+/// public profile only reveals name, mode, status and result.
+async fn recent_games(state: &AppState, user: Uuid) -> AppResult<Vec<GameSummary>> {
+    let ids: Vec<(Uuid,)> = sqlx::query_as(
+        "SELECT g.id FROM games g
+         WHERE g.status IN ('in_progress','finished')
+           AND (g.kind='public' OR g.group_id IS NOT NULL)
+           AND EXISTS (SELECT 1 FROM game_seats s WHERE s.game_id=g.id AND s.user_id=$1)
+         ORDER BY g.updated_at DESC LIMIT 10",
+    )
+    .bind(user)
+    .fetch_all(&state.db)
+    .await?;
+    let mut out = Vec::new();
+    for (id,) in ids {
+        let mut g = games::summary(state, id, None).await?;
+        if g.kind != GameKind::Public {
+            games::redact_for_profile(&mut g);
+        }
+        out.push(g);
+    }
+    Ok(out)
 }
 
 pub async fn update_profile(
@@ -113,12 +183,14 @@ pub async fn update_profile(
 }
 
 pub async fn get_settings(state: &AppState, user_id: Uuid) -> AppResult<UserSettings> {
-    let (n,): (bool,) = sqlx::query_as("SELECT email_turn_notifications FROM users WHERE id=$1")
-        .bind(user_id)
-        .fetch_one(&state.db)
-        .await?;
+    let (n, m): (bool, bool) =
+        sqlx::query_as("SELECT email_turn_notifications, email_match_found FROM users WHERE id=$1")
+            .bind(user_id)
+            .fetch_one(&state.db)
+            .await?;
     Ok(UserSettings {
         email_turn_notifications: n,
+        email_match_found: m,
     })
 }
 
@@ -134,5 +206,25 @@ pub async fn update_settings(
             .execute(&state.db)
             .await?;
     }
+    if let Some(m) = req.email_match_found {
+        sqlx::query("UPDATE users SET email_match_found=$2 WHERE id=$1")
+            .bind(user_id)
+            .bind(m)
+            .execute(&state.db)
+            .await?;
+    }
     get_settings(state, user_id).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::streaks;
+
+    #[test]
+    fn win_streaks() {
+        assert_eq!(streaks(&[]), (0, 0));
+        assert_eq!(streaks(&[true, true, false, true]), (1, 2));
+        assert_eq!(streaks(&[false, true, true, true]), (3, 3));
+        assert_eq!(streaks(&[true, false]), (0, 1));
+    }
 }

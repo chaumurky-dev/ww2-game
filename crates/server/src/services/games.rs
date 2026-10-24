@@ -10,17 +10,9 @@ use wartide_protocol::ws::ServerMessage;
 
 use crate::error::{is_unique_violation, AppError, AppResult};
 use crate::extract::CurrentUser;
-use crate::services::{groups, ratings, rules};
+use crate::services::{bots, groups, notify, ratings, rules};
 use crate::state::AppState;
 use crate::util::{new_invite_code, normalize_invite_code};
-
-pub const BOT_PERSONAS: [&str; 5] = [
-    "Colonel Brass",
-    "General Frost",
-    "Admiral Kestrel",
-    "Marshal Volkov",
-    "Commodore Tide",
-];
 
 // ---------- pure helpers ----------
 
@@ -74,6 +66,7 @@ pub fn game_over_winner(events: &Value) -> Option<Team> {
 #[derive(FromRow, Clone, Debug)]
 pub struct GameRow {
     pub id: Uuid,
+    pub name: String,
     pub kind: String,
     pub mode: String,
     pub status: String,
@@ -90,7 +83,7 @@ pub struct GameRow {
     pub updated_at: DateTime<Utc>,
 }
 
-const GAME_COLS: &str = "id, kind, mode, status, settings, group_id, host_id, ladder, seed, round, current_power, turn_deadline, winner_team, created_at, updated_at";
+const GAME_COLS: &str = "id, name, kind, mode, status, settings, group_id, host_id, ladder, seed, round, current_power, turn_deadline, winner_team, created_at, updated_at";
 
 #[derive(FromRow, Clone, Debug)]
 pub struct SeatRow {
@@ -129,6 +122,11 @@ impl SeatRow {
             }),
             is_bot: self.is_bot,
             bot_persona: self.bot_persona.clone(),
+            bot_name: self.bot_persona.as_deref().map(|p| {
+                bots::persona_name(p)
+                    .map(str::to_string)
+                    .unwrap_or_else(|| p.to_string())
+            }),
         }
     }
 }
@@ -196,6 +194,7 @@ pub async fn summary(state: &AppState, id: Uuid, viewer: Option<Uuid>) -> AppRes
     };
     Ok(GameSummary {
         id: GameId(g.id),
+        name: g.name.clone(),
         kind: parse_enum(&g.kind)?,
         mode: parse_enum(&g.mode)?,
         status: parse_enum(&g.status)?,
@@ -209,21 +208,135 @@ pub async fn summary(state: &AppState, id: Uuid, viewer: Option<Uuid>) -> AppRes
         invite_code,
         created_at: g.created_at,
         updated_at: g.updated_at,
+        winner: g.winner_team.as_deref().and_then(|t| parse_enum(t).ok()),
         my_seat,
     })
 }
 
-/// Summary for a viewer; non-public games are only visible to participants.
+/// Strip everything but name/mode/status/result from a summary shown on a public profile.
+pub fn redact_for_profile(g: &mut GameSummary) {
+    for seat in &mut g.seats {
+        seat.user = None;
+    }
+    g.host_id = None;
+    g.group_id = None;
+    g.invite_code = None;
+    g.my_seat = None;
+}
+
+/// Public games and finished games may be read by any logged-in user (spectating).
+pub fn is_spectatable(g: &GameRow) -> bool {
+    g.kind == "public" || g.status == "finished"
+}
+
+/// What a user may read of a game.
+#[derive(Debug, Clone)]
+pub enum Access {
+    Player(SeatRow),
+    Spectator,
+}
+
+/// Load the game and decide whether `user` may read it: seated players always, anyone else only
+/// when the game is spectatable.
+pub async fn reader_access(
+    state: &AppState,
+    game: Uuid,
+    user: Uuid,
+) -> AppResult<(GameRow, Access)> {
+    let g = load_game(state, game).await?;
+    let seats = load_seats(state, game).await?;
+    match seats.into_iter().find(|s| s.user_id == Some(user)) {
+        Some(mine) => Ok((g, Access::Player(mine))),
+        None if is_spectatable(&g) => Ok((g, Access::Spectator)),
+        None => Err(AppError::forbidden("you are not a player in this game")),
+    }
+}
+
+/// Paginated list of public (matchmade) games for the "watch" page, newest first.
+pub async fn list_public(
+    state: &AppState,
+    viewer: Uuid,
+    finished: bool,
+    page: i64,
+    per_page: i64,
+) -> AppResult<wartide_protocol::Paginated<GameSummary>> {
+    let page = page.max(1);
+    let status = if finished { "finished" } else { "in_progress" };
+    let (total,): (i64,) =
+        sqlx::query_as("SELECT count(*) FROM games WHERE kind='public' AND status=$1")
+            .bind(status)
+            .fetch_one(&state.db)
+            .await?;
+    let ids: Vec<(Uuid,)> = sqlx::query_as(
+        "SELECT id FROM games WHERE kind='public' AND status=$1
+         ORDER BY created_at DESC, id LIMIT $2 OFFSET $3",
+    )
+    .bind(status)
+    .bind(per_page)
+    .bind((page - 1) * per_page)
+    .fetch_all(&state.db)
+    .await?;
+    let mut items = Vec::with_capacity(ids.len());
+    for (id,) in ids {
+        items.push(summary(state, id, Some(viewer)).await?);
+    }
+    Ok(wartide_protocol::Paginated {
+        items,
+        total,
+        page,
+        per_page,
+    })
+}
+
+/// Default title for a game that was created without one.
+pub fn default_name(
+    kind: GameKind,
+    mode: GameMode,
+    id: Uuid,
+    public_number: Option<i64>,
+) -> String {
+    match kind {
+        GameKind::Private => format!("Private game #{}", short_id(id)),
+        GameKind::Public => {
+            let m = if mode == GameMode::TwoPlayer {
+                "2p"
+            } else {
+                "5p"
+            };
+            match public_number {
+                Some(n) => format!("Ranked {m} #{n}"),
+                None => format!("Ranked {m} #{}", short_id(id)),
+            }
+        }
+    }
+}
+
+fn short_id(id: Uuid) -> String {
+    id.simple().to_string()[..4].to_uppercase()
+}
+
+fn clean_game_name(name: &str) -> AppResult<Option<String>> {
+    let n = name.split_whitespace().collect::<Vec<_>>().join(" ");
+    if n.is_empty() {
+        return Ok(None);
+    }
+    if n.chars().count() > 60 {
+        return Err(AppError::bad("game name too long (max 60 characters)"));
+    }
+    if n.chars().any(char::is_control) {
+        return Err(AppError::bad("game name contains invalid characters"));
+    }
+    Ok(Some(n))
+}
+
+/// Summary for a viewer; private unfinished games are only visible to participants.
 pub async fn summary_for_viewer(
     state: &AppState,
     id: Uuid,
     viewer: Uuid,
 ) -> AppResult<GameSummary> {
-    let s = summary(state, id, Some(viewer)).await?;
-    if s.my_seat.is_none() && s.kind != GameKind::Public {
-        return Err(AppError::forbidden("you are not a player in this game"));
-    }
-    Ok(s)
+    reader_access(state, id, viewer).await?;
+    summary(state, id, Some(viewer)).await
 }
 
 pub async fn list_mine(state: &AppState, user: Uuid, active: bool) -> AppResult<Vec<GameSummary>> {
@@ -254,6 +367,7 @@ pub async fn list_mine(state: &AppState, user: Uuid, active: bool) -> AppResult<
 async fn insert_game(
     conn: &mut PgConnection,
     id: Uuid,
+    name: &str,
     kind: GameKind,
     mode: GameMode,
     settings: &GameSettings,
@@ -263,8 +377,8 @@ async fn insert_game(
 ) -> AppResult<()> {
     let seed: i64 = rand::rng().random();
     sqlx::query(
-        "INSERT INTO games (id, kind, mode, status, settings, group_id, host_id, ladder, seed)
-         VALUES ($1,$2,$3,'lobby',$4,$5,$6,$7,$8)",
+        "INSERT INTO games (id, name, kind, mode, status, settings, group_id, host_id, ladder, seed)
+         VALUES ($1,$9,$2,$3,'lobby',$4,$5,$6,$7,$8)",
     )
     .bind(id)
     .bind(enum_str(&kind))
@@ -274,6 +388,7 @@ async fn insert_game(
     .bind(host)
     .bind(ladder)
     .bind(seed)
+    .bind(name)
     .execute(&mut *conn)
     .await?;
     Ok(())
@@ -305,6 +420,26 @@ pub async fn create_private(
     if bots.iter().any(|b| *b as usize >= n) {
         return Err(AppError::bad("bot seat index out of range"));
     }
+    let name = req
+        .name
+        .as_deref()
+        .map(clean_game_name)
+        .transpose()?
+        .flatten();
+    if req.bot_personas.len() > n {
+        return Err(AppError::bad("bot_personas has more entries than seats"));
+    }
+    let mut personas: Vec<String> = (0..n)
+        .map(|i| bots::default_for_seat(i).to_string())
+        .collect();
+    for (i, p) in req.bot_personas.iter().enumerate() {
+        if let Some(p) = p {
+            if !bots.contains(&(i as u8)) {
+                return Err(AppError::bad("bot_personas given for a non-bot seat"));
+            }
+            personas[i] = bots::validate_id(p)?.to_string();
+        }
+    }
     let humans = n - bots.len();
     if humans == 0 {
         return Err(AppError::bad("a game needs at least one human seat"));
@@ -331,9 +466,11 @@ pub async fn create_private(
     let id = Uuid::new_v4();
     let host_seat = (0..n as u8).find(|i| !bots.contains(i)).unwrap_or(0);
     let mut tx = state.db.begin().await?;
+    let name = name.unwrap_or_else(|| default_name(GameKind::Private, req.mode, id, None));
     insert_game(
         &mut tx,
         id,
+        &name,
         GameKind::Private,
         req.mode,
         &req.settings,
@@ -351,7 +488,7 @@ pub async fn create_private(
             .bind(powers.iter().map(|p| p.as_str().to_string()).collect::<Vec<_>>())
             .bind(if i == host_seat { Some(host.id) } else { None })
             .bind(is_bot)
-            .bind(is_bot.then(|| BOT_PERSONAS[i as usize % BOT_PERSONAS.len()].to_string()))
+            .bind(is_bot.then(|| personas[i as usize].clone()))
             .execute(&mut *tx)
             .await?;
     }
@@ -462,7 +599,7 @@ pub async fn start(state: &AppState, host: &CurrentUser, id: Uuid) -> AppResult<
     }
     sqlx::query(
         "UPDATE game_seats SET is_bot=TRUE,
-            bot_persona = (ARRAY['Colonel Brass','General Frost','Admiral Kestrel','Marshal Volkov','Commodore Tide'])[(seat % 5) + 1]
+            bot_persona = (ARRAY['brass','frost','kestrel','volkov','tide','thistle'])[(seat % 6) + 1]
          WHERE game_id=$1 AND user_id IS NULL AND NOT is_bot",
     )
     .bind(id)
@@ -544,28 +681,24 @@ pub async fn notify_turn(state: &AppState, id: Uuid) {
         if g.status != "in_progress" {
             return Ok(());
         }
-        let Some(power) = g.current_power.as_deref().and_then(Power::parse) else { return Ok(()) };
+        let Some(power) = g.current_power.as_deref().and_then(Power::parse) else {
+            return Ok(());
+        };
         let seats = load_seats(state, id).await?;
-        let Some(seat) = seats.iter().find(|s| s.controls(power)) else { return Ok(()) };
-        let Some(uid) = seat.user_id else { return Ok(()) };
-        state.hub.publish_user(uid, ServerMessage::YourTurn { game_id: GameId(id), power: Some(power) });
-        let u: Option<(String, String, bool, bool)> = sqlx::query_as(
-            "SELECT email, username, email_turn_notifications, email_verified FROM users WHERE id=$1",
-        )
-        .bind(uid)
-        .fetch_optional(&state.db)
-        .await?;
-        if let Some((email, username, true, true)) = u {
-            state.mailer.send(
-                &email,
-                "It's your turn in Wartide",
-                &format!(
-                    "Hi {username},\n\nIt is your turn ({power:?}, round {}).\n{}/games/{id}\n\nYou can switch these emails off in your settings.",
-                    g.round,
-                    state.config.base_url.trim_end_matches('/'),
-                ),
-            );
-        }
+        let Some(seat) = seats.iter().find(|s| s.controls(power)) else {
+            return Ok(());
+        };
+        let Some(uid) = seat.user_id else {
+            return Ok(());
+        };
+        state.hub.publish_user(
+            uid,
+            ServerMessage::YourTurn {
+                game_id: GameId(id),
+                power: Some(power),
+            },
+        );
+        notify::email_your_turn(state, uid, &g.name, id, power, g.round).await?;
         Ok(())
     }
     .await;
@@ -582,7 +715,7 @@ pub async fn actions_since(
     id: Uuid,
     since: i64,
 ) -> AppResult<Vec<GameActionEnvelope>> {
-    require_participant(state, id, user).await?;
+    reader_access(state, id, user).await?;
     #[derive(FromRow)]
     struct Rw {
         seq: i64,
@@ -612,7 +745,7 @@ pub async fn actions_since(
 }
 
 pub async fn state_view(state: &AppState, user: Uuid, id: Uuid) -> AppResult<GameStateResponse> {
-    require_participant(state, id, user).await?;
+    reader_access(state, id, user).await?;
     let (seq, st): (i64, Value) =
         sqlx::query_as("SELECT seq, state FROM game_states WHERE game_id=$1")
             .bind(id)
@@ -886,10 +1019,15 @@ pub async fn create_public(state: &AppState, mode: GameMode, players: &[Uuid]) -
         ..GameSettings::default()
     };
     let ladder = ratings::ladder_for(None, mode == GameMode::TwoPlayer);
+    let (number,): (i64,) = sqlx::query_as("SELECT nextval('public_game_number')")
+        .fetch_one(&state.db)
+        .await?;
+    let name = default_name(GameKind::Public, mode, id, Some(number));
     let mut tx = state.db.begin().await?;
     insert_game(
         &mut tx,
         id,
+        &name,
         GameKind::Public,
         mode,
         &settings,

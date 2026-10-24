@@ -1,10 +1,13 @@
 //! Wartide server: axum REST + WebSocket API over Postgres.
 pub mod config;
 pub mod email;
+pub mod email_templates;
 pub mod error;
 pub mod extract;
 pub mod hub;
+pub mod ratelimit;
 pub mod routes;
+pub mod security;
 pub mod services;
 pub mod state;
 pub mod util;
@@ -13,7 +16,7 @@ pub mod ws;
 use std::path::Path;
 use std::sync::Arc;
 
-use axum::extract::State;
+use axum::extract::{DefaultBodyLimit, State};
 use axum::http::{HeaderName, Request};
 use axum::routing::get;
 use axum::{Json, Router};
@@ -41,11 +44,13 @@ pub async fn connect_db(url: &str) -> anyhow::Result<PgPool> {
 }
 
 pub fn build_state(db: PgPool, config: Config, mailer: Mailer) -> AppState {
+    let rate_limit = config.rate_limit;
     AppState {
         db,
         config: Arc::new(config),
         mailer,
         hub: hub::Hub::default(),
+        limiter: ratelimit::RateLimiter::new(rate_limit),
         // TODO(engine): swap in the real rules implementation.
         rules: Arc::new(PassthroughRules),
         timeout_handler: Arc::new(DefaultTimeoutHandler),
@@ -62,7 +67,8 @@ pub fn build_router(state: AppState) -> Router {
     let dist = state.config.web_dist_dir.clone();
     let index = Path::new(&dist).join("index.html");
     // Unknown non-API paths serve the SPA shell so client-side routes work.
-    let spa = ServeDir::new(&dist).fallback(ServeFile::new(index));
+    let spa = ServeDir::new(&dist).fallback(ServeFile::new(index.clone()));
+    let hardening = security::Hardening::new(index);
 
     Router::new()
         .route("/healthz", get(healthz))
@@ -70,6 +76,11 @@ pub fn build_router(state: AppState) -> Router {
         .nest("/api", routes::api_router(&state))
         .fallback_service(spa)
         .with_state(state)
+        .layer(DefaultBodyLimit::max(security::BODY_LIMIT))
+        .layer(axum::middleware::from_fn_with_state(
+            hardening,
+            security::harden,
+        ))
         .layer(CompressionLayer::new())
         .layer(
             TraceLayer::new_for_http().make_span_with(|req: &Request<_>| {
