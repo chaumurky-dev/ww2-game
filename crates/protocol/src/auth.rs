@@ -39,5 +39,14 @@ pub struct SessionUser {
     pub display_name: String,
     pub avatar: Option<String>,
     pub email_verified: bool,
+    #[serde(default)]
+    pub is_admin: bool,
     pub created_at: DateTime<Utc>,
+}
+
+/// `POST /api/me/password`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChangePasswordRequest {
+    pub current_password: String,
+    pub new_password: String,
 }

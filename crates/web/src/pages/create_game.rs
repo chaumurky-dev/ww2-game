@@ -74,6 +74,8 @@ pub fn CreateGameForm(open: RwSignal<bool>) -> impl IntoView {
             .collect();
         let req = CreatePrivateGameRequest {
             mode: mode.get_untracked(),
+            name: None,
+            bot_personas: Vec::new(),
             human_seats: Some((n - bot_seats.len()) as u8),
             bot_seats,
             settings: GameSettings {

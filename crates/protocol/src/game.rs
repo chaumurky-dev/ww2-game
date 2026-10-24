@@ -162,12 +162,19 @@ pub struct SeatAssignment {
     pub powers: Vec<Power>,
     pub user: Option<UserRef>,
     pub is_bot: bool,
+    /// Persona id from the catalog (`GET /api/bots/personas`), bot seats only.
     pub bot_persona: Option<String>,
+    /// Display name of the persona (falls back to the stored id for unknown/legacy values).
+    #[serde(default)]
+    pub bot_name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GameSummary {
     pub id: GameId,
+    /// Human-friendly title, e.g. `Private game #A1B2` or `Ranked 2p #1234`.
+    #[serde(default)]
+    pub name: String,
     pub kind: GameKind,
     pub mode: GameMode,
     pub status: GameStatus,
@@ -182,6 +189,9 @@ pub struct GameSummary {
     pub invite_code: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Winning team once the game is finished (None for unfinished, abandoned or drawn games).
+    #[serde(default)]
+    pub winner: Option<Team>,
     /// Seat index of the caller, if seated.
     pub my_seat: Option<u8>,
 }
@@ -189,6 +199,13 @@ pub struct GameSummary {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreatePrivateGameRequest {
     pub mode: GameMode,
+    /// Game title (1-60 chars). Defaults to `Private game #<short id>`.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Persona ids per seat index (0-based); `null`/missing = default for that seat. Entries are
+    /// only allowed for seats listed in `bot_seats`.
+    #[serde(default)]
+    pub bot_personas: Vec<Option<String>>,
     /// Number of human seats (including the host). Remaining seats are bots or must be
     /// listed in `bot_seats`. Defaults to `seat_count - bot_seats.len()`.
     #[serde(default)]
@@ -252,6 +269,17 @@ mod tests {
         assert_eq!(s, GameSettings::default());
         assert_eq!(s.turn_timeout_secs, 172_800);
         assert_eq!(s.economic_victory_threshold, 84);
+    }
+
+    #[test]
+    fn create_request_new_fields_are_optional() {
+        let r: CreatePrivateGameRequest = serde_json::from_str(r#"{"mode":"two_player"}"#).unwrap();
+        assert!(r.name.is_none() && r.bot_personas.is_empty());
+        let r: CreatePrivateGameRequest = serde_json::from_str(
+            r#"{"mode":"five_player","name":"X","bot_personas":[null,"frost"]}"#,
+        )
+        .unwrap();
+        assert_eq!(r.bot_personas, vec![None, Some("frost".to_string())]);
     }
 
     #[test]

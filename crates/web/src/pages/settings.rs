@@ -48,6 +48,7 @@ pub fn Settings() -> impl IntoView {
         spawn_local(async move {
             let s = api::update_settings(&UpdateSettingsRequest {
                 email_turn_notifications: Some(notify.get_untracked()),
+                ..Default::default()
             })
             .await;
             match (api::update_profile(&req).await, s) {

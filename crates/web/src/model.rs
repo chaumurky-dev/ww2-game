@@ -210,7 +210,7 @@ pub fn deadline_ms(g: &GameSummary) -> Option<f64> {
 
 pub fn seat_label(s: &SeatAssignment) -> String {
     if s.is_bot {
-        match &s.bot_persona {
+        match s.bot_name.as_ref().or(s.bot_persona.as_ref()) {
             Some(p) => format!("bot ({p})"),
             None => "bot".into(),
         }
