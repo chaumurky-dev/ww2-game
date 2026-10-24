@@ -3716,6 +3716,12 @@ dependencies = [
 [[package]]
 name = "wartide-ai"
 version = "0.1.0"
+dependencies = [
+ "rand 0.9.5",
+ "rand_chacha 0.9.0",
+ "serde",
+ "wartide-engine",
+]
 
 [[package]]
 name = "wartide-engine"
@@ -3765,6 +3771,8 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "wartide-ai",
+ "wartide-engine",
  "wartide-protocol",
 ]
 
@@ -3783,6 +3791,7 @@ dependencies = [
  "serde",
  "serde_json",
  "uuid",
+ "wartide-engine",
  "wartide-protocol",
  "wasm-bindgen",
  "wasm-bindgen-futures",
