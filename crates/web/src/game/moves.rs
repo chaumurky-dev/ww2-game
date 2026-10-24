@@ -117,14 +117,15 @@ pub fn movable_locations(st: &GameState, p: Power) -> Vec<LocationId> {
     out
 }
 
-/// Aircraft of `p` that cannot reach any landing spot with the moves they have left.
-pub fn stranded_air(st: &GameState, p: Power) -> Vec<UnitId> {
+/// Aircraft of `p` that will be lost. In combat movement that means no landing spot within the
+/// moves left; in non-combat movement (`strict`) the aircraft must already sit on one.
+pub fn stranded_air(st: &GameState, p: Power, strict: bool) -> Vec<UnitId> {
     st.units
         .iter()
         .filter(|u| u.owner == p && u.kind.is_air() && u.loaded_on.is_none())
         .filter(|u| {
             !is_landing_spot(st, u, u.location)
-                && !landing_reachable(st, u, u.location, remaining_moves(st, u))
+                && (strict || !landing_reachable(st, u, u.location, remaining_moves(st, u)))
         })
         .map(|u| u.id)
         .collect()

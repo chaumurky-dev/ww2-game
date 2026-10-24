@@ -83,6 +83,9 @@ pub fn Board(
     map: SharedMap,
     #[prop(into)] model: Signal<BoardModel>,
     on_select: Callback<Option<String>>,
+    /// When it changes to `Some(id)` the view centres and zooms on that location.
+    #[prop(optional, into)]
+    focus: Option<Signal<Option<String>>>,
 ) -> impl IntoView {
     let base = ViewBox::new(map.geo.view_box);
     let view = RwSignal::new(base);
@@ -91,6 +94,25 @@ pub fn Board(
     let pts = StoredValue::new(Pointers::new());
     let moved = StoredValue::new(0.0_f64);
     let size = StoredValue::new((800.0_f64, 600.0_f64));
+    if let Some(f) = focus {
+        let anchors: HashMap<String, (f64, f64)> = map
+            .geo
+            .locations
+            .iter()
+            .map(|l| (l.id.clone(), l.anchor))
+            .collect();
+        Effect::new(move |_| {
+            if let Some((x, y)) = f.get().and_then(|id| anchors.get(&id).copied()) {
+                let (w, h) = (base.w * 0.33, base.h * 0.33);
+                view.set(ViewBox {
+                    x: x - w / 2.0,
+                    y: y - h / 2.0,
+                    w,
+                    h,
+                });
+            }
+        });
+    }
 
     let on_down = move |ev: web_sys::PointerEvent| {
         if let Some((_, _, w, h)) = rect_of(ev.current_target()) {
@@ -176,6 +198,7 @@ pub fn Board(
             view! {
                 <path
                     d=l.path.clone()
+                    data-id=id.clone()
                     class=move || model.with(|m| loc_class(kind, alt, &id_c, m))
                     on:pointerenter=move |_| hover.set(Some(id_h.clone()))
                     on:pointerleave=move |_| hover.set(None)

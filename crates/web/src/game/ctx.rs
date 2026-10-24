@@ -131,8 +131,10 @@ impl GameCtx {
 
     /// Send actions in order, stopping at the first rejection.
     pub fn send_all(&self, actions: Vec<Action>) {
+        // Deferred so the click that triggered it finishes bubbling before the panel re-renders
+        // (otherwise the same click can reach the freshly rendered button).
         if let Some(cb) = self.backend.get_value() {
-            cb.run(actions);
+            leptos::task::spawn_local(async move { cb.run(actions) });
         }
     }
 
@@ -184,7 +186,11 @@ impl GameCtx {
         {
             self.income.set(Some((*power, *amount, *treasury)));
         }
-        self.sel.update(|s| *s = s.sanitized(&after));
+        if before.phase != after.phase || before.current_power != after.current_power {
+            self.sel.set(Sel::default());
+        } else {
+            self.sel.update(|s| *s = s.sanitized(&after));
+        }
         self.state.set(after);
     }
 

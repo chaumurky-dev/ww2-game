@@ -70,6 +70,7 @@ pub fn PurchasePanel(power: Power) -> impl IntoView {
             .collect()
     };
     let items2 = items.clone();
+    let over = move || total.get() > budget;
     view! {
         <h3>"Purchase units"</h3>
         <table class="ptable">
@@ -79,7 +80,7 @@ pub fn PurchasePanel(power: Power) -> impl IntoView {
         <div class="row">
             <span>{move || format!("Total {} / {} IPC", total.get(), budget)}</span>
             <span class="spacer"></span>
-            <button disabled=move || total.get() > budget on:click=move |_| {
+            <button disabled=over on:click=move |_| {
                 let it = items();
                 if it.is_empty() {
                     ctx.send(Action::EndPhase);

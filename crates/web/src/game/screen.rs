@@ -1,4 +1,5 @@
 //! The interactive game screen shared by the server-driven game page and the sandbox.
+use super::conv::loc_key;
 use super::ctx::{GameCtx, Sel};
 use super::log::ActionLog;
 use super::model::{board_model, Overlay};
@@ -89,12 +90,16 @@ pub fn GameScreen(
             board_click(ctx, loc);
         }
     });
+    let focus = Signal::derive(move || {
+        ctx.state
+            .with(|st| st.battle.as_ref().map(|b| loc_key(b.location)))
+    });
     let collapsed = RwSignal::new(false);
     view! {
         <div class="game">
             <TopBar deadline_ms />
             <div class="game-body">
-                <Board map model on_select />
+                <Board map model on_select focus />
                 <aside class="side" class:collapsed=move || collapsed.get()>
                     <button class="secondary small side-toggle" on:click=move |_| collapsed.update(|c| *c = !*c)>
                         {move || if collapsed.get() { "Show panel" } else { "Hide panel" }}

@@ -127,7 +127,7 @@ pub fn MovePanel(power: Power, combat: bool) -> impl IntoView {
     };
     let warn = move || {
         let st = ctx.state.get();
-        let v = stranded_air(&st, power);
+        let v = stranded_air(&st, power, !combat);
         (!v.is_empty()).then(|| {
             let names: Vec<String> = v
                 .iter()
@@ -136,8 +136,8 @@ pub fn MovePanel(power: Power, combat: bool) -> impl IntoView {
                 .collect();
             view! {
                 <div class="warn">
-                    "No landing spot in range for: " {names.join("; ")}
-                    ". The engine will refuse to end the phase until they can land."
+                    "These aircraft will be lost unless they can land: " {names.join("; ")}
+                    ". Move them to a highlighted landing spot first."
                 </div>
             }
         })
