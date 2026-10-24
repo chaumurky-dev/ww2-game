@@ -2,17 +2,30 @@
 #![forbid(unsafe_code)]
 
 pub mod action;
+pub mod apply;
+pub mod battle;
+pub mod bombing;
+pub mod combat;
+pub mod decision;
+pub mod dice;
 pub mod economy;
 pub mod error;
 pub mod event;
 pub mod map;
+pub mod movement;
+pub mod odds;
 pub mod power;
+pub mod query;
 pub mod setup;
 pub mod state;
 pub mod tech;
+pub mod transport;
 pub mod units;
+pub mod victory;
 
 pub use action::Action;
+pub use apply::{apply, replay};
+pub use decision::{pending_decision, Decision};
 pub use economy::{income, production_level};
 pub use error::{Result, RuleError};
 pub use event::Event;
@@ -23,18 +36,4 @@ pub use tech::Tech;
 pub use units::{Unit, UnitId, UnitType};
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn printed_setup_incomes() {
-        let st = GameState::new(GameSettings::default());
-        let inc: Vec<u32> = Power::ALL.iter().map(|&p| income(&st, p)).collect();
-        assert_eq!(inc, vec![24, 32, 30, 25, 36]);
-        let tr: Vec<u32> = Power::ALL.iter().map(|&p| st.treasury[p]).collect();
-        assert_eq!(tr, vec![24, 32, 30, 25, 36]);
-        assert_eq!(st.current_power, Power::Ussr);
-        assert_eq!(st.phase, Phase::DevelopWeapons);
-        assert_eq!(st.round, 1);
-    }
-}
+mod tests;

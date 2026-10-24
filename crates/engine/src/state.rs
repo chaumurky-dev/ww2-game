@@ -188,6 +188,9 @@ pub struct Battle {
     /// Bombardment already done.
     #[serde(default)]
     pub bombarded: bool,
+    /// Sea zones from which an amphibious assault landed (battleships there may bombard).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub assault_zones: Vec<LocationId>,
 }
 
 /// Per-turn bookkeeping for the active power.
@@ -334,6 +337,12 @@ impl GameState {
     /// Fighters/bombers currently landed on carriers count toward capacity: free slots on a carrier.
     pub fn carrier_free_slots(&self, carrier: UnitId) -> usize {
         2usize.saturating_sub(self.cargo_of(carrier).count())
+    }
+    /// Is the Soviet first-turn attack restriction in force?
+    pub fn soviet_restricted(&self) -> bool {
+        self.settings.soviet_first_turn_restriction
+            && self.current_power == Power::Ussr
+            && self.turn.number == 1
     }
     /// Is the game over?
     pub fn is_over(&self) -> bool {

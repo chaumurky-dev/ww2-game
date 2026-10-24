@@ -98,3 +98,66 @@ pub fn attack_dice(state: &GameState, u: &Unit) -> u32 {
         1
     }
 }
+
+use crate::dice::{d6, Rng};
+use crate::error::{illegal, Result, RuleError};
+use crate::event::{DiceContext, Event};
+use crate::state::Phase;
+
+/// Pay for `dice` research dice and roll them (phase DevelopWeapons, once per turn).
+pub fn research(
+    state: &mut GameState,
+    p: Power,
+    dice: u32,
+    rng: &mut Rng,
+    ev: &mut Vec<Event>,
+) -> Result<()> {
+    if state.phase != Phase::DevelopWeapons || !state.settings.weapons_development {
+        return illegal("weapons development is not available now");
+    }
+    if state.turn.researched {
+        return illegal("research dice were already bought this turn");
+    }
+    let cost = dice * RESEARCH_DIE_COST;
+    if cost > state.treasury[p] {
+        return Err(RuleError::InsufficientFunds {
+            need: cost,
+            have: state.treasury[p],
+        });
+    }
+    state.treasury[p] -= cost;
+    state.turn.researched = true;
+    ev.push(Event::ResearchBought {
+        power: p,
+        dice,
+        cost,
+    });
+    let rolls: Vec<u8> = (0..dice).map(|_| d6(rng)).collect();
+    ev.push(Event::DiceRolled {
+        power: p,
+        context: DiceContext::Research,
+        rolls: rolls.clone(),
+    });
+    for _ in rolls.iter().filter(|&&r| r == 6) {
+        if state.techs[p].len() >= Tech::ALL.len() {
+            break;
+        }
+        let mut tried = vec![];
+        loop {
+            let r = d6(rng);
+            tried.push(r);
+            let t = Tech::from_roll(r);
+            if !state.techs[p].contains(&t) {
+                ev.push(Event::DiceRolled {
+                    power: p,
+                    context: DiceContext::ResearchTech,
+                    rolls: tried,
+                });
+                state.techs[p].push(t);
+                ev.push(Event::TechGained { power: p, tech: t });
+                break;
+            }
+        }
+    }
+    Ok(())
+}
