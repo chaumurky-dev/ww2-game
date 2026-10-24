@@ -113,6 +113,10 @@ impl Toasts {
     pub fn error(&self, text: impl Into<String>) {
         self.push(ToastKind::Error, text);
     }
+    /// A short informational toast (`ms` milliseconds).
+    pub fn short(&self, text: impl Into<String>, ms: u32) {
+        self.push_full(ToastKind::Info, text.into(), None, ms);
+    }
     /// A longer-lived toast with a link (e.g. "your turn" / "match found").
     pub fn link(&self, text: impl Into<String>, href: impl Into<String>) {
         self.push_full(ToastKind::Warn, text.into(), Some(href.into()), 12000);

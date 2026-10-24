@@ -16,6 +16,7 @@ pub fn NavBar() -> impl IntoView {
             <A href="/lobby">"Lobby"</A>
             <A href="/leaderboard">"Leaderboard"</A>
             <A href="/groups">"Groups"</A>
+            <A href="/help">"How to play"</A>
             <span class="spacer"></span>
             {move || match auth.user.get() {
                 Some(u) => {

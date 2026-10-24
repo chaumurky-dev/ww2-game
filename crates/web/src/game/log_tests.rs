@@ -1,6 +1,5 @@
 //! Tests for the log formatting.
 
-use super::conv::*;
 use super::log::*;
 use crate::model::Power as UiPower;
 use wartide_engine::event::DiceContext;
@@ -51,6 +50,7 @@ fn dice_merge_with_hits() {
                 round: 1,
             },
             rolls: vec![4, 2, 6, 1],
+            details: vec![],
         },
         Event::HitsScored {
             location: loc("germany"),

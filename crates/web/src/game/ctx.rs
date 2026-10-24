@@ -133,6 +133,9 @@ impl GameCtx {
     pub fn send_all(&self, actions: Vec<Action>) {
         // Deferred so the click that triggered it finishes bubbling before the panel re-renders
         // (otherwise the same click can reach the freshly rendered button).
+        if self.busy.get_untracked() {
+            return; // a request is in flight: ignore double clicks / Enter repeats
+        }
         if let Some(cb) = self.backend.get_value() {
             leptos::task::spawn_local(async move { cb.run(actions) });
         }

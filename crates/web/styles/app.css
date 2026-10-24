@@ -112,8 +112,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .hero p { font-family: var(--font-serif); font-size: 1.2rem; max-width: 40rem; margin: .5rem auto 1.5rem; }
 
 /* Toasts & modal */
-.toasts { position: fixed; right: 1rem; bottom: 1rem; display: flex; flex-direction: column; gap: .5rem; z-index: 100; }
-.toast { background: var(--ink); color: var(--parchment); padding: .6rem .9rem; border-radius: 6px; box-shadow: var(--shadow); max-width: 22rem; border-left: 5px solid var(--ok); }
+.toasts { position: fixed; right: 1rem; top: 4rem; pointer-events: none; display: flex; flex-direction: column; gap: .5rem; z-index: 100; }
+.toast { pointer-events: auto; background: var(--ink); color: var(--parchment); padding: .6rem .9rem; border-radius: 6px; box-shadow: var(--shadow); max-width: 22rem; border-left: 5px solid var(--ok); }
 .toast.error { border-color: var(--bad); } .toast.warn { border-color: var(--warn); }
 .modal-back { position: fixed; inset: 0; background: rgba(20, 15, 5, .55); display: grid; place-items: center; z-index: 50; padding: 1rem; }
 .modal { background: var(--paper); border: 2px solid var(--line); border-radius: var(--radius); max-width: 640px; width: 100%; max-height: 90vh; overflow: auto; padding: 1rem 1.2rem; }
@@ -171,17 +171,6 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .msg.bot { font-family: var(--font-serif); font-style: italic; }
 .log { font-size: .8rem; max-height: 9rem; overflow: auto; }
 .log div { padding: .1rem 0; border-bottom: 1px dotted rgba(60, 50, 40, .3); }
-
-/* Mobile */
-@media (max-width: 800px) {
-  .hero h1 { font-size: 2.6rem; }
-  .game { height: calc(100dvh - 90px); }
-  .game-body { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
-  .side { border-left: 0; border-top: 2px solid var(--line); max-height: 45vh; }
-  .side.collapsed > :not(.side-toggle) { display: none; }
-  .side-toggle { display: inline-block; }
-  .stepper .step { font-size: .6rem; padding: .1rem .3rem; }
-}
 
 /* Brand & polish */
 .brand { display: inline-flex; align-items: center; gap: .5rem; }
@@ -257,3 +246,65 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .econ-pill .techs { color: var(--accent); font-weight: 700; }
 .pill.hot .techs { color: #ffd98a; }
 .gameover { padding: 1rem; text-align: center; border: 2px solid var(--accent); border-radius: 6px; }
+
+/* ---- Web integration pass ---- */
+.small-text { font-size: .8rem; }
+.hidden { display: none !important; }
+button.danger { background: var(--bad); }
+.btn.small { padding: .2rem .55rem; font-size: .85rem; }
+.big-tabs .tab { font-size: 1rem; padding: .35rem 1.1rem; }
+.winner-banner { padding: .45rem .7rem; border-radius: 6px; font-family: var(--font-display); letter-spacing: .06em; text-align: center; background: var(--ink); color: var(--parchment); border: 2px solid var(--line); }
+.winner-banner.axis { border-color: var(--germany); box-shadow: inset 0 0 0 2px var(--germany); }
+.winner-banner.allies { border-color: var(--usa); box-shadow: inset 0 0 0 2px var(--usa); }
+.pending-note { font-size: .85rem; padding: .3rem .6rem; border-left: 4px solid var(--warn); background: rgba(176, 122, 26, .12); }
+.warn-pill { background: rgba(176, 122, 26, .2); border-color: var(--warn); }
+.seats { display: flex; flex-direction: column; gap: 2px; }
+.seat { padding: .05rem .3rem; font-size: .82rem; flex-wrap: nowrap; gap: .3rem; }
+.seat .pill { font-size: .68rem; white-space: nowrap; }
+.seat-cfg { display: flex; flex-direction: column; gap: .15rem; }
+.seat-label { width: 11rem; }
+.opt { display: flex; flex-direction: column; gap: .05rem; }
+.opt-help { margin-left: 1.6rem; }
+.create-form select { max-width: 100%; }
+.skeleton { display: flex; flex-direction: column; gap: .5rem; padding: .4rem 0; }
+.sk-line { height: .9rem; border-radius: 4px; background: linear-gradient(90deg, var(--parchment-2), var(--paper), var(--parchment-2)); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.empty { text-align: center; padding: 1rem .5rem; border: 1px dashed var(--line); border-radius: 6px; }
+.empty p { margin: 0; }
+.pager { justify-content: center; }
+.deadline { white-space: nowrap; }
+.replay { display: flex; flex-direction: column; gap: .4rem; padding: .5rem; border: 2px solid var(--accent); border-radius: 6px; background: rgba(138, 47, 39, .06); }
+.replay input[type="range"] { width: 100%; padding: 0; }
+.help .plain { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: .3rem 1.2rem; }
+.help ol.phases li, .help ul li { margin: .25rem 0; }
+.sec { display: flex; flex-direction: column; gap: .8rem; }
+.mtabs { display: none; }
+
+/* Mobile: the side panel becomes a bottom sheet with tabs Board / Actions / Chat / Log. */
+@media (max-width: 800px) {
+  .hero h1 { font-size: 2.6rem; }
+  .page { padding: .6rem; }
+  .nav { gap: .5rem .8rem; padding: .4rem .6rem; }
+  .game { grid-template-rows: auto minmax(0, 1fr) auto; height: calc(100dvh - 92px); min-height: 0; }
+  .topbar { gap: .3rem .5rem; padding: .3rem .5rem; max-height: 5.2rem; overflow-y: auto; }
+  .topbar h3 { font-size: 1rem; }
+  .stepper .step { font-size: .58rem; padding: .08rem .25rem; }
+  .econ-pill { font-size: .62rem; padding: 0 .35rem; }
+  .game-body { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }
+  .side { border-left: 0; border-top: 2px solid var(--line); max-height: 52dvh; padding: .6rem; }
+  .game[data-mtab="board"] .side { display: none; }
+  .game[data-mtab="actions"] .sec-log, .game[data-mtab="actions"] .sec-chat,
+  .game[data-mtab="chat"] .sec-actions, .game[data-mtab="chat"] .sec-log,
+  .game[data-mtab="log"] .sec-actions, .game[data-mtab="log"] .sec-chat { display: none; }
+  .game[data-mtab="log"] .log { max-height: none; }
+  .mtabs { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 2px solid var(--line); background: var(--paper); }
+  .mtab { border-radius: 0; border: 0; border-right: 1px solid var(--line); background: var(--parchment-2); color: var(--ink); padding: .55rem 0; font-size: .9rem; position: relative; }
+  .mtab.on { background: var(--ink); color: var(--parchment); }
+  .mtab .dot { position: absolute; top: .35rem; right: 18%; width: .6rem; height: .6rem; border-radius: 50%; background: var(--bad); box-shadow: 0 0 0 2px var(--paper); }
+  .toasts { left: .6rem; right: .6rem; top: 3.2rem; }
+  .toast { max-width: none; }
+  .seat-label { width: auto; }
+  button, .btn { min-height: 2.2rem; }
+  .modal { max-height: 94dvh; }
+  .chat { max-height: none; }
+}

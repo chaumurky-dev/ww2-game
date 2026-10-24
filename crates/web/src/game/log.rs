@@ -68,6 +68,7 @@ pub fn format_events(events: &[Event], mut round: u32) -> Vec<LogLine> {
                 power,
                 context,
                 rolls,
+                ..
             } => {
                 who = Some(*power);
                 let mut parts = vec![dice_str(rolls)];

@@ -14,6 +14,9 @@ pub fn TopBar(#[prop(into)] deadline_ms: Signal<Option<f64>>) -> impl IntoView {
         <div class="topbar">
             <h3 style="margin:0">{move || format!("Round {}", ctx.state.with(|s| s.round))}</h3>
             {move || view! { <PowerBadge power=ui_power(ctx.state.with(|s| s.current_power)) /> }}
+            {move || deadline_ms.get().map(|d| view! {
+                <span class="deadline"><span class="muted">"Deadline "</span><Countdown deadline_ms=d /></span>
+            })}
             <div class="stepper">
                 {move || {
                     let cur = ctx.state.with(|s| s.phase);
@@ -43,11 +46,6 @@ pub fn TopBar(#[prop(into)] deadline_ms: Signal<Option<f64>>) -> impl IntoView {
                     }).collect_view()
                 }}
             </div>
-            <span class="spacer"></span>
-            {move || deadline_ms.get().map(|d| view! {
-                <span class="muted">"Deadline "</span>
-                <Countdown deadline_ms=d />
-            })}
         </div>
     }
 }

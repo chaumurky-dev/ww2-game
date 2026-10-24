@@ -15,6 +15,8 @@ use wartide_protocol::ws::{ClientMessage, ServerMessage};
 pub struct Realtime {
     tx: StoredValue<Option<UnboundedSender<ClientMessage>>>,
     subs: StoredValue<Vec<GameId>>,
+    /// A throttled refresh is already scheduled (bursts of `game_updated` from fast bots).
+    scheduled: StoredValue<bool>,
     /// Bumped on anything that may change the lobby list (`game_updated`, `your_turn`, `match_found`).
     pub lobby_tick: RwSignal<u32>,
     /// Bumped on `game_updated` / `your_turn`; game pages refetch their summary.
@@ -39,6 +41,7 @@ impl Realtime {
         let rt = Realtime {
             tx: StoredValue::new(None),
             subs: StoredValue::new(vec![]),
+            scheduled: StoredValue::new(false),
             lobby_tick: RwSignal::new(0),
             game_tick: RwSignal::new(0),
             chat_in: RwSignal::new(None),
@@ -79,20 +82,39 @@ impl Realtime {
         }
     }
 
+    /// Bump both ticks, coalescing bursts into one refresh per 200 ms.
+    fn bump(&self) {
+        if self.scheduled.get_value() {
+            return;
+        }
+        self.scheduled.set_value(true);
+        let rt = *self;
+        gloo_timers::callback::Timeout::new(200, move || {
+            rt.scheduled.set_value(false);
+            rt.lobby_tick.update(|n| *n += 1);
+            rt.game_tick.update(|n| *n += 1);
+        })
+        .forget();
+    }
+
     fn handle(&self, msg: ServerMessage, toasts: Toasts) {
         match msg {
-            ServerMessage::GameUpdated { .. } => {
-                self.lobby_tick.update(|n| *n += 1);
-                self.game_tick.update(|n| *n += 1);
-            }
+            ServerMessage::GameUpdated { .. } => self.bump(),
             ServerMessage::ChatReceived { message } => self.chat_in.set(Some(message)),
             ServerMessage::YourTurn { game_id, power } => {
-                self.lobby_tick.update(|n| *n += 1);
-                self.game_tick.update(|n| *n += 1);
+                self.bump();
                 let who = power
                     .map(|p| format!(" ({})", crate::model::PowerExt::name(p)))
                     .unwrap_or_default();
-                toasts.link(format!("Your turn{who}"), format!("/game/{game_id}"));
+                let here = web_sys::window()
+                    .and_then(|w| w.location().pathname().ok())
+                    .is_some_and(|p| p == format!("/game/{game_id}"));
+                if here {
+                    // Already looking at the game: a brief note that does not cover the panel.
+                    toasts.short(format!("Your move{who}"), 2500);
+                } else {
+                    toasts.link(format!("Your turn{who}"), format!("/game/{game_id}"));
+                }
             }
             ServerMessage::MatchFound { game_id } => {
                 self.lobby_tick.update(|n| *n += 1);

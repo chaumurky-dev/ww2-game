@@ -156,6 +156,7 @@ pub fn dice_shows(
             power,
             context,
             rolls,
+            ..
         } = e
         else {
             continue;
@@ -303,6 +304,7 @@ mod tests {
             power: Power::Ussr,
             context: DiceContext::Research,
             rolls: vec![6, 2],
+            details: vec![],
         }];
         let d = dice_shows(&st, &st, &ev, 10);
         assert_eq!(d[0].dice[0].hit, Some(true));

@@ -4,11 +4,12 @@ use gloo_net::http::{Method, RequestBuilder, Response};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use uuid::Uuid;
 use wartide_protocol::auth::*;
+use wartide_protocol::bots::BotPersona;
 use wartide_protocol::chat::*;
 use wartide_protocol::game::*;
 use wartide_protocol::group::*;
 use wartide_protocol::user::*;
-use wartide_protocol::ApiError;
+use wartide_protocol::{ApiError, Paginated};
 use web_sys::RequestCredentials;
 
 pub type ApiResult<T> = Result<T, ApiError>;
@@ -127,6 +128,22 @@ pub async fn reset_password(token: &str, new_password: &str) -> ApiResult<()> {
     unit(Method::POST, "/auth/reset-password", Some(to_value(&body))).await
 }
 
+pub async fn change_password(current: &str, new: &str) -> ApiResult<()> {
+    let body = ChangePasswordRequest {
+        current_password: current.into(),
+        new_password: new.into(),
+    };
+    unit(Method::POST, "/me/password", Some(to_value(&body))).await
+}
+
+pub async fn delete_account() -> ApiResult<()> {
+    unit(Method::DELETE, "/me", None).await
+}
+
+pub async fn bot_personas() -> ApiResult<Vec<BotPersona>> {
+    json(Method::GET, "/bots/personas", None).await
+}
+
 // ---- me / users -------------------------------------------------------------------------
 
 pub async fn me() -> ApiResult<SessionUser> {
@@ -227,6 +244,16 @@ pub async fn group_leaderboard(id: Uuid, mode: GameMode) -> ApiResult<Vec<Leader
 
 pub async fn games(status: &str) -> ApiResult<Vec<GameSummary>> {
     json(Method::GET, &format!("/games?status={status}"), None).await
+}
+
+/// Matchmade games anyone may watch (`status` = `active` | `finished`), 20 per page.
+pub async fn public_games(status: &str, page: u32) -> ApiResult<Paginated<GameSummary>> {
+    json(
+        Method::GET,
+        &format!("/games/public?status={status}&page={page}"),
+        None,
+    )
+    .await
 }
 
 pub async fn game(id: GameId) -> ApiResult<GameSummary> {

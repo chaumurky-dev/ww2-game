@@ -13,6 +13,7 @@ mod logfmt_battle;
 pub mod model;
 pub mod moves;
 pub mod panels;
+pub mod replay;
 pub mod sandbox;
 pub mod screen;
 pub mod topbar;

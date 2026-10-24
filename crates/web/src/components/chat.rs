@@ -31,6 +31,7 @@ pub fn ChatDrawer(game_id: GameId, summary: Signal<GameSummary>) -> impl IntoVie
     let messages = RwSignal::new(Vec::<ChatMessage>::new());
     let tab = RwSignal::new(ChatChannel::All);
     let draft = RwSignal::new(String::new());
+    let spectator = Memo::new(move |_| summary.with(|s| s.my_seat.is_none()));
     let lobby = Memo::new(move |_| summary.with(|s| s.status == GameStatus::Lobby));
     Effect::new(move |_| {
         tab.set(if lobby.get() {
@@ -95,7 +96,9 @@ pub fn ChatDrawer(game_id: GameId, summary: Signal<GameSummary>) -> impl IntoVie
     };
     let send2 = send;
     let tabs = move || {
-        let list: &[ChatChannel] = if lobby.get() {
+        let list: &[ChatChannel] = if spectator.get() {
+            &[ChatChannel::All]
+        } else if lobby.get() {
             &[ChatChannel::Lobby, ChatChannel::All]
         } else {
             &[ChatChannel::All, ChatChannel::Team, ChatChannel::Power]
@@ -112,10 +115,16 @@ pub fn ChatDrawer(game_id: GameId, summary: Signal<GameSummary>) -> impl IntoVie
             <div class="tabs">{tabs}</div>
             <div class="msgs">
                 {move || {
+                    let empty = messages.with(|l| !l.iter().any(|m| m.channel == tab.get()));
+                    empty.then(|| view! { <p class="muted small-text">{if spectator.get() { "No all-chat messages yet." } else { "Nothing here yet. Say hello!" }}</p> })
+                }}
+                {move || {
                     messages
                         .get()
                         .into_iter()
                         .filter(|m| m.channel == tab.get())
+                        .collect::<Vec<_>>()
+                        .into_iter()
                         .map(|m| {
                             let (who, class) = match &m.sender {
                                 ChatSender::User(u) => (u.display_name.clone(), "msg"),
@@ -132,7 +141,10 @@ pub fn ChatDrawer(game_id: GameId, summary: Signal<GameSummary>) -> impl IntoVie
                         .collect_view()
                 }}
             </div>
-            <div class="row">
+            <Show when=move || spectator.get()>
+                <p class="muted small-text">"Spectators can read the all-chat but cannot post."</p>
+            </Show>
+            <div class="row" class:hidden=move || spectator.get()>
                 <input
                     class="grow"
                     placeholder="Say something..."

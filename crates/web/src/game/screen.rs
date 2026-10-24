@@ -8,6 +8,7 @@ use super::topbar::TopBar;
 use crate::components::board::{Board, BoardModel};
 use crate::map::SharedMap;
 use leptos::prelude::*;
+use wasm_bindgen::JsCast;
 use wartide_engine::query::{battles_pending, legal_placements};
 use wartide_engine::{pending_decision, Decision, LocationId, Phase};
 
@@ -73,6 +74,45 @@ fn board_click(ctx: GameCtx, loc: LocationId) {
     }
 }
 
+/// Click the first enabled primary button of the side panel (Enter shortcut).
+fn click_primary() -> bool {
+    let btn = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| {
+            d.query_selector(
+                ".sidepanel button:not(.secondary):not(.small):not(.chip):not([disabled])",
+            )
+            .ok()
+            .flatten()
+        });
+    match btn.and_then(|b| b.dyn_into::<web_sys::HtmlElement>().ok()) {
+        Some(b) => {
+            b.click();
+            true
+        }
+        None => false,
+    }
+}
+
+/// Esc clears the selection; Enter presses the primary button (unless typing or on a button).
+fn keyboard(ctx: GameCtx, e: web_sys::KeyboardEvent) {
+    let tag = e
+        .target()
+        .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+        .map(|el| el.tag_name().to_uppercase())
+        .unwrap_or_default();
+    if matches!(tag.as_str(), "INPUT" | "TEXTAREA" | "SELECT") || e.ctrl_key() || e.meta_key() {
+        return;
+    }
+    match e.key().as_str() {
+        "Escape" => ctx.sel.set(Sel::default()),
+        "Enter" if !matches!(tag.as_str(), "BUTTON" | "A") && click_primary() => {
+            e.prevent_default();
+        }
+        _ => {}
+    }
+}
+
 #[component]
 pub fn GameScreen(
     map: SharedMap,
@@ -94,22 +134,43 @@ pub fn GameScreen(
         ctx.state
             .with(|st| st.battle.as_ref().map(|b| loc_key(b.location)))
     });
-    let collapsed = RwSignal::new(false);
+    // Mobile bottom sheet: which tab is open (desktop shows everything).
+    let mtab = RwSignal::new("board");
+    let needs_me = Memo::new(move |_| ctx.acting().is_some_and(|p| ctx.controls(p)));
+    Effect::new(move |prev: Option<bool>| {
+        let now = needs_me.get();
+        if now && prev == Some(false) && mtab.get_untracked() == "board" {
+            mtab.set("actions");
+        }
+        now
+    });
+    let handle = window_event_listener(leptos::ev::keydown, move |e| keyboard(ctx, e));
+    on_cleanup(move || handle.remove());
+    let tab = move |id: &'static str, label: &'static str| {
+        view! {
+            <button class="mtab" class:on=move || mtab.get() == id on:click=move |_| mtab.set(id)>
+                {label}
+                {(id == "actions").then(|| view! { <Show when=move || needs_me.get()><span class="dot" title="Your move"></span></Show> })}
+            </button>
+        }
+    };
     view! {
-        <div class="game">
+        <div class="game" attr:data-mtab=move || mtab.get()>
             <TopBar deadline_ms />
             <div class="game-body">
                 <Board map model on_select focus />
-                <aside class="side" class:collapsed=move || collapsed.get()>
-                    <button class="secondary small side-toggle" on:click=move |_| collapsed.update(|c| *c = !*c)>
-                        {move || if collapsed.get() { "Show panel" } else { "Hide panel" }}
-                    </button>
-                    {top.map(|t| t.run())}
-                    <SidePanel />
-                    <ActionLog entries=ctx.log />
-                    {bottom.map(|t| t.run())}
+                <aside class="side">
+                    <section class="sec sec-actions">
+                        {top.map(|t| t.run())}
+                        <div class="sidepanel"><SidePanel /></div>
+                    </section>
+                    <section class="sec sec-log"><ActionLog entries=ctx.log /></section>
+                    <section class="sec sec-chat">{bottom.map(|t| t.run())}</section>
                 </aside>
             </div>
+            <nav class="mtabs">
+                {tab("board", "Board")} {tab("actions", "Actions")} {tab("chat", "Chat")} {tab("log", "Log")}
+            </nav>
         </div>
     }
 }

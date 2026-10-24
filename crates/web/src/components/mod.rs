@@ -6,6 +6,7 @@ pub mod guard;
 pub mod modal;
 pub mod nav;
 pub mod power_badge;
+pub mod skeleton;
 pub mod toast;
 pub mod unit_icon;
 pub mod viewport;

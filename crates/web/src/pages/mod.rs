@@ -2,6 +2,7 @@ pub mod auth;
 pub mod create_game;
 pub mod game;
 pub mod groups;
+pub mod help;
 pub mod landing;
 pub mod leaderboard;
 pub mod lobby;

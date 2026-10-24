@@ -46,6 +46,7 @@ pub fn App() -> impl IntoView {
                     <Route path=path!("/groups") view=|| view! { <Protected><groups::GroupList /></Protected> } />
                     <Route path=path!("/groups/:slug") view=|| view! { <Protected><groups::GroupDetail /></Protected> } />
                     <Route path=path!("/leaderboard") view=leaderboard::Leaderboard />
+                    <Route path=path!("/help") view=help::Help />
                     <Route path=path!("/settings") view=|| view! { <Protected><settings::Settings /></Protected> } />
                 </Routes>
             </main>

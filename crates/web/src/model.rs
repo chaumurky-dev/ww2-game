@@ -115,8 +115,11 @@ impl UnitKind {
 
 use wartide_protocol::game::{GameMode, GameStatus, GameSummary, SeatAssignment};
 
-/// Games have no name in the protocol yet (TODO(protocol)); derive a stable title from the id.
+/// Game title: the server-provided `name`, with a derived fallback for older rows.
 pub fn game_title(g: &GameSummary) -> String {
+    if !g.name.trim().is_empty() {
+        return g.name.clone();
+    }
     let id = g.id.to_string();
     let kind = match g.kind {
         wartide_protocol::game::GameKind::Public => "Public",
@@ -155,7 +158,11 @@ pub fn my_turn(g: &GameSummary) -> bool {
         }
 }
 
+/// Turn deadline in epoch ms; None unless a human is on the clock (bot turns are "due" at once).
 pub fn deadline_ms(g: &GameSummary) -> Option<f64> {
+    if g.status != GameStatus::InProgress || waiting_on_bot(g) {
+        return None;
+    }
     g.turn_deadline.map(|d| d.timestamp_millis() as f64)
 }
 
@@ -170,4 +177,60 @@ pub fn seat_label(s: &SeatAssignment) -> String {
     } else {
         "open".into()
     }
+}
+
+/// Short note for seats that were abandoned or timed out ("resigned - bot plays", "missed 2 turns").
+pub fn seat_flags(s: &SeatAssignment) -> Vec<String> {
+    let mut v = vec![];
+    if s.resigned {
+        v.push("resigned".to_string());
+    }
+    if s.timeouts > 0 {
+        v.push(format!(
+            "{} missed turn{}",
+            s.timeouts,
+            if s.timeouts == 1 { "" } else { "s" }
+        ));
+    }
+    v
+}
+
+/// Who the game is waiting for when that differs from the power whose turn it is
+/// ("waiting for Germany's casualty choice").
+pub fn pending_note(g: &GameSummary) -> Option<String> {
+    if g.status != GameStatus::InProgress {
+        return None;
+    }
+    match (g.pending_power, g.current_power) {
+        (Some(p), Some(c)) if p != c => Some(format!(
+            "Waiting for {}'s {}",
+            p.name(),
+            match g.phase.as_deref() {
+                Some("combat") | None => "casualty choice",
+                _ => "decision",
+            }
+        )),
+        _ => None,
+    }
+}
+
+/// True when the caller's seat must act now (turn or a defender decision).
+pub fn my_pending(g: &GameSummary) -> bool {
+    g.status == GameStatus::InProgress
+        && match (my_seat(g), g.pending_power.or(g.current_power)) {
+            (Some(s), Some(p)) => s.powers.contains(&p),
+            _ => false,
+        }
+}
+
+/// Power the game currently waits for (pending decision, else the current power).
+pub fn waiting_for(g: &GameSummary) -> Option<Power> {
+    g.pending_power.or(g.current_power)
+}
+
+/// True when a bot seat plays `waiting_for` (so no human deadline applies).
+pub fn waiting_on_bot(g: &GameSummary) -> bool {
+    waiting_for(g)
+        .and_then(|p| g.seats.iter().find(|s| s.powers.contains(&p)))
+        .is_some_and(|s| s.is_bot)
 }

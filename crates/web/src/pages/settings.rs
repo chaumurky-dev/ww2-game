@@ -3,7 +3,8 @@ use crate::components::form::{Check, TextField};
 use crate::state::{AuthState, Toasts};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use leptos_router::components::A;
+use leptos_router::hooks::use_navigate;
+use crate::components::modal::Modal;
 use wartide_protocol::user::{UpdateProfileRequest, UpdateSettingsRequest};
 
 #[component]
@@ -15,6 +16,14 @@ pub fn Settings() -> impl IntoView {
     let country = RwSignal::new(String::new());
     let timezone = RwSignal::new(String::new());
     let notify = RwSignal::new(true);
+    let match_mail = RwSignal::new(true);
+    let cur_pw = RwSignal::new(String::new());
+    let new_pw = RwSignal::new(String::new());
+    let new_pw2 = RwSignal::new(String::new());
+    let pw_busy = RwSignal::new(false);
+    let del_open = RwSignal::new(false);
+    let del_text = RwSignal::new(String::new());
+    let navigate = use_navigate();
     let loaded = RwSignal::new(false);
 
     spawn_local(async move {
@@ -30,7 +39,10 @@ pub fn Settings() -> impl IntoView {
             }
         }
         match api::settings().await {
-            Ok(s) => notify.set(s.email_turn_notifications),
+            Ok(s) => {
+                notify.set(s.email_turn_notifications);
+                match_mail.set(s.email_match_found);
+            }
             Err(e) => toasts.api_error(&e),
         }
         loaded.set(true);
@@ -48,7 +60,7 @@ pub fn Settings() -> impl IntoView {
         spawn_local(async move {
             let s = api::update_settings(&UpdateSettingsRequest {
                 email_turn_notifications: Some(notify.get_untracked()),
-                ..Default::default()
+                email_match_found: Some(match_mail.get_untracked()),
             })
             .await;
             match (api::update_profile(&req).await, s) {
@@ -60,6 +72,43 @@ pub fn Settings() -> impl IntoView {
             }
         });
     };
+    let change_pw = move |_| {
+        if new_pw.get_untracked() != new_pw2.get_untracked() {
+            toasts.error("The new passwords do not match.");
+            return;
+        }
+        if new_pw.get_untracked().chars().count() < 8 {
+            toasts.error("The new password needs at least 8 characters.");
+            return;
+        }
+        pw_busy.set(true);
+        spawn_local(async move {
+            match api::change_password(&cur_pw.get_untracked(), &new_pw.get_untracked()).await {
+                Ok(()) => {
+                    toasts.info("Password changed. Other devices were signed out.");
+                    cur_pw.set(String::new());
+                    new_pw.set(String::new());
+                    new_pw2.set(String::new());
+                }
+                Err(e) => toasts.api_error(&e),
+            }
+            pw_busy.set(false);
+        });
+    };
+    let delete = Callback::new(move |_: ()| {
+        let navigate = navigate.clone();
+        spawn_local(async move {
+            match api::delete_account().await {
+                Ok(()) => {
+                    del_open.set(false);
+                    auth.set(None);
+                    toasts.info("Your account was deleted.");
+                    navigate("/", Default::default());
+                }
+                Err(e) => toasts.api_error(&e),
+            }
+        });
+    });
     view! {
         <div class="page grid2">
             <form class="card col" on:submit=|ev| ev.prevent_default()>
@@ -71,13 +120,34 @@ pub fn Settings() -> impl IntoView {
                 <TextField label="Country" value=country />
                 <TextField label="Time zone" value=timezone placeholder="Europe/Berlin" />
                 <Check label="Email me when it is my turn" value=notify />
+                <Check label="Email me when a matchmaking game is found" value=match_mail />
                 <button type="submit" disabled=move || !loaded.get() on:click=save>"Save"</button>
             </form>
-            <div class="card col">
-                <h2>"Password"</h2>
-                <p class="muted">"To change your password, request a reset link by email."</p>
-                <A href="/forgot"><span class="btn">"Send me a reset link"</span></A>
+            <div class="col">
+                <form class="card col" on:submit=|ev| ev.prevent_default()>
+                    <h2>"Change password"</h2>
+                    <TextField label="Current password" value=cur_pw kind="password" />
+                    <TextField label="New password (8+ characters)" value=new_pw kind="password" />
+                    <TextField label="Repeat new password" value=new_pw2 kind="password" />
+                    <button type="submit" disabled=move || pw_busy.get() || cur_pw.with(|c| c.is_empty()) on:click=change_pw>"Change password"</button>
+                    <p class="muted small-text">"Other devices are signed out; this one stays logged in."</p>
+                </form>
+                <div class="card col">
+                    <h2>"Delete account"</h2>
+                    <p class="muted">"Your name and e-mail are scrubbed. Games you played stay in the history under \"Deleted user\"."</p>
+                    <button class="danger" on:click=move |_| { del_text.set(String::new()); del_open.set(true); }>"Delete my account"</button>
+                </div>
             </div>
+            <Modal open=del_open title="Delete your account?">
+                <div class="col">
+                    <p>"This cannot be undone. You will be logged out everywhere and your profile disappears from the leaderboards."</p>
+                    <TextField label="Type DELETE to confirm" value=del_text />
+                    <div class="row">
+                        <button class="danger" disabled=move || del_text.with(|t| t.trim() != "DELETE") on:click=move |_| delete.run(())>"Delete forever"</button>
+                        <button class="secondary" on:click=move |_| del_open.set(false)>"Cancel"</button>
+                    </div>
+                </div>
+            </Modal>
         </div>
     }
 }
