@@ -33,3 +33,7 @@ territory names are fine. Call production points "IPC" (generic acronym) — fin
 ## Rules source
 `docs/RULES.md` is the authority on game mechanics for this project. If engine behaviour and
 RULES.md disagree, fix the engine (or fix RULES.md with a cited source and note in DECISIONS.md).
+
+## Local toolchain note (this Mac)
+Homebrew's `cargo` (no wasm target) shadows rustup's. Run `source scripts/env.sh` first in every
+shell (puts `/usr/local/opt/rustup/bin` on PATH) — or wasm builds fail with "can't find crate for core".
