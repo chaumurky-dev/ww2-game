@@ -1370,3 +1370,118 @@ fn orphaned_fighters_land_on_a_friendly_island_of_the_zone() {
     assert_eq!(fu.location, loc("caroline_islands"));
     assert!(fu.loaded_on.is_none());
 }
+
+#[test]
+fn every_aa_gun_entered_fires_once_per_plane() {
+    let mut st = cm(Power::Germany);
+    let f = put(&mut st, UnitType::Fighter, Power::Germany, "germany");
+    set_control(&mut st, "western_europe", Some(Power::Uk));
+    set_control(&mut st, "southern_europe", Some(Power::Uk));
+    put(&mut st, UnitType::AaGun, Power::Uk, "western_europe");
+    put(&mut st, UnitType::AaGun, Power::Uk, "southern_europe");
+    // out over Western Europe (6 survives), back over Southern Europe is not on the path; use a loop
+    let ev = act_seed(
+        &mut st,
+        Power::Germany,
+        mv(
+            &[f],
+            &["western_europe", "germany", "southern_europe", "germany"],
+        ),
+        seed_for(&[6, 1]),
+    )
+    .unwrap();
+    let aa = rolls_of(&ev, |c| matches!(c, DiceContext::AaFire { .. }));
+    assert_eq!(aa.len(), 2, "two guns entered, two volleys");
+    assert!(st.unit(f).is_none(), "the second gun's 1 shoots it down");
+}
+
+#[test]
+fn allied_aa_gun_fires_for_its_owner_in_an_ally_s_territory() {
+    let mut st = cm(Power::Usa);
+    let f = put(&mut st, UnitType::Fighter, Power::Usa, "western_usa");
+    // a Japanese gun in a German-held territory: both are Axis, so the American flight is shot at
+    set_control(&mut st, "mexico", Some(Power::Germany));
+    put(&mut st, UnitType::AaGun, Power::Japan, "mexico");
+    let ev = act_seed(
+        &mut st,
+        Power::Usa,
+        mv(&[f], &["mexico", "western_usa"]),
+        seed_for(&[1]),
+    )
+    .unwrap();
+    assert!(st.unit(f).is_none());
+    assert!(ev.iter().any(|e| matches!(
+        e,
+        Event::AaFire {
+            gun_owner: Power::Japan,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn friendly_aa_does_not_shoot_own_or_allied_planes() {
+    let mut st = cm(Power::Usa);
+    let f = put(&mut st, UnitType::Fighter, Power::Usa, "western_usa");
+    put(&mut st, UnitType::AaGun, Power::Uk, "western_canada");
+    let ev = act_seed(
+        &mut st,
+        Power::Usa,
+        mv(&[f], &["western_canada", "western_usa"]),
+        seed_for(&[1]),
+    )
+    .unwrap();
+    assert!(st.unit(f).is_some());
+    assert!(!ev.iter().any(|e| matches!(e, Event::AaFire { .. })));
+}
+
+#[test]
+fn bridging_after_the_transport_has_already_moved() {
+    let mut st = nc(Power::Uk);
+    let t = put(&mut st, UnitType::Transport, Power::Uk, "sz_north");
+    let i = put(&mut st, UnitType::Infantry, Power::Uk, "eastern_canada");
+    act(&mut st, Power::Uk, mv(&[t], &["sz_east_canada"])).unwrap();
+    load(&mut st, Power::Uk, &[i], t).unwrap();
+    unload(&mut st, Power::Uk, t, &[i], "western_canada").unwrap();
+    assert_eq!(st.unit(i).unwrap().location, loc("western_canada"));
+    assert!(
+        act(&mut st, Power::Uk, mv(&[t], &["sz_north"])).is_err(),
+        "bridging ends the move"
+    );
+}
+
+#[test]
+fn tank_that_blitzed_retreats_to_the_captured_space_which_stays_captured() {
+    let mut st = cm(Power::Germany);
+    let a = put(&mut st, UnitType::Armor, Power::Germany, "eastern_europe");
+    set_control(&mut st, "ukraine_s_s_r", Some(Power::Ussr));
+    set_control(&mut st, "caucasus", Some(Power::Ussr));
+    putn(&mut st, UnitType::Infantry, Power::Ussr, "caucasus", 3);
+    act(
+        &mut st,
+        Power::Germany,
+        mv(&[a], &["ukraine_s_s_r", "caucasus"]),
+    )
+    .unwrap();
+    go_combat(&mut st, Power::Germany);
+    act_seed(
+        &mut st,
+        Power::Germany,
+        Action::BeginBattle {
+            location: loc("caucasus"),
+        },
+        seed_for(&[6, 6, 6, 6]),
+    )
+    .unwrap();
+    act(
+        &mut st,
+        Power::Germany,
+        Action::Retreat {
+            to: loc("ukraine_s_s_r"),
+        },
+    )
+    .unwrap();
+    assert_eq!(st.unit(a).unwrap().location, loc("ukraine_s_s_r"));
+    assert_eq!(st.control[loc("ukraine_s_s_r")], Some(Power::Germany));
+    assert_eq!(st.control[loc("caucasus")], Some(Power::Ussr));
+}

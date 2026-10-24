@@ -94,6 +94,12 @@ pub fn check_invariants(st: &GameState) {
             );
             if !map.loc(t).neutral {
                 assert!(st.control[t].is_some(), "{} lost its controller", t.id());
+            } else if st.control[t].is_none() {
+                assert!(
+                    st.units_at(t).next().is_none(),
+                    "units inside an untouched neutral {}",
+                    t.id()
+                );
             }
         }
     }
@@ -109,7 +115,7 @@ pub fn check_invariants(st: &GameState) {
 }
 
 /// At the end of a power's turn no aircraft may be airborne.
-fn check_landed(st: &GameState, p: Power) {
+fn check_landed(st: &GameState, p: Power, start_control: &crate::map::LocMap<Option<Power>>) {
     for u in st.units.iter().filter(|u| u.owner == p && u.kind.is_air()) {
         if let Some(c) = u.loaded_on {
             assert_eq!(st.unit(c).unwrap().kind, UnitType::Carrier);
@@ -123,6 +129,13 @@ fn check_landed(st: &GameState, p: Power) {
             assert!(
                 st.is_friendly_land(p, u.location),
                 "{:?} of {:?} ended turn on non-friendly {}",
+                u.kind,
+                p,
+                u.location.id()
+            );
+            assert!(
+                matches!(start_control[u.location], Some(o) if o.is_ally(p)),
+                "{:?} of {:?} landed in {} which was not friendly at the start of its turn",
                 u.kind,
                 p,
                 u.location.id()
@@ -193,6 +206,7 @@ pub fn play_random(seed: u64, rounds: u32) -> (usize, GameState) {
         std::time::Duration::ZERO,
     );
     let mut n = 0usize;
+    let mut start_control = st.turn.start_control.clone();
     let mut log: Vec<(Power, Action, u64)> = vec![];
     while st.round <= rounds && st.winner.is_none() {
         let t0 = std::time::Instant::now();
@@ -223,8 +237,9 @@ pub fn play_random(seed: u64, rounds: u32) -> (usize, GameState) {
         check_invariants(&st);
         inv_time += t0.elapsed();
         if st.turn.number != before_turn {
-            check_landed(&st, prev_power);
+            check_landed(&st, prev_power, &start_control);
             check_quiet_board(&st);
+            start_control = st.turn.start_control.clone();
         }
         assert!(n < 200_000, "runaway game");
     }
