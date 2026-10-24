@@ -1,0 +1,6 @@
+env         = "prod"
+region      = "us-east-1"
+domain_name = "wartide.example.com"
+# Leave empty to manage DNS yourself (see docs/DEPLOY.md)
+route53_zone_id = "Z0123456789ABC"
+github_repo     = "owner/ww2-game"
