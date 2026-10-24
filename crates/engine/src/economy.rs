@@ -303,12 +303,13 @@ pub fn place(
     for _ in 0..count {
         ids.push(state.spawn(kind, p, loc));
     }
-    match state.turn.placed.iter_mut().find(|x| x.0 == source) {
-        Some(x) => x.1 += count,
-        None => state.turn.placed.push((source, count)),
-    }
     if kind == UnitType::IndustrialComplex {
         state.new_complexes_placed += 1;
+    } else {
+        match state.turn.placed.iter_mut().find(|x| x.0 == source) {
+            Some(x) => x.1 += count,
+            None => state.turn.placed.push((source, count)),
+        }
     }
     if let Some(it) = state.purchases.iter_mut().find(|i| i.unit == kind) {
         it.count -= count;

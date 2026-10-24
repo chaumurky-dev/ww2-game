@@ -25,7 +25,9 @@ pub fn blank(power: Power, phase: Phase) -> GameState {
 
 pub fn put(st: &mut GameState, kind: UnitType, owner: Power, at: &str) -> UnitId {
     let l = loc(at);
-    st.spawn(kind, owner, l)
+    let id = st.spawn(kind, owner, l);
+    st.unit_mut(id).unwrap().born_turn = 0;
+    id
 }
 
 pub fn putn(st: &mut GameState, kind: UnitType, owner: Power, at: &str, n: usize) -> Vec<UnitId> {
