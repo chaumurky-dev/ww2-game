@@ -1,6 +1,11 @@
 set dotenv-load := true
 set shell := ["bash", "-cu"]
 
+# Prefer the rustup toolchain (has the wasm target) over Homebrew's cargo; see scripts/env.sh
+export PATH := "/usr/local/opt/rustup/bin:" + env_var("HOME") + "/.cargo/bin:" + env_var("HOME") + "/.local/bin:" + env_var("PATH")
+export DYLD_FALLBACK_LIBRARY_PATH := env_var("HOME") + "/.rustup/toolchains/stable-x86_64-apple-darwin/lib"
+export COOKIE_SECURE := env_var_or_default("COOKIE_SECURE", "false")
+
 # Local defaults (override in .env)
 export DATABASE_URL := env_var_or_default("DATABASE_URL", "postgres://wartide:wartide@localhost:5432/wartide")
 export BASE_URL := env_var_or_default("BASE_URL", "http://localhost:8080")
