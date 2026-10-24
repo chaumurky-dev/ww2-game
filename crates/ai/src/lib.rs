@@ -11,6 +11,17 @@
 use serde::{Deserialize, Serialize};
 use wartide_engine::{Action, GameState, Power};
 
+pub mod battle;
+pub mod combat;
+pub mod commentary;
+pub mod economy;
+pub mod eval;
+pub mod garrison;
+pub mod movement;
+pub mod placement;
+pub mod planner;
+pub mod selfplay;
+
 /// How a bot plays and talks. Persona ids match the server's persona catalog.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -60,6 +71,7 @@ pub struct Bot {
     power: Power,
     seed: u64,
     fallback: wartide_engine::random_policy::RandomPolicy,
+    mem: planner::Memory,
 }
 
 impl Bot {
@@ -70,6 +82,7 @@ impl Bot {
             power,
             seed,
             fallback: wartide_engine::random_policy::RandomPolicy::new(seed),
+            mem: planner::Memory::default(),
         }
     }
 
@@ -89,11 +102,7 @@ impl Bot {
     /// The server applies the action with `wartide_engine::apply` and posts the commentary to the
     /// bot's team chat.
     pub fn next_action(&mut self, state: &GameState) -> Option<(Action, Vec<Commentary>)> {
-        let (power, action) = self.fallback.next_action(state)?;
-        if power != self.power {
-            return None;
-        }
-        Some((action, Vec::new()))
+        self.decide(state)
     }
 }
 
