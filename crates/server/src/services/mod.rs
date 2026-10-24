@@ -1,0 +1,9 @@
+pub mod auth;
+pub mod chat;
+pub mod games;
+pub mod groups;
+pub mod matchmaking;
+pub mod ratings;
+pub mod rules;
+pub mod timeouts;
+pub mod users;

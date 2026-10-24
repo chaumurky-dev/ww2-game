@@ -1,0 +1,12 @@
+[package]
+name = "wartide-protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+# wasm-friendly: no RNG/clock features here (the server enables v4 / clock itself).
+uuid = { version = "1", default-features = false, features = ["serde"] }
+chrono = { version = "0.4", default-features = false, features = ["serde", "std"] }
