@@ -102,3 +102,22 @@ fn aggressive_bots_end_games_and_plan_quickly() {
     }
     assert!(finished >= 2, "only {finished}/6 games finished");
 }
+
+/// Wider sweep over settings and mixed personas (run with `--ignored --release`).
+#[test]
+#[ignore]
+fn stress_many_seeds_and_settings() {
+    let styles = [Style::Aggressive, Style::Balanced, Style::Cautious];
+    for seed in 100..130u64 {
+        let mut s = settings(seed);
+        s.soviet_first_turn_restriction = seed % 3 == 0;
+        s.original_complexes_only = seed % 4 == 0;
+        s.weapons_development = seed % 5 != 0;
+        s.germany_jet_power = seed % 7 == 0;
+        s.japan_super_subs = seed % 7 == 1;
+        let mix: [Style; 5] = std::array::from_fn(|i| styles[(seed as usize + i) % 3]);
+        let rep = play_opts(s, mix, Verbosity::Chatty, seed, 20, seed % 2 == 0);
+        assert!(!rep.stalled, "seed {seed}: {:?}", rep.errors);
+        assert!(rep.errors.is_empty(), "seed {seed}: {:?}", rep.errors);
+    }
+}

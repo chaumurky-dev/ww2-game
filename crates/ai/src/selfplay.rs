@@ -38,6 +38,8 @@ pub struct Report {
     pub max_turn_ms: f64,
     /// Battles per attacking power: [started, won, retreated].
     pub battles: [[u32; 3]; 5],
+    /// Units lost to non-combat causes (aircraft that could not land, unplaceable purchases), per power.
+    pub lost_noncombat: [u32; 5],
     /// True if the loop aborted because a bot returned nothing or exceeded the action cap.
     pub stalled: bool,
 }
@@ -110,6 +112,7 @@ pub fn play_opts(
         total_ms: 0.0,
         max_turn_ms: 0.0,
         battles: [[0; 3]; 5],
+        lost_noncombat: [0; 5],
         stalled: false,
     };
     let mut turn_actions = 0u32;
@@ -162,6 +165,9 @@ pub fn play_opts(
             Ok(events) => {
                 for e in &events {
                     match e {
+                        Event::UnitsLost { units, .. } => {
+                            rep.lost_noncombat[actor.index()] += units.len() as u32
+                        }
                         Event::BattleStarted { .. } => rep.battles[actor.index()][0] += 1,
                         Event::BattleEnded { outcome, .. } => match outcome {
                             BattleOutcome::AttackerWins => rep.battles[actor.index()][1] += 1,

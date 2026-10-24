@@ -110,7 +110,7 @@ pub fn plan_purchase(
     // Capital danger?
     let cap = me.capital();
     let cap_threat = intel.threat[cap.idx()];
-    let defensive = state.control[cap] == Some(me) && cap_threat > intel.defense[cap.idx()] * 0.9;
+    let defensive = state.control[cap] == Some(me) && cap_threat > intel.defense[cap.idx()] * 1.3;
     note.defensive = defensive;
 
     // Industrial complex.

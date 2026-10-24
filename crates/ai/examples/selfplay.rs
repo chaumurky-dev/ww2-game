@@ -56,19 +56,26 @@ fn main() {
     for p in Power::ALL {
         let b = rep.battles[p.index()];
         println!(
-            "{:<14} battles {:>3} won {:>3} retreated {:>3}",
+            "{:<14} battles {:>3} won {:>3} retreated {:>3} lost-noncombat {}",
             p.name(),
             b[0],
             b[1],
-            b[2]
+            b[2],
+            rep.lost_noncombat[p.index()]
         );
     }
     for e in rep.errors.iter().take(10) {
         println!("  error: {e}");
     }
     println!("--- chat samples ---");
-    let step = (rep.chat.len() / 14).max(1);
-    for (round, p, text) in rep.chat.iter().step_by(step).take(14) {
+    let all = std::env::var("CHAT_ALL").is_ok();
+    let step = if all { 1 } else { (rep.chat.len() / 14).max(1) };
+    for (round, p, text) in rep
+        .chat
+        .iter()
+        .step_by(step)
+        .take(if all { usize::MAX } else { 14 })
+    {
         println!("[r{round} {}] {text}", p.name());
     }
     let _ = Power::Ussr;

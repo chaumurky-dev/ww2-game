@@ -58,6 +58,11 @@ pub fn describe(items: &[(UnitType, u32)]) -> String {
     }
 }
 
+fn with_article(w: &str) -> String {
+    let an = w.starts_with(['a', 'e', 'i', 'o', 'u', 'A']);
+    format!("{} {w}", if an { "an" } else { "a" })
+}
+
 fn kind_word(k: UnitType) -> &'static str {
     match k {
         UnitType::Infantry => "infantry",
@@ -408,7 +413,7 @@ impl Voice<'_> {
         let l = self.style3(
             state,
             15,
-            &["Lost a {k} over {t}, ouch. Next time they pay double."],
+            &["Lost {ka} over {t}, ouch. Next time they pay double."],
             &["Lost the {k} at {t}. Holding the line at {home}."],
             &["Ouch, the {k} at {t} is gone. Time to be more careful around {home}."],
         );
