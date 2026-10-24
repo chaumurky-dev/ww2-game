@@ -17,6 +17,10 @@ struct Ctx {
 }
 
 async fn setup() -> Option<Ctx> {
+    setup_with(false).await
+}
+
+async fn setup_with(rate_limit: bool) -> Option<Ctx> {
     let _ = dotenvy::dotenv();
     let Ok(url) = std::env::var("DATABASE_URL") else {
         eprintln!("NOTICE: DATABASE_URL not set; skipping DB integration test");
@@ -25,7 +29,9 @@ async fn setup() -> Option<Ctx> {
     let db = connect_db(&url).await.expect("connect");
     MIGRATOR.run(&db).await.expect("migrate");
     let (mailer, outbox) = Mailer::capture();
-    let state = build_state(db, Config::for_test(url), mailer);
+    let mut cfg = Config::for_test(url);
+    cfg.rate_limit = rate_limit;
+    let state = build_state(db, cfg, mailer);
     Some(Ctx {
         app: build_router(state.clone()),
         state,
@@ -619,6 +625,18 @@ async fn matchmaking_creates_public_game() {
     let a = register(&c, true).await;
     let b = register(&c, true).await;
     let mut rx = c.state.hub.subscribe_user(a.id);
+    // a opts out of match-found emails
+    let (st, settings, _) = call(
+        &c.app,
+        Method::PATCH,
+        "/api/me/settings",
+        Some(&a.cookie),
+        Some(json!({"email_match_found": false})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(settings["email_match_found"], false);
+    assert_eq!(settings["email_turn_notifications"], true);
     for u in [&a, &b] {
         let (st, _, _) = call(
             &c.app,
@@ -661,6 +679,22 @@ async fn matchmaking_creates_public_game() {
     .await;
     assert_eq!(game["kind"], "public");
     assert_eq!(game["status"], "in_progress");
+    assert!(
+        game["name"].as_str().unwrap().starts_with("Ranked 2p #"),
+        "{game}"
+    );
+    {
+        let o = c.outbox.lock().unwrap();
+        let found = |u: &TestUser| {
+            o.iter().any(|m| {
+                m.to == format!("{}@example.com", u.username)
+                    && m.subject == "Your Wartide match is ready"
+                    && m.html.is_some()
+            })
+        };
+        assert!(found(&b), "b should get a match-found email");
+        assert!(!found(&a), "a opted out of match-found emails");
+    }
     let (_, q, _) = call(
         &c.app,
         Method::GET,
@@ -691,4 +725,614 @@ async fn matchmaking_creates_public_game() {
     .await;
     assert_eq!(prof["stats"][0]["ladder"], "public:2p");
     assert_eq!(prof["stats"][0]["losses"], 1);
+    assert_eq!(prof["stats"][0]["current_win_streak"], 0);
+    let games = prof["recent_games"].as_array().unwrap();
+    assert_eq!(games.len(), 1);
+    assert_eq!(games[0]["status"], "finished");
+    assert!(games[0]["winner"].is_string());
+    let (_, prof_b, _) = call(
+        &c.app,
+        Method::GET,
+        &format!("/api/users/{}", b.username),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(prof_b["stats"][0]["wins"], 1);
+    assert_eq!(prof_b["stats"][0]["current_win_streak"], 1);
+    assert_eq!(prof_b["stats"][0]["best_win_streak"], 1);
+}
+
+async fn create_solo_game(c: &Ctx, u: &TestUser, extra: Value) -> Value {
+    let mut body = json!({"mode": "five_player", "bot_seats": [1, 2, 3, 4]});
+    for (k, v) in extra.as_object().unwrap() {
+        body[k] = v.clone();
+    }
+    let (st, game, _) = call(
+        &c.app,
+        Method::POST,
+        "/api/games",
+        Some(&u.cookie),
+        Some(body),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK, "{game}");
+    game
+}
+
+#[tokio::test]
+async fn names_personas_and_turn_emails() {
+    let Some(c) = setup().await else { return };
+    let a = register(&c, true).await;
+    let (st, personas, _) = call(&c.app, Method::GET, "/api/bots/personas", None, None).await;
+    assert_eq!(st, StatusCode::OK);
+    let personas = personas.as_array().unwrap();
+    assert_eq!(personas.len(), 6);
+    assert!(personas.iter().all(|p| p["id"].is_string()
+        && p["name"].is_string()
+        && p["blurb"].is_string()
+        && ["aggressive", "balanced", "cautious"].contains(&p["style"].as_str().unwrap())
+        && ["chatty", "normal", "quiet"].contains(&p["verbosity"].as_str().unwrap())));
+
+    let g = create_solo_game(
+        &c,
+        &a,
+        json!({"name": "  Eastern   Front ", "bot_personas": [null, "thistle", null, "frost"]}),
+    )
+    .await;
+    assert_eq!(g["name"], "Eastern Front");
+    let seats = g["seats"].as_array().unwrap();
+    assert_eq!(seats[1]["bot_persona"], "thistle");
+    assert_eq!(seats[1]["bot_name"], "Major Thistle");
+    assert_eq!(seats[3]["bot_persona"], "frost");
+    assert!(seats[2]["bot_persona"].is_string());
+    assert!(seats[0]["bot_persona"].is_null());
+
+    let g2 = create_solo_game(&c, &a, json!({})).await;
+    assert!(g2["name"].as_str().unwrap().starts_with("Private game #"));
+
+    for (extra, what) in [
+        (json!({"bot_personas": [null, "nobody"]}), "unknown persona"),
+        (json!({"bot_personas": ["frost"]}), "persona on human seat"),
+        (json!({"name": "x".repeat(61)}), "long name"),
+    ] {
+        let mut body = json!({"mode": "five_player", "bot_seats": [1, 2, 3, 4]});
+        for (k, v) in extra.as_object().unwrap() {
+            body[k] = v.clone();
+        }
+        let (st, err, _) = call(
+            &c.app,
+            Method::POST,
+            "/api/games",
+            Some(&a.cookie),
+            Some(body),
+        )
+        .await;
+        assert_eq!(st, StatusCode::BAD_REQUEST, "{what}: {err}");
+    }
+
+    // your-turn email is HTML+text and honours the opt-out
+    let b = register(&c, true).await;
+    let (st, _, _) = call(
+        &c.app,
+        Method::PATCH,
+        "/api/me/settings",
+        Some(&b.cookie),
+        Some(json!({"email_turn_notifications": false})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+    create_solo_game(&c, &b, json!({})).await;
+    let o = c.outbox.lock().unwrap();
+    let turn = |u: &TestUser| {
+        o.iter()
+            .filter(|m| {
+                m.to == format!("{}@example.com", u.username)
+                    && m.subject == "It's your turn in Wartide"
+            })
+            .count()
+    };
+    assert_eq!(turn(&a), 2);
+    assert_eq!(turn(&b), 0);
+    let mail = o
+        .iter()
+        .find(|m| m.subject == "It's your turn in Wartide" && m.to.starts_with(&a.username))
+        .unwrap();
+    assert!(mail.html.as_ref().unwrap().contains("WARTIDE"));
+    assert!(mail.body.contains("/games/"));
+    // verification mails are multipart too
+    assert!(o
+        .iter()
+        .any(|m| m.subject == "Verify your Wartide email" && m.html.is_some()));
+}
+
+#[tokio::test]
+async fn password_change_and_account_deletion() {
+    let Some(c) = setup().await else { return };
+    let a = register(&c, true).await;
+    // second session
+    let (st, _, cookie2) = call(
+        &c.app,
+        Method::POST,
+        "/api/auth/login",
+        None,
+        Some(json!({"login": a.username, "password": "hunter2hunter2"})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+    let second = cookie2
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .trim_start_matches("wt_session=")
+        .to_string();
+
+    let (st, err, _) = call(
+        &c.app,
+        Method::POST,
+        "/api/me/password",
+        Some(&a.cookie),
+        Some(json!({"current_password": "wrong-one", "new_password": "brand-new-pass"})),
+    )
+    .await;
+    assert_eq!(
+        (st, err["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("invalid_credentials"))
+    );
+    let (st, _, _) = call(
+        &c.app,
+        Method::POST,
+        "/api/me/password",
+        Some(&a.cookie),
+        Some(json!({"current_password": "hunter2hunter2", "new_password": "short"})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+    let (st, _, _) = call(
+        &c.app,
+        Method::POST,
+        "/api/me/password",
+        Some(&a.cookie),
+        Some(json!({"current_password": "hunter2hunter2", "new_password": "brand-new-pass"})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::NO_CONTENT);
+    assert_eq!(
+        call(&c.app, Method::GET, "/api/me", Some(&a.cookie), None)
+            .await
+            .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        call(&c.app, Method::GET, "/api/me", Some(&second), None)
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    let login = |pw: &'static str| {
+        let app = c.app.clone();
+        let u = a.username.clone();
+        async move {
+            call(
+                &app,
+                Method::POST,
+                "/api/auth/login",
+                None,
+                Some(json!({"login": u, "password": pw})),
+            )
+            .await
+            .0
+        }
+    };
+    assert_eq!(login("hunter2hunter2").await, StatusCode::BAD_REQUEST);
+    assert_eq!(login("brand-new-pass").await, StatusCode::OK);
+
+    // deletion keeps games intact
+    let game = create_solo_game(&c, &a, json!({})).await;
+    let gid: Uuid = game["id"].as_str().unwrap().parse().unwrap();
+    let (st, _, cleared) = call(&c.app, Method::DELETE, "/api/me", Some(&a.cookie), None).await;
+    assert_eq!(st, StatusCode::NO_CONTENT);
+    assert!(cleared.unwrap().contains("Max-Age=0"));
+    assert_eq!(
+        call(&c.app, Method::GET, "/api/me", Some(&a.cookie), None)
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(login("brand-new-pass").await, StatusCode::BAD_REQUEST);
+    let (st, _, _) = call(
+        &c.app,
+        Method::GET,
+        &format!("/api/users/{}", a.username),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(st, StatusCode::NOT_FOUND);
+    let (uname, email, seat_user): (String, String, Option<Uuid>) = sqlx::query_as(
+        "SELECT u.username, u.email, s.user_id FROM users u JOIN game_seats s ON s.user_id=u.id WHERE s.game_id=$1 AND s.seat=0",
+    )
+    .bind(gid)
+    .fetch_one(&c.state.db)
+    .await
+    .unwrap();
+    assert_eq!(uname, format!("deleted-{}", a.id));
+    assert!(email.starts_with(&format!("deleted-{}", a.id)));
+    assert_eq!(seat_user, Some(a.id));
+    // the game itself is still readable by a spectator once finished; here: still exists
+    let b = register(&c, true).await;
+    let (st, _, _) = call(
+        &c.app,
+        Method::GET,
+        &format!("/api/games/{gid}"),
+        Some(&b.cookie),
+        None,
+    )
+    .await;
+    assert_eq!(st, StatusCode::FORBIDDEN); // private & unfinished
+}
+
+#[tokio::test]
+async fn spectating_and_public_listing() {
+    let Some(c) = setup().await else { return };
+    let a = register(&c, true).await;
+    let b = register(&c, true).await;
+    let watcher = register(&c, true).await;
+    let gid = wartide_server::services::games::create_public(
+        &c.state,
+        wartide_protocol::game::GameMode::TwoPlayer,
+        &[a.id, b.id],
+    )
+    .await
+    .unwrap();
+    // players write to all + team chat
+    for (ch, body) in [("all", "hello everyone"), ("team", "secret plan")] {
+        let (st, _, _) = call(
+            &c.app,
+            Method::POST,
+            &format!("/api/games/{gid}/chat"),
+            Some(&a.cookie),
+            Some(json!({"channel": ch, "body": body})),
+        )
+        .await;
+        assert_eq!(st, StatusCode::CREATED);
+    }
+    let get = |p: String| {
+        let app = c.app.clone();
+        let ck = watcher.cookie.clone();
+        async move { call(&app, Method::GET, &p, Some(&ck), None).await }
+    };
+    assert_eq!(get(format!("/api/games/{gid}")).await.0, StatusCode::OK);
+    assert_eq!(
+        get(format!("/api/games/{gid}/state")).await.0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        get(format!("/api/games/{gid}/actions")).await.0,
+        StatusCode::OK
+    );
+    let (st, chat, _) = get(format!("/api/games/{gid}/chat?channel=all")).await;
+    assert_eq!(st, StatusCode::OK);
+    assert!(chat
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|m| m["body"] == "hello everyone"));
+    assert!(chat
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|m| m["channel"] == "all"));
+    let (st, chat, _) = get(format!("/api/games/{gid}/chat")).await;
+    assert_eq!(st, StatusCode::OK);
+    assert!(chat
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|m| m["channel"] == "all"));
+    assert_eq!(
+        get(format!("/api/games/{gid}/chat?channel=team")).await.0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        get(format!("/api/games/{gid}/chat?channel=power")).await.0,
+        StatusCode::FORBIDDEN
+    );
+    // spectators cannot post or act
+    let (st, _, _) = call(
+        &c.app,
+        Method::POST,
+        &format!("/api/games/{gid}/chat"),
+        Some(&watcher.cookie),
+        Some(json!({"channel": "all", "body": "hi"})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    let (st, _, _) = call(
+        &c.app,
+        Method::POST,
+        &format!("/api/games/{gid}/actions"),
+        Some(&watcher.cookie),
+        Some(json!({"action": {"type": "end_turn"}})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    // logged-out users cannot spectate
+    assert_eq!(
+        call(
+            &c.app,
+            Method::GET,
+            &format!("/api/games/{gid}"),
+            None,
+            None
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+
+    // listing
+    let (st, list, _) = get("/api/games/public?status=active".into()).await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(list["page"], 1);
+    assert_eq!(list["per_page"], 20);
+    let items = list["items"].as_array().unwrap();
+    assert!(items.iter().any(|g| g["id"] == gid.to_string()));
+    assert!(items
+        .iter()
+        .all(|g| g["kind"] == "public" && g["status"] == "in_progress"));
+    let times: Vec<&str> = items
+        .iter()
+        .map(|g| g["created_at"].as_str().unwrap())
+        .collect();
+    assert!(times.windows(2).all(|w| w[0] >= w[1]), "newest first");
+    let (_, beyond, _) = get("/api/games/public?page=100000".into()).await;
+    assert!(beyond["items"].as_array().unwrap().is_empty());
+
+    // private games: hidden until finished
+    let private = create_solo_game(&c, &a, json!({})).await;
+    let pid = private["id"].as_str().unwrap().to_string();
+    assert_eq!(
+        get(format!("/api/games/{pid}")).await.0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        get(format!("/api/games/{pid}/state")).await.0,
+        StatusCode::FORBIDDEN
+    );
+    let (st, _, _) = call(
+        &c.app,
+        Method::POST,
+        &format!("/api/games/{pid}/resign"),
+        Some(&a.cookie),
+        None,
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(get(format!("/api/games/{pid}")).await.0, StatusCode::OK);
+    assert_eq!(
+        get(format!("/api/games/{pid}/chat?channel=all")).await.0,
+        StatusCode::OK
+    );
+
+    // profile redacts group/private details, shows public games
+    let (_, prof, _) = call(
+        &c.app,
+        Method::GET,
+        &format!("/api/users/{}", a.username),
+        None,
+        None,
+    )
+    .await;
+    assert!(prof["recent_games"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|g| g["id"] == gid.to_string()));
+    assert!(prof["recent_games"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|g| g["kind"] == "public" || g["group_id"].is_null()));
+}
+
+#[tokio::test]
+async fn rate_limits_return_api_errors() {
+    let Some(c) = setup().await else { return };
+    let a = register(&c, true).await;
+    let limited = Ctx {
+        app: build_router(build_state(
+            c.state.db.clone(),
+            {
+                let mut cfg = Config::for_test(String::new());
+                cfg.rate_limit = true;
+                cfg
+            },
+            Mailer::capture().0,
+        )),
+        state: c.state.clone(),
+        outbox: c.outbox.clone(),
+    };
+    // chat: 20 / minute
+    let game = create_solo_game(&c, &a, json!({})).await;
+    let gid = game["id"].as_str().unwrap();
+    let mut last = (StatusCode::OK, Value::Null);
+    for i in 0..21 {
+        let (st, body, _) = call(
+            &limited.app,
+            Method::POST,
+            &format!("/api/games/{gid}/chat"),
+            Some(&a.cookie),
+            Some(json!({"channel": "all", "body": format!("m{i}")})),
+        )
+        .await;
+        if i < 20 {
+            assert_eq!(st, StatusCode::CREATED, "{body}");
+        }
+        last = (st, body);
+    }
+    assert_eq!(last.0, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(last.1["code"], "rate_limited");
+    // game creation: 10 / hour (one game already made through the unlimited app)
+    let mut codes = Vec::new();
+    for _ in 0..11 {
+        let (st, body, _) = call(
+            &limited.app,
+            Method::POST,
+            "/api/games",
+            Some(&a.cookie),
+            Some(json!({"mode": "five_player", "bot_seats": [1, 2, 3, 4]})),
+        )
+        .await;
+        codes.push((st, body["code"].as_str().map(str::to_string)));
+    }
+    assert!(codes[..10].iter().all(|(s, _)| *s == StatusCode::OK));
+    assert_eq!(
+        codes[10],
+        (StatusCode::TOO_MANY_REQUESTS, Some("rate_limited".into()))
+    );
+    // per-IP limit on credential endpoints also speaks ApiError
+    let mut seen = None;
+    for _ in 0..15 {
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri("/api/auth/login")
+            .header(header::CONTENT_TYPE, "application/json")
+            .header("x-forwarded-for", "203.0.113.77")
+            .body(Body::from(
+                json!({"login": "nobody", "password": "x"}).to_string(),
+            ))
+            .unwrap();
+        let res = limited.app.clone().oneshot(req).await.unwrap();
+        if res.status() == StatusCode::TOO_MANY_REQUESTS {
+            assert!(res.headers().contains_key(header::RETRY_AFTER));
+            let bytes = axum::body::to_bytes(res.into_body(), 1 << 16)
+                .await
+                .unwrap();
+            let v: Value = serde_json::from_slice(&bytes).unwrap();
+            seen = Some(v);
+            break;
+        }
+    }
+    assert_eq!(
+        seen.expect("governor should trigger")["code"],
+        "rate_limited"
+    );
+}
+
+#[tokio::test]
+async fn admin_endpoints() {
+    let Some(c) = setup().await else { return };
+    let admin = register(&c, true).await;
+    let user = register(&c, true).await;
+    sqlx::query("UPDATE users SET is_admin=TRUE WHERE id=$1")
+        .bind(admin.id)
+        .execute(&c.state.db)
+        .await
+        .unwrap();
+    assert_eq!(
+        call(
+            &c.app,
+            Method::GET,
+            "/api/admin/stats",
+            Some(&user.cookie),
+            None
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call(&c.app, Method::GET, "/api/admin/stats", None, None)
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    let (st, stats, _) = call(
+        &c.app,
+        Method::GET,
+        "/api/admin/stats",
+        Some(&admin.cookie),
+        None,
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK, "{stats}");
+    assert!(stats["users"].as_i64().unwrap() >= 2);
+    assert!(stats["games_lobby"].is_i64() && stats["queue_two_player"].is_i64());
+    let (_, me, _) = call(&c.app, Method::GET, "/api/me", Some(&admin.cookie), None).await;
+    assert_eq!(me["is_admin"], true);
+
+    let game = create_solo_game(&c, &user, json!({})).await;
+    assert_eq!(game["status"], "in_progress");
+    let uri = format!("/api/admin/games/{}/abandon", game["id"].as_str().unwrap());
+    assert_eq!(
+        call(&c.app, Method::POST, &uri, Some(&user.cookie), None)
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+    let (st, ab, _) = call(&c.app, Method::POST, &uri, Some(&admin.cookie), None).await;
+    assert_eq!(st, StatusCode::OK, "{ab}");
+    assert_eq!(ab["status"], "abandoned");
+    assert_eq!(
+        call(&c.app, Method::POST, &uri, Some(&admin.cookie), None)
+            .await
+            .0,
+        StatusCode::CONFLICT
+    );
+    let nope = format!("/api/admin/games/{}/abandon", Uuid::new_v4());
+    assert_eq!(
+        call(&c.app, Method::POST, &nope, Some(&admin.cookie), None)
+            .await
+            .0,
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
+async fn hardening_headers_and_body_limit() {
+    let Some(c) = setup().await else { return };
+    let res = c
+        .app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/me")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.headers()[header::CACHE_CONTROL], "no-store");
+    assert_eq!(res.headers()[header::X_CONTENT_TYPE_OPTIONS], "nosniff");
+    let res = c
+        .app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/some/spa/route")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.headers()[header::X_FRAME_OPTIONS], "DENY");
+    let csp = res.headers()[header::CONTENT_SECURITY_POLICY]
+        .to_str()
+        .unwrap();
+    assert!(csp.contains("fonts.googleapis.com") && csp.contains("connect-src 'self' ws: wss:"));
+    assert!(!res.headers().contains_key(header::CACHE_CONTROL));
+    // > 1 MB bodies are rejected
+    let big = "x".repeat(1_100_000);
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/api/auth/login")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(format!(
+            "{{\"login\":\"{big}\",\"password\":\"x\"}}"
+        )))
+        .unwrap();
+    let res = c.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
 }
