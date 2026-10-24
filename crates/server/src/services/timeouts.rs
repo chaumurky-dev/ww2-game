@@ -2,9 +2,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use uuid::Uuid;
+use wartide_protocol::game::{GameSettings, Power};
 
 use crate::error::AppResult;
-use crate::services::{chat, games};
+use crate::services::{bots, chat, games};
 use crate::state::AppState;
 
 pub struct ExpiredTurn {
@@ -19,41 +20,82 @@ pub trait TurnTimeoutHandler: Send + Sync + 'static {
     async fn handle(&self, state: &AppState, expired: ExpiredTurn) -> AppResult<()>;
 }
 
-/// Default behaviour: log, post a system message, skip the turn.
-///
-/// TODO(engine): instead of skipping, call `wartide-ai` to auto-play the turn for the absent
-/// player (and for bot seats, play their turn here without any "timeout" message).
+/// Consecutive missed turns after which a seat is handed to a computer player for good.
+pub const MAX_CONSECUTIVE_TIMEOUTS: i32 = 3;
+
+/// Default behaviour. Bot-controlled decisions are simply (re)started. For a human whose clock
+/// ran out: post a system message, count the miss, restart their clock and let a computer player
+/// play that power until the engine moves on to a different power (a temporary takeover). After
+/// three consecutive misses the seat becomes bot-controlled permanently and the player counts as
+/// resigned for ratings.
 pub struct DefaultTimeoutHandler;
 
 #[async_trait]
 impl TurnTimeoutHandler for DefaultTimeoutHandler {
     async fn handle(&self, state: &AppState, e: ExpiredTurn) -> AppResult<()> {
-        let seats = games::load_seats(state, e.game_id).await?;
-        let power = wartide_protocol::game::Power::parse(&e.current_power);
-        let seat = power.and_then(|p| seats.iter().find(|s| s.controls(p)));
-        if seat.is_some_and(|s| s.is_bot) {
-            // TODO(engine): bot turn -> ask the AI for actions and apply them via games::apply_action.
-            tracing::info!(game = %e.game_id, power = %e.current_power, "bot turn due (AI not wired yet); ending turn");
-            return games::advance_turn(state, e.game_id).await;
-        }
-        tracing::info!(game = %e.game_id, power = %e.current_power, "turn timed out");
-        chat::post_system_message(
-            state,
-            e.game_id,
-            &format!(
-                "timeout: {} ran out of time in round {}; their turn was skipped.",
-                e.current_power, e.round
-            ),
-        )
-        .await?;
-        games::advance_turn(state, e.game_id).await
+        let id = e.game_id;
+        let takeover = {
+            let _guard = state.runtime.lock(id).await;
+            let g = games::load_game(state, id).await?;
+            // Re-check under the lock: the player may have acted in the meantime.
+            if g.status != "in_progress" || g.turn_deadline.is_none_or(|d| d >= chrono::Utc::now())
+            {
+                return Ok(());
+            }
+            let Some(power) = g.pending_power.as_deref().and_then(Power::parse) else {
+                return Ok(());
+            };
+            let seats = games::load_seats(state, id).await?;
+            let Some(seat) = games::seat_for_power(&seats, power) else {
+                return Ok(());
+            };
+            if seat.is_bot {
+                None // bot turn that is simply due
+            } else {
+                tracing::info!(game = %id, power = power.as_str(), "turn timed out");
+                let missed: i32 = sqlx::query_scalar(
+                    "UPDATE game_seats SET timeouts=timeouts+1, missed_in_row=missed_in_row+1
+                     WHERE game_id=$1 AND seat=$2 RETURNING missed_in_row",
+                )
+                .bind(id)
+                .bind(seat.seat)
+                .fetch_one(&state.db)
+                .await?;
+                let settings: GameSettings =
+                    serde_json::from_value(g.settings.clone()).unwrap_or_default();
+                // Restart the clock so the next sweep does not count this miss again.
+                sqlx::query("UPDATE games SET turn_deadline = now() + make_interval(secs => $2), updated_at=now() WHERE id=$1")
+                    .bind(id)
+                    .bind(f64::from(settings.turn_timeout_secs))
+                    .execute(&state.db)
+                    .await?;
+                let mut msg = format!(
+                    "timeout: {} ran out of time in round {}; a computer player plays this turn.",
+                    power.as_str(),
+                    g.round
+                );
+                if missed >= MAX_CONSECUTIVE_TIMEOUTS {
+                    sqlx::query("UPDATE game_seats SET is_bot=TRUE, resigned=TRUE, bot_persona=$3 WHERE game_id=$1 AND seat=$2")
+                        .bind(id)
+                        .bind(seat.seat)
+                        .bind(bots::default_for_seat(seat.seat as usize))
+                        .execute(&state.db)
+                        .await?;
+                    msg.push_str(" Three missed turns in a row: a computer player now takes over this seat for good.");
+                }
+                chat::post_system_message(state, id, &msg).await?;
+                Some(power)
+            }
+        };
+        bots::spawn_driver(state, id, takeover);
+        Ok(())
     }
 }
 
 /// One sweep: handle every expired turn. Returns the number handled.
 pub async fn sweep(state: &AppState) -> AppResult<usize> {
     let rows: Vec<(Uuid, Option<String>, i32)> = sqlx::query_as(
-        "SELECT id, current_power, round FROM games
+        "SELECT id, pending_power, round FROM games
          WHERE status='in_progress' AND turn_deadline IS NOT NULL AND turn_deadline < now() LIMIT 100",
     )
     .fetch_all(&state.db)

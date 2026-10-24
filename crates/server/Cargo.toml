@@ -14,6 +14,8 @@ path = "src/main.rs"
 
 [dependencies]
 wartide-protocol = { path = "../protocol" }
+wartide-engine = { path = "../engine" }
+wartide-ai = { path = "../ai" }
 axum = { version = "0.8", features = ["ws", "macros"] }
 tokio = { version = "1", features = ["full"] }
 sqlx = { version = "0.8", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls", "uuid", "chrono", "json", "migrate", "macros"] }

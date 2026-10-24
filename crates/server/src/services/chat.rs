@@ -304,6 +304,7 @@ mod tests {
             username: None,
             display_name: None,
             avatar: None,
+            ..SeatRow::default()
         }
     }
 

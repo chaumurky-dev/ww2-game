@@ -15,6 +15,8 @@ pub struct Config {
     pub default_turn_timeout_secs: u32,
     pub cookie_secure: bool,
     pub rate_limit: bool,
+    /// Pause after every computer-player action (`BOT_ACTION_DELAY_MS`, default 0).
+    pub bot_action_delay_ms: u64,
 }
 
 fn opt(key: &str) -> Option<String> {
@@ -48,6 +50,10 @@ impl Config {
                 .unwrap_or(172_800),
             cookie_secure: opt("COOKIE_SECURE").map(|v| v != "false").unwrap_or(true),
             rate_limit: opt("RATE_LIMIT").map(|v| v != "false").unwrap_or(true),
+            bot_action_delay_ms: opt("BOT_ACTION_DELAY_MS")
+                .map(|p| p.parse())
+                .transpose()?
+                .unwrap_or(0),
         })
     }
 
@@ -67,6 +73,7 @@ impl Config {
             default_turn_timeout_secs: 172_800,
             cookie_secure: false,
             rate_limit: false,
+            bot_action_delay_ms: 0,
         }
     }
 }

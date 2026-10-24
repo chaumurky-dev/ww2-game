@@ -13,7 +13,8 @@ cargo test -p wartide-server  # DB tests run only when DATABASE_URL is set (othe
 
 Config (env / `.env`): `PORT` (8080), `DATABASE_URL`, `BASE_URL`, `SMTP_HOST/PORT/USER/PASS/FROM`
 (no `SMTP_HOST` = emails are only logged), `SESSION_SECRET`, `WEB_DIST_DIR` (`crates/web/dist`),
-`DEFAULT_TURN_TIMEOUT_SECS`, `COOKIE_SECURE` (default true), `RATE_LIMIT` (default true).
+`DEFAULT_TURN_TIMEOUT_SECS`, `COOKIE_SECURE` (default true), `RATE_LIMIT` (default true),
+`BOT_ACTION_DELAY_MS` (default 0; pause after every computer-player action so bot turns are watchable).
 
 ## Conventions
 - Errors are `ApiError {code, message}` JSON with a matching status. Codes: `unauthorized` (401),
@@ -57,11 +58,11 @@ Config (env / `.env`): `PORT` (8080), `DATABASE_URL`, `BASE_URL`, `SMTP_HOST/POR
 | GET `/games?status=active\|finished` | A | - | `[GameSummary]` (mine) |
 | GET `/games/public?status=active\|finished&page=` | A | - | `Paginated<GameSummary>` (matchmade games, 20 per page, newest first) for the watch list |
 | GET `/games/{id}` | A participant, or any user if the game is public or finished | - | `GameSummary` (`name`, `winner`) |
-| GET `/games/{id}/state` | A participant or spectator | - | `GameStateResponse` |
-| GET `/games/{id}/actions?since=N` | A participant or spectator | - | `[GameActionEnvelope]` |
-| POST `/games/{id}/actions` | V seat owning current power | `SubmitActionRequest {action}` | `GameActionEnvelope` |
-| POST `/games/{id}/start` | V host | - | `GameSummary` (empty seats become bots) |
-| POST `/games/{id}/resign` | V participant | - | `GameSummary` (own team loses; rated if ladder) |
+| GET `/games/{id}/state` | A participant or spectator | - | `GameStateResponse {seq, state}`; `state` is the engine `GameState` JSON (everything is public, no fog) |
+| GET `/games/{id}/actions?since=N` | A participant or spectator | - | `[GameActionEnvelope {seq, actor (seat), action, events, created_at}]`; `action` is an engine `Action`, `events` the engine `Vec<Event>` (max 1000 per call) |
+| POST `/games/{id}/actions` | V seat controlling the pending power | `SubmitActionRequest {action}` (engine `Action`, e.g. `{"type":"end_phase"}`) | `GameActionEnvelope`; 409 `not_your_turn`, 400 `illegal_action` with the engine's message |
+| POST `/games/{id}/start` | V host | - | `GameSummary` (empty seats become bots; bots start playing immediately) |
+| POST `/games/{id}/resign` | V participant | - | `GameSummary` (a bot takes over your seat, the game continues; you count as a loss, see below) |
 | POST `/games/{id}/abandon` | V host | - | `GameSummary` (never rated) |
 | GET `/games/{id}/chat?channel=` | A participant or spectator | - | `[ChatMessage]` (only channels you may see; spectators get `all` only, other channels 403) |
 | POST `/games/{id}/chat` | A participant (rate limited) | `SendChatRequest` | 201 `ChatMessage` |
@@ -103,18 +104,43 @@ Ladders: `public:2p`, `public:5p`, `group:{id}:2p`, `group:{id}:5p`. Private gam
 group games affect only that group's ladder; public (matchmade) games affect the public ladder. Team games
 (always Axis vs Allies): each player is rated against every opposing human one at a time (win/loss by team result,
 pre-game ratings), and the resulting rating/deviation/volatility are averaged. Teammates do not influence each
-other; bots are never rated. Resign = your team loses. Abandon = no result.
+other; bots are never rated. A resigned player (also one replaced after three missed turns in a row) is always
+rated as a loss at game end, whatever the outcome; if every human has resigned the game ends at once and the
+other team wins. Abandon = no result.
 
 ## Games, turns, timeouts
 - Seats: 2p = seat 0 Axis (Germany, Japan), seat 1 Allies (USSR, UK, USA); 5p = one power per seat.
-  Turn order USSR, Germany, UK, Japan, USA.
-- `games.turn_deadline` = turn start + `settings.turn_timeout_secs`; bot turns are due immediately.
-  A 60 s task calls `TurnTimeoutHandler` (default: system chat message `timeout: ...` then skip turn).
+  A seat may act when it controls the power named by the engine's `pending_decision` (which is the
+  defender during casualty selection / sub withdrawal) and is not bot-controlled.
+- `GameSummary`: `current_power` (whose turn), `phase` (engine phase string), `round`, `pending_power` (who must act now).
+  They are denormalised into `games.{round,current_power,phase,pending_power}` after every action.
+- Settings mirror the engine (`GameSettings` in `crates/protocol`): `weapons_development`, `axis_economic_victory`
+  (default 84, `null` = off), `allied_economic_victory`, `soviet_first_turn_restriction`, `original_complexes_only`,
+  `total_victory`, `germany_jet_power`, `japan_super_subs`, `turn_timeout_secs`. The old `economic_victory`/
+  `economic_victory_threshold` pair was migrated to `axis_economic_victory` (migration 0003). The engine seed is
+  `games.seed` (random per game).
+- Every action goes through `games::apply_locked`: one transaction that locks the game row, parses the stored
+  `GameState`, calls `wartide_engine::apply(state, pending_power, action, seed)` and appends action + events + new
+  state. The RNG seed of action `seq` is `splitmix64(fnv1a64("wartide/action" ++ le64(games.seed) ++ le64(seq)))`
+  (`rules::action_seed`), so a game replays from its log (`wartide_engine::replay`).
+- Per-game serialisation: `state.runtime.lock(game_id)` (one `tokio::sync::Mutex` per game) is held while an action is
+  applied, by HTTP actions, resign, timeout handling and the bot driver alike.
+- **Bot driver** (`services/bots.rs`, `spawn_driver`): started after game start, after every accepted action, after
+  resign/timeouts and by the sweep. One task per game (extra requests set a "rerun" flag). While `pending_decision`
+  names a power on a bot seat it asks `wartide_ai::Bot` (cached per game+power in memory, rebuilt from
+  `(persona, power, hash(game_seed, power))` after a restart) for the next action, applies it and posts the bot's
+  `Commentary` lines to the bot's **team** chat channel. At most 5000 actions per pass (the sweep resumes a game
+  after that). A rejected action is retried; after 3 rejections for the same decision the engine's `RandomPolicy`
+  plays it (20 tries), then `EndPhase` (phase decisions) or `Concede`, and an error is logged. `BOT_ACTION_DELAY_MS`
+  slows bots down.
+- Deadlines: when the pending power changes the clock is set: humans get `now + turn_timeout_secs` (plus WS
+  `your_turn` and the e-mail when the acting seat changes); bot turns are due immediately so the 60 s sweep also
+  restarts bots after a server restart.
+- **Timeouts** (60 s sweep -> `TurnTimeoutHandler`): system chat line `timeout: ...`, `game_seats.timeouts += 1`, clock
+  restarted, and a computer player (the seat's default persona) plays that power until the engine moves on to a
+  different power (temporary takeover). Three consecutive misses (`missed_in_row`, reset by any human action) make the
+  seat bot-controlled for good (`resigned = true`, rated as a loss).
+- **Game end**: when the engine reports `GameOver`, the game becomes `finished` with `winner_team`, ratings are applied
+  (team result, resigned seats lose), a system chat line is posted and `game_updated` broadcast. **Resign** hands all
+  of the user's seats to bot "brass" (`resigned = true`) and the game continues. **Abandon** (host/admin) is unrated.
 - Matchmaking: 10 s task; window +-100 rating, +50 per minute waited (the narrowest window in a group governs).
-
-## Engine / AI integration points (TODO(engine))
-- `services/rules.rs`: `trait Rules { initial_state, apply }` with `PassthroughRules`. Until the engine lands the
-  server understands `{"type":"end_turn"}` actions and `game_over` events (`{"type":"game_over","winner":"axis"|"allies"}`).
-- `services/timeouts.rs`: auto-play via `wartide-ai` for timed-out players and bot seats.
-- `services/chat.rs::post_bot_message`: AI commentary.
-- `services/games.rs::state_view`: per-viewer projection of hidden info.

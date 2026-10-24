@@ -31,7 +31,7 @@ pub use config::Config;
 pub use state::AppState;
 
 use crate::email::Mailer;
-use crate::services::rules::PassthroughRules;
+use crate::services::rules::EngineRules;
 use crate::services::timeouts::DefaultTimeoutHandler;
 
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!();
@@ -51,8 +51,8 @@ pub fn build_state(db: PgPool, config: Config, mailer: Mailer) -> AppState {
         mailer,
         hub: hub::Hub::default(),
         limiter: ratelimit::RateLimiter::new(rate_limit),
-        // TODO(engine): swap in the real rules implementation.
-        rules: Arc::new(PassthroughRules),
+        rules: EngineRules,
+        runtime: Arc::new(state::GameRuntime::default()),
         timeout_handler: Arc::new(DefaultTimeoutHandler),
     }
 }

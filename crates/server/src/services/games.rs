@@ -5,12 +5,13 @@ use serde::Serialize;
 use serde_json::Value;
 use sqlx::{FromRow, PgConnection};
 use uuid::Uuid;
+use wartide_engine as engine;
 use wartide_protocol::game::*;
 use wartide_protocol::ws::ServerMessage;
 
 use crate::error::{is_unique_violation, AppError, AppResult};
 use crate::extract::CurrentUser;
-use crate::services::{bots, groups, notify, ratings, rules};
+use crate::services::{bots, chat, groups, notify, ratings, rules};
 use crate::state::AppState;
 use crate::util::{new_invite_code, normalize_invite_code};
 
@@ -40,27 +41,6 @@ pub fn seat_layout(mode: GameMode) -> Vec<Vec<Power>> {
     }
 }
 
-/// Turn order of the powers (Classic: USSR, Germany, UK, Japan, USA).
-pub fn next_power(current: Power) -> (Power, bool) {
-    let i = Power::ALL.iter().position(|p| *p == current).unwrap_or(0);
-    let n = (i + 1) % Power::ALL.len();
-    (Power::ALL[n], n == 0)
-}
-
-pub fn game_over_winner(events: &Value) -> Option<Team> {
-    events.as_array()?.iter().find_map(|e| {
-        if e.get("type")?.as_str()? == "game_over" {
-            match e.get("winner")?.as_str()? {
-                "axis" => Some(Team::Axis),
-                "allies" => Some(Team::Allies),
-                _ => None,
-            }
-        } else {
-            None
-        }
-    })
-}
-
 // ---------- rows ----------
 
 #[derive(FromRow, Clone, Debug)]
@@ -77,21 +57,26 @@ pub struct GameRow {
     pub seed: i64,
     pub round: i32,
     pub current_power: Option<String>,
+    pub phase: Option<String>,
+    pub pending_power: Option<String>,
     pub turn_deadline: Option<DateTime<Utc>>,
     pub winner_team: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
-const GAME_COLS: &str = "id, name, kind, mode, status, settings, group_id, host_id, ladder, seed, round, current_power, turn_deadline, winner_team, created_at, updated_at";
+const GAME_COLS: &str = "id, name, kind, mode, status, settings, group_id, host_id, ladder, seed, round, current_power, phase, pending_power, turn_deadline, winner_team, created_at, updated_at";
 
-#[derive(FromRow, Clone, Debug)]
+#[derive(FromRow, Clone, Debug, Default)]
 pub struct SeatRow {
     pub seat: i32,
     pub powers: Vec<String>,
     pub user_id: Option<Uuid>,
     pub is_bot: bool,
     pub bot_persona: Option<String>,
+    pub resigned: bool,
+    pub timeouts: i32,
+    pub missed_in_row: i32,
     pub username: Option<String>,
     pub display_name: Option<String>,
     pub avatar: Option<String>,
@@ -127,11 +112,13 @@ impl SeatRow {
                     .map(str::to_string)
                     .unwrap_or_else(|| p.to_string())
             }),
+            resigned: self.resigned,
+            timeouts: self.timeouts.max(0) as u32,
         }
     }
 }
 
-const SEAT_SELECT: &str = "SELECT s.seat, s.powers, s.user_id, s.is_bot, s.bot_persona, u.username, u.display_name, u.avatar
+const SEAT_SELECT: &str = "SELECT s.seat, s.powers, s.user_id, s.is_bot, s.bot_persona, s.resigned, s.timeouts, s.missed_in_row, u.username, u.display_name, u.avatar
     FROM game_seats s LEFT JOIN users u ON u.id = s.user_id WHERE s.game_id = $1 ORDER BY s.seat";
 
 pub async fn load_game(state: &AppState, id: Uuid) -> AppResult<GameRow> {
@@ -147,6 +134,11 @@ pub async fn load_seats(state: &AppState, id: Uuid) -> AppResult<Vec<SeatRow>> {
         .bind(id)
         .fetch_all(&state.db)
         .await?)
+}
+
+/// The seat that controls `power` (every power belongs to exactly one seat).
+pub fn seat_for_power(seats: &[SeatRow], power: Power) -> Option<&SeatRow> {
+    seats.iter().find(|s| s.controls(power))
 }
 
 /// The seat held by `user` in `game`, if any.
@@ -202,6 +194,8 @@ pub async fn summary(state: &AppState, id: Uuid, viewer: Option<Uuid>) -> AppRes
         seats: seats.iter().map(SeatRow::to_assignment).collect(),
         round: g.round,
         current_power: g.current_power.as_deref().and_then(Power::parse),
+        phase: g.phase.clone(),
+        pending_power: g.pending_power.as_deref().and_then(Power::parse),
         turn_deadline: g.turn_deadline,
         group_id: g.group_id,
         host_id: g.host_id,
@@ -400,8 +394,13 @@ fn validate_settings(s: &GameSettings) -> AppResult<()> {
             "turn_timeout_secs must be between 60 seconds and 14 days",
         ));
     }
-    if s.economic_victory_threshold == 0 || s.economic_victory_threshold > 500 {
-        return Err(AppError::bad("economic_victory_threshold out of range"));
+    for t in [s.axis_economic_victory, s.allied_economic_victory]
+        .into_iter()
+        .flatten()
+    {
+        if t == 0 || t > 500 {
+            return Err(AppError::bad("economic victory threshold out of range"));
+        }
     }
     Ok(())
 }
@@ -609,15 +608,19 @@ pub async fn start(state: &AppState, host: &CurrentUser, id: Uuid) -> AppResult<
     summary(state, id, Some(host.id)).await
 }
 
-/// Transition lobby -> in progress: initial engine state, first turn, notifications.
+/// Transition lobby -> in progress: initial engine state, first turn, notifications, bots.
 pub async fn begin_game(state: &AppState, id: Uuid) -> AppResult<()> {
     let game = load_game(state, id).await?;
-    let mode: GameMode = parse_enum(&game.mode)?;
     let settings: GameSettings = serde_json::from_value(game.settings.clone()).unwrap_or_default();
-    let initial = state.rules.initial_state(mode, &settings, game.seed);
+    let initial = state.rules.initial_state(&settings, game.seed);
+    let first = rules::pending_of(&initial).power.unwrap_or(Power::Ussr);
+    let initial_json = rules::to_json(&initial)?;
     let mut tx = state.db.begin().await?;
-    let n = sqlx::query("UPDATE games SET status='in_progress', round=1, current_power='ussr', updated_at=now() WHERE id=$1 AND status='lobby'")
+    let n = sqlx::query("UPDATE games SET status='in_progress', round=$2, current_power=$3, pending_power=$3, phase=$4, updated_at=now() WHERE id=$1 AND status='lobby'")
         .bind(id)
+        .bind(initial.round as i32)
+        .bind(rules::power_from_engine(initial.current_power).as_str())
+        .bind(rules::phase_str(&initial))
         .execute(&mut *tx)
         .await?
         .rows_affected();
@@ -626,10 +629,10 @@ pub async fn begin_game(state: &AppState, id: Uuid) -> AppResult<()> {
     }
     sqlx::query("INSERT INTO game_states (game_id, seq, state) VALUES ($1, 0, $2)")
         .bind(id)
-        .bind(initial)
+        .bind(initial_json)
         .execute(&mut *tx)
         .await?;
-    let first_is_bot = seat_is_bot_for(&mut tx, id, Power::Ussr).await?;
+    let first_is_bot = seat_is_bot_for(&mut tx, id, first).await?;
     set_deadline(&mut tx, id, settings.turn_timeout_secs, first_is_bot).await?;
     tx.commit().await?;
     state.hub.publish_game(
@@ -639,11 +642,15 @@ pub async fn begin_game(state: &AppState, id: Uuid) -> AppResult<()> {
             seq: 0,
         },
     );
-    notify_turn(state, id).await;
+    if first_is_bot {
+        bots::spawn_driver(state, id, None);
+    } else {
+        notify_turn(state, id).await;
+    }
     Ok(())
 }
 
-async fn seat_is_bot_for(conn: &mut PgConnection, game: Uuid, p: Power) -> AppResult<bool> {
+pub async fn seat_is_bot_for(conn: &mut PgConnection, game: Uuid, p: Power) -> AppResult<bool> {
     let r: Option<(bool,)> =
         sqlx::query_as("SELECT is_bot FROM game_seats WHERE game_id=$1 AND $2 = ANY(powers)")
             .bind(game)
@@ -655,7 +662,7 @@ async fn seat_is_bot_for(conn: &mut PgConnection, game: Uuid, p: Power) -> AppRe
 
 /// Set `turn_deadline` for a freshly started turn. Bot turns are due immediately so the
 /// background task picks them up.
-async fn set_deadline(
+pub async fn set_deadline(
     conn: &mut PgConnection,
     id: Uuid,
     timeout_secs: u32,
@@ -681,14 +688,14 @@ pub async fn notify_turn(state: &AppState, id: Uuid) {
         if g.status != "in_progress" {
             return Ok(());
         }
-        let Some(power) = g.current_power.as_deref().and_then(Power::parse) else {
+        let Some(power) = g.pending_power.as_deref().and_then(Power::parse) else {
             return Ok(());
         };
         let seats = load_seats(state, id).await?;
-        let Some(seat) = seats.iter().find(|s| s.controls(power)) else {
+        let Some(seat) = seat_for_power(&seats, power) else {
             return Ok(());
         };
-        let Some(uid) = seat.user_id else {
+        let Some(uid) = seat.user_id.filter(|_| !seat.is_bot) else {
             return Ok(());
         };
         state.hub.publish_user(
@@ -752,12 +759,27 @@ pub async fn state_view(state: &AppState, user: Uuid, id: Uuid) -> AppResult<Gam
             .fetch_optional(&state.db)
             .await?
             .ok_or_else(|| AppError::conflict("not_started", "game has not started"))?;
-    // TODO(engine): project per-viewer fog (hidden info) once the engine defines it.
+    // All information is public in this game: the stored engine state is returned as is.
     Ok(GameStateResponse { seq, state: st })
 }
 
-/// Submit an action as `user`. Validates seat/turn ownership, runs the rules hook and appends
-/// to the log atomically.
+/// Who is submitting an action.
+#[derive(Debug, Clone, Copy)]
+pub enum Actor {
+    /// A human on this seat; the seat must control the pending power and not be bot-controlled.
+    Human(i32),
+    /// The server plays the pending power (computer player or timeout takeover).
+    Bot,
+}
+
+/// Result of one applied action.
+pub struct Applied {
+    pub envelope: GameActionEnvelope,
+    pub state: engine::GameState,
+}
+
+/// Submit an action as `user`: checks seat/turn ownership, applies it through the engine and
+/// appends it to the log atomically, then lets the computer players continue.
 pub async fn submit_action(
     state: &AppState,
     user: &CurrentUser,
@@ -772,17 +794,27 @@ pub async fn submit_action(
         .iter()
         .find(|s| s.user_id == Some(user.id))
         .ok_or_else(|| AppError::forbidden("you are not a player in this game"))?;
-    apply_action(state, id, Some(mine.seat), action).await
+    let applied = {
+        let _guard = state.runtime.lock(id).await;
+        apply_locked(state, id, Actor::Human(mine.seat), action, None).await?
+    };
+    bots::spawn_driver(state, id, None);
+    Ok(applied.envelope)
 }
 
-/// Core action pipeline, shared by humans (`actor_seat = Some`) and system/AI play (`None` or a bot seat).
-/// When `actor_seat` is `Some`, that seat must control the current power.
-pub async fn apply_action(
+/// Core action pipeline shared by humans and computer players. The caller must hold the
+/// per-game lock (`state.runtime.lock(id)`). `expect_seq` makes the call fail with a
+/// `stale_state` conflict when the log moved on since the caller looked.
+///
+/// The acting power is always the one `pending_decision` names. Engine errors surface as 400
+/// `illegal_action` carrying the engine's message.
+pub async fn apply_locked(
     state: &AppState,
     id: Uuid,
-    actor_seat: Option<i32>,
+    actor: Actor,
     action: Value,
-) -> AppResult<GameActionEnvelope> {
+    expect_seq: Option<i64>,
+) -> AppResult<Applied> {
     let mut tx = state.db.begin().await?;
     let game: GameRow = sqlx::query_as(&format!(
         "SELECT {GAME_COLS} FROM games WHERE id=$1 FOR UPDATE"
@@ -797,46 +829,49 @@ pub async fn apply_action(
             "game is not in progress",
         ));
     }
-    let current = game
-        .current_power
-        .as_deref()
-        .and_then(Power::parse)
-        .ok_or_else(|| {
-            AppError::Internal(anyhow::anyhow!("in-progress game without current power"))
-        })?;
-    if let Some(seat) = actor_seat {
-        let powers: (Vec<String>,) =
-            sqlx::query_as("SELECT powers FROM game_seats WHERE game_id=$1 AND seat=$2")
-                .bind(id)
-                .bind(seat)
-                .fetch_one(&mut *tx)
-                .await?;
-        if !powers.0.iter().any(|p| p == current.as_str()) {
-            return Err(AppError::conflict(
-                "not_your_turn",
-                format!("it is {current:?}'s turn"),
-            ));
-        }
-    }
     let (seq, cur_state): (i64, Value) =
         sqlx::query_as("SELECT seq, state FROM game_states WHERE game_id=$1 FOR UPDATE")
             .bind(id)
             .fetch_one(&mut *tx)
             .await?;
+    if expect_seq.is_some_and(|e| e != seq) {
+        return Err(AppError::conflict(
+            "stale_state",
+            "the game moved on in the meantime",
+        ));
+    }
     let next_seq = seq + 1;
-
-    // TODO(engine): the Rules impl should validate legality and return typed errors.
-    let (new_state, events) = state
-        .rules
-        .apply(&cur_state, &action, rules::action_seed(game.seed, next_seq))
-        .map_err(|e| AppError::BadRequest("illegal_action", e.to_string()))?;
+    let mut gs = rules::parse_state(&cur_state)?;
+    let before = rules::pending_of(&gs);
+    let power = before
+        .power
+        .ok_or_else(|| AppError::conflict("not_in_progress", "game is over"))?;
+    let seats: Vec<SeatRow> = sqlx::query_as(SEAT_SELECT)
+        .bind(id)
+        .fetch_all(&mut *tx)
+        .await?;
+    let power_seat = seat_for_power(&seats, power)
+        .ok_or_else(|| AppError::Internal(anyhow::anyhow!("no seat controls {power:?}")))?;
+    if let Actor::Human(seat) = actor {
+        if power_seat.seat != seat || power_seat.is_bot {
+            return Err(AppError::conflict(
+                "not_your_turn",
+                format!("it is {}'s turn", power.as_str()),
+            ));
+        }
+    }
+    let parsed = rules::parse_action(&action)?;
+    let events = rules::apply_typed(&mut gs, power, &parsed, game.seed, next_seq)?;
+    let events = rules::to_json(&events)?;
+    let new_state = rules::to_json(&gs)?;
+    let after = rules::pending_of(&gs);
 
     let created_at: DateTime<Utc> = sqlx::query_scalar(
         "INSERT INTO game_actions (game_id, seq, actor_seat, action, events) VALUES ($1,$2,$3,$4,$5) RETURNING created_at",
     )
     .bind(id)
     .bind(next_seq)
-    .bind(actor_seat)
+    .bind(power_seat.seat)
     .bind(&action)
     .bind(&events)
     .fetch_one(&mut *tx)
@@ -847,16 +882,31 @@ pub async fn apply_action(
         .bind(&new_state)
         .execute(&mut *tx)
         .await?;
-    sqlx::query("UPDATE games SET updated_at=now() WHERE id=$1")
+    sqlx::query("UPDATE games SET round=$2, current_power=$3, phase=$4, pending_power=$5, updated_at=now() WHERE id=$1")
         .bind(id)
+        .bind(gs.round as i32)
+        .bind(rules::power_from_engine(gs.current_power).as_str())
+        .bind(rules::phase_str(&gs))
+        .bind(after.power.map(Power::as_str))
         .execute(&mut *tx)
         .await?;
+    if let Actor::Human(seat) = actor {
+        sqlx::query("UPDATE game_seats SET missed_in_row=0 WHERE game_id=$1 AND seat=$2 AND missed_in_row<>0")
+            .bind(id)
+            .bind(seat)
+            .execute(&mut *tx)
+            .await?;
+    }
 
-    let winner = game_over_winner(&events);
-    let ends_turn = action.get("type").and_then(Value::as_str) == Some("end_turn");
-    if winner.is_none() && ends_turn {
-        // TODO(engine): derive the next power/round from the engine state instead of this convention.
-        advance_turn_tx(&mut tx, &game, current).await?;
+    // Control passes to another power: start its clock (bot turns are due immediately).
+    let mut notify = false;
+    if let (Some(next), true) = (after.power, after.power != before.power) {
+        let next_seat = seat_for_power(&seats, next);
+        let bot = next_seat.is_some_and(|s| s.is_bot);
+        let settings: GameSettings =
+            serde_json::from_value(game.settings.clone()).unwrap_or_default();
+        set_deadline(&mut tx, id, settings.turn_timeout_secs, bot).await?;
+        notify = !bot && next_seat.map(|s| s.seat) != Some(power_seat.seat);
     }
     tx.commit().await?;
 
@@ -867,68 +917,27 @@ pub async fn apply_action(
             seq: next_seq,
         },
     );
-    if let Some(team) = winner {
-        finish_game(state, id, Some(team)).await?;
-    } else if ends_turn {
+    if let Some(winner) = after.game_over {
+        finish_game(state, id, winner).await?;
+    } else if notify {
         notify_turn(state, id).await;
     }
-    Ok(GameActionEnvelope {
-        seq: next_seq,
-        actor: actor_seat.map(|s| s as u8),
-        action,
-        events,
-        created_at,
-    })
-}
-
-async fn advance_turn_tx(tx: &mut PgConnection, game: &GameRow, current: Power) -> AppResult<()> {
-    let (next, new_round) = next_power(current);
-    let settings: GameSettings = serde_json::from_value(game.settings.clone()).unwrap_or_default();
-    sqlx::query("UPDATE games SET current_power=$2, round=round+$3 WHERE id=$1")
-        .bind(game.id)
-        .bind(next.as_str())
-        .bind(i32::from(new_round))
-        .execute(&mut *tx)
-        .await?;
-    let bot = seat_is_bot_for(tx, game.id, next).await?;
-    set_deadline(tx, game.id, settings.turn_timeout_secs, bot).await
-}
-
-/// Skip the current power's turn (used by the timeout handler).
-pub async fn advance_turn(state: &AppState, id: Uuid) -> AppResult<()> {
-    let mut tx = state.db.begin().await?;
-    let game: GameRow = sqlx::query_as(&format!(
-        "SELECT {GAME_COLS} FROM games WHERE id=$1 FOR UPDATE"
-    ))
-    .bind(id)
-    .fetch_one(&mut *tx)
-    .await?;
-    if game.status != "in_progress" {
-        return Ok(());
-    }
-    let Some(current) = game.current_power.as_deref().and_then(Power::parse) else {
-        return Ok(());
-    };
-    advance_turn_tx(&mut tx, &game, current).await?;
-    sqlx::query("UPDATE games SET updated_at=now() WHERE id=$1")
-        .bind(id)
-        .execute(&mut *tx)
-        .await?;
-    tx.commit().await?;
-    state.hub.publish_game(
-        id,
-        ServerMessage::GameUpdated {
-            game_id: GameId(id),
-            seq: -1,
+    Ok(Applied {
+        envelope: GameActionEnvelope {
+            seq: next_seq,
+            actor: Some(power_seat.seat as u8),
+            action,
+            events,
+            created_at,
         },
-    );
-    notify_turn(state, id).await;
-    Ok(())
+        state: gs,
+    })
 }
 
 // ---------- ending ----------
 
 /// Finish a game (idempotent). Applies ratings if the game is rated and a winner is known.
+/// Resigned seats (including players replaced after repeated timeouts) always count as losses.
 pub async fn finish_game(state: &AppState, id: Uuid, winner: Option<Team>) -> AppResult<()> {
     let row: Option<(Option<String>,)> = sqlx::query_as(
         "UPDATE games SET status='finished', winner_team=$2, turn_deadline=NULL, updated_at=now()
@@ -939,12 +948,16 @@ pub async fn finish_game(state: &AppState, id: Uuid, winner: Option<Team>) -> Ap
     .fetch_optional(&state.db)
     .await?;
     let Some((ladder,)) = row else { return Ok(()) };
+    state.runtime.forget(id);
     if let (Some(ladder), Some(winner)) = (ladder, winner) {
         let seats = load_seats(state, id).await?;
         let mut win = Vec::new();
         let mut lose = Vec::new();
-        for s in seats.iter().filter(|s| !s.is_bot) {
-            if let Some(u) = s.user_id {
+        for s in &seats {
+            let Some(u) = s.user_id else { continue };
+            if s.resigned {
+                lose.push(u)
+            } else if !s.is_bot {
                 if s.team() == winner {
                     win.push(u)
                 } else {
@@ -952,8 +965,15 @@ pub async fn finish_game(state: &AppState, id: Uuid, winner: Option<Team>) -> Ap
                 }
             }
         }
-        // in 5p several seats can share a team; a user holds at most one seat
         ratings::apply_game_result(&state.db, &ladder, &[win, lose]).await?;
+    }
+    let line = match winner {
+        Some(Team::Axis) => "Game over: the Axis win.",
+        Some(Team::Allies) => "Game over: the Allies win.",
+        None => "Game over: the game ended without a winner.",
+    };
+    if let Err(e) = chat::post_system_message(state, id, line).await {
+        tracing::warn!(error = ?e, game = %id, "could not post game-over message");
     }
     state.hub.publish_game(
         id,
@@ -965,20 +985,75 @@ pub async fn finish_game(state: &AppState, id: Uuid, winner: Option<Team>) -> Ap
     Ok(())
 }
 
-/// A seated player concedes: their team loses (rated if the game is rated).
+/// A seated player resigns: a computer player ("brass") takes over all their powers and the game
+/// continues. The seat is flagged `resigned`; at game end the player counts as a loss whatever the
+/// outcome. If no active human is left the game ends at once and the other team wins.
 pub async fn resign(state: &AppState, user: &CurrentUser, id: Uuid) -> AppResult<GameSummary> {
-    let (game, _seats, mine) = require_participant(state, id, user.id).await?;
-    if game.status != "in_progress" {
-        return Err(AppError::conflict(
-            "not_in_progress",
-            "game is not in progress",
-        ));
+    {
+        let _guard = state.runtime.lock(id).await;
+        let (game, seats, mine) = require_participant(state, id, user.id).await?;
+        if game.status != "in_progress" {
+            return Err(AppError::conflict(
+                "not_in_progress",
+                "game is not in progress",
+            ));
+        }
+        if mine.is_bot {
+            return Err(AppError::conflict(
+                "already_resigned",
+                "you already left this game",
+            ));
+        }
+        sqlx::query("UPDATE game_seats SET is_bot=TRUE, resigned=TRUE, bot_persona='brass' WHERE game_id=$1 AND seat=$2")
+            .bind(id)
+            .bind(mine.seat)
+            .execute(&state.db)
+            .await?;
+        state
+            .runtime
+            .bots
+            .lock()
+            .unwrap()
+            .retain(|(g, p), _| !(*g == id && mine.controls(*p)));
+        let name = bots::persona_name("brass").unwrap_or("a computer player");
+        let _ = chat::post_system_message(
+            state,
+            id,
+            &format!(
+                "{} resigned; {name} takes over.",
+                user.display_name.as_str()
+            ),
+        )
+        .await;
+        let humans_left = seats
+            .iter()
+            .any(|s| s.seat != mine.seat && s.user_id.is_some() && !s.is_bot);
+        if humans_left {
+            // If it was their move the bot must act now rather than at the old deadline.
+            sqlx::query(
+                "UPDATE games SET turn_deadline=now(), updated_at=now() WHERE id=$1 AND pending_power = ANY($2)",
+            )
+            .bind(id)
+            .bind(&mine.powers)
+            .execute(&state.db)
+            .await?;
+        }
+        state.hub.publish_game(
+            id,
+            ServerMessage::GameUpdated {
+                game_id: GameId(id),
+                seq: -1,
+            },
+        );
+        if !humans_left {
+            let winner = match mine.team() {
+                Team::Axis => Team::Allies,
+                Team::Allies => Team::Axis,
+            };
+            finish_game(state, id, Some(winner)).await?;
+        }
     }
-    let winner = match mine.team() {
-        Team::Axis => Team::Allies,
-        Team::Allies => Team::Axis,
-    };
-    finish_game(state, id, Some(winner)).await?;
+    bots::spawn_driver(state, id, None);
     summary(state, id, Some(user.id)).await
 }
 
@@ -997,6 +1072,7 @@ pub async fn abandon(state: &AppState, user: &CurrentUser, id: Uuid) -> AppResul
     .bind(id)
     .execute(&state.db)
     .await?;
+    state.runtime.forget(id);
     state.hub.publish_game(
         id,
         ServerMessage::GameUpdated {
@@ -1058,7 +1134,6 @@ pub async fn create_public(state: &AppState, mode: GameMode, players: &[Uuid]) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
     fn layouts() {
@@ -1072,20 +1147,38 @@ mod tests {
         assert!(two[0].iter().all(|p| p.team() == Team::Axis));
     }
 
-    #[test]
-    fn turn_order_wraps() {
-        assert_eq!(next_power(Power::Ussr), (Power::Germany, false));
-        assert_eq!(next_power(Power::Usa), (Power::Ussr, true));
+    fn seats_for(mode: GameMode) -> Vec<SeatRow> {
+        seat_layout(mode)
+            .into_iter()
+            .enumerate()
+            .map(|(i, powers)| SeatRow {
+                seat: i as i32,
+                powers: powers.iter().map(|p| p.as_str().to_string()).collect(),
+                ..SeatRow::default()
+            })
+            .collect()
     }
 
     #[test]
-    fn detects_game_over() {
-        assert_eq!(
-            game_over_winner(&json!([{"type":"game_over","winner":"axis"}])),
-            Some(Team::Axis)
-        );
-        assert_eq!(game_over_winner(&json!([])), None);
-        assert_eq!(game_over_winner(&json!([{"type":"x"}])), None);
+    fn seat_controls_powers_two_player() {
+        let seats = seats_for(GameMode::TwoPlayer);
+        for p in [Power::Germany, Power::Japan] {
+            assert_eq!(seat_for_power(&seats, p).unwrap().seat, 0);
+        }
+        for p in [Power::Ussr, Power::Uk, Power::Usa] {
+            assert_eq!(seat_for_power(&seats, p).unwrap().seat, 1);
+        }
+        assert_eq!(seats[0].team(), Team::Axis);
+        assert_eq!(seats[1].team(), Team::Allies);
+    }
+
+    #[test]
+    fn seat_controls_powers_five_player() {
+        let seats = seats_for(GameMode::FivePlayer);
+        for (i, p) in Power::ALL.into_iter().enumerate() {
+            assert_eq!(seat_for_power(&seats, p).unwrap().seat, i as i32);
+            assert!(seats.iter().filter(|s| s.controls(p)).count() == 1);
+        }
     }
 
     #[test]

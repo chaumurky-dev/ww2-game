@@ -142,6 +142,44 @@ async fn register(c: &Ctx, verify: bool) -> TestUser {
     }
 }
 
+/// Wait until no bot driver task runs for the game.
+async fn wait_idle(c: &Ctx, id: Uuid) {
+    for _ in 0..1200 {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        if !c.state.runtime.drivers.lock().unwrap().contains_key(&id) {
+            return;
+        }
+    }
+    panic!("bot driver never finished");
+}
+
+/// End phases for `u` until `power` is the current power.
+async fn pass_turn(c: &Ctx, u: &TestUser, game: &str, power: &str) {
+    for _ in 0..40 {
+        let (_, sum, _) = call(
+            &c.app,
+            Method::GET,
+            &format!("/api/games/{game}"),
+            Some(&u.cookie),
+            None,
+        )
+        .await;
+        if sum["current_power"] == power {
+            return;
+        }
+        let (st, env, _) = call(
+            &c.app,
+            Method::POST,
+            &format!("/api/games/{game}/actions"),
+            Some(&u.cookie),
+            Some(json!({"action": {"type": "end_phase"}})),
+        )
+        .await;
+        assert_eq!(st, StatusCode::OK, "{env}");
+    }
+    panic!("never reached {power}");
+}
+
 #[tokio::test]
 async fn auth_flow_and_unverified_gate() {
     let Some(c) = setup().await else { return };
@@ -408,17 +446,19 @@ async fn group_game_chat_and_ratings() {
 
     // actions: turn ownership. USSR (allies, b) moves first.
     let actions = format!("/api/games/{gameid}/actions");
+    let end_phase = json!({"action": {"type": "end_phase"}});
     let (st, err, _) = call(
         &c.app,
         Method::POST,
         &actions,
         Some(&a.cookie),
-        Some(json!({"action": {"type": "noop"}})),
+        Some(end_phase.clone()),
     )
     .await;
     assert_eq!(st, StatusCode::CONFLICT);
     assert_eq!(err["code"], "not_your_turn");
-    let (st, env, _) = call(
+    // garbage and illegal actions are 400 illegal_action with the engine's message
+    let (st, err, _) = call(
         &c.app,
         Method::POST,
         &actions,
@@ -426,26 +466,19 @@ async fn group_game_chat_and_ratings() {
         Some(json!({"action": {"type": "noop"}})),
     )
     .await;
-    assert_eq!(st, StatusCode::OK, "{env}");
-    assert_eq!(env["seq"], 1);
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+    assert_eq!(err["code"], "illegal_action");
     let (st, env, _) = call(
         &c.app,
         Method::POST,
         &actions,
         Some(&b.cookie),
-        Some(json!({"action": {"type": "end_turn"}})),
+        Some(end_phase.clone()),
     )
     .await;
     assert_eq!(st, StatusCode::OK, "{env}");
-    let (_, log, _) = call(
-        &c.app,
-        Method::GET,
-        &format!("{actions}?since=1"),
-        Some(&a.cookie),
-        None,
-    )
-    .await;
-    assert_eq!(log.as_array().unwrap().len(), 1);
+    assert_eq!(env["seq"], 1);
+    assert!(env["events"].is_array());
     let (_, sum, _) = call(
         &c.app,
         Method::GET,
@@ -454,16 +487,29 @@ async fn group_game_chat_and_ratings() {
         None,
     )
     .await;
-    assert_eq!(sum["current_power"], "germany");
-    let (st, _, _) = call(
+    assert_eq!(sum["phase"], "purchase");
+    assert_eq!(sum["pending_power"], "ussr");
+    // b ends the rest of the USSR turn; Germany (a) is next
+    pass_turn(&c, &b, &gameid, "germany").await;
+    let (_, log, _) = call(
         &c.app,
-        Method::POST,
-        &actions,
+        Method::GET,
+        &format!("{actions}?since=1"),
         Some(&a.cookie),
-        Some(json!({"action": {"type": "end_turn"}})),
+        None,
     )
     .await;
-    assert_eq!(st, StatusCode::OK);
+    assert!(!log.as_array().unwrap().is_empty());
+    let (_, stv, _) = call(
+        &c.app,
+        Method::GET,
+        &format!("/api/games/{gameid}/state"),
+        Some(&a.cookie),
+        None,
+    )
+    .await;
+    assert_eq!(stv["state"]["current_power"], "germany");
+    pass_turn(&c, &a, &gameid, "uk").await;
 
     // active list
     let (_, active, _) = call(&c.app, Method::GET, "/api/games", Some(&a.cookie), None).await;
@@ -479,7 +525,18 @@ async fn group_game_chat_and_ratings() {
     )
     .await;
     assert_eq!(st, StatusCode::OK, "{done}");
-    assert_eq!(done["status"], "finished");
+    // the game goes on with a computer player on a's seat; a counts as resigned
+    assert_eq!(done["status"], "in_progress");
+    assert_eq!(done["seats"][0]["resigned"], true);
+    assert_eq!(done["seats"][0]["is_bot"], true);
+    // b's team wins in the end; a still loses even if a's own team had won
+    wartide_server::services::games::finish_game(
+        &c.state,
+        gid_uuid,
+        Some(wartide_protocol::game::Team::Allies),
+    )
+    .await
+    .unwrap();
     let (st, lb, _) = call(
         &c.app,
         Method::GET,
@@ -578,6 +635,8 @@ async fn lobby_start_with_bots_and_timeouts() {
         .await
         .unwrap();
     assert!(n >= 1);
+    // a computer player takes over USSR and then the bot seats play on until the human is up again
+    wait_idle(&c, uid).await;
     let (_, sum, _) = call(
         &c.app,
         Method::GET,
@@ -586,7 +645,15 @@ async fn lobby_start_with_bots_and_timeouts() {
         None,
     )
     .await;
-    assert_eq!(sum["current_power"], "germany");
+    assert_eq!(sum["pending_power"], "ussr");
+    let n: i64 = sqlx::query_scalar("SELECT count(*) FROM game_actions WHERE game_id=$1")
+        .bind(uid)
+        .fetch_one(&c.state.db)
+        .await
+        .unwrap();
+    assert!(n > 3, "bots played, got {n} actions");
+    assert_eq!(sum["seats"][0]["timeouts"], 1);
+    assert_eq!(sum["seats"][0]["resigned"], false);
     let (_, chat, _) = call(
         &c.app,
         Method::GET,
@@ -601,6 +668,32 @@ async fn lobby_start_with_bots_and_timeouts() {
         .iter()
         .any(|m| m["body"].as_str().unwrap().starts_with("timeout")));
 
+    // two more misses in a row: the seat is handed to a computer player for good
+    for i in 0..2 {
+        sqlx::query("UPDATE games SET turn_deadline = now() - interval '1 minute' WHERE id=$1")
+            .bind(uid)
+            .execute(&c.state.db)
+            .await
+            .unwrap();
+        wartide_server::services::timeouts::sweep(&c.state)
+            .await
+            .unwrap();
+        if i == 0 {
+            wait_idle(&c, uid).await;
+        } // after the third miss only bots remain and would play the whole game
+    }
+    let (_, sum, _) = call(
+        &c.app,
+        Method::GET,
+        &format!("/api/games/{id}"),
+        Some(&a.cookie),
+        None,
+    )
+    .await;
+    assert_eq!(sum["seats"][0]["timeouts"], 3);
+    assert_eq!(sum["seats"][0]["resigned"], true);
+    assert_eq!(sum["seats"][0]["is_bot"], true);
+
     // abandon
     let (st, ab, _) = call(
         &c.app,
@@ -612,6 +705,7 @@ async fn lobby_start_with_bots_and_timeouts() {
     .await;
     assert_eq!(st, StatusCode::OK);
     assert_eq!(ab["status"], "abandoned");
+    wait_idle(&c, uid).await; // the driver stops once the game is no longer in progress
 }
 
 #[tokio::test]
@@ -715,6 +809,28 @@ async fn matchmaking_creates_public_game() {
     )
     .await;
     assert_eq!(st, StatusCode::OK);
+    // b is still playing, so the game goes on; end it with the other team winning
+    let (_, g, _) = call(
+        &c.app,
+        Method::GET,
+        &format!("/api/games/{}", made[0]),
+        Some(&a.cookie),
+        None,
+    )
+    .await;
+    assert_eq!(g["status"], "in_progress");
+    let a_axis = g["seats"][g["my_seat"].as_u64().unwrap() as usize]["powers"][0] == "germany";
+    wartide_server::services::games::finish_game(
+        &c.state,
+        made[0],
+        Some(if a_axis {
+            wartide_protocol::game::Team::Allies
+        } else {
+            wartide_protocol::game::Team::Axis
+        }),
+    )
+    .await
+    .unwrap();
     let (_, prof, _) = call(
         &c.app,
         Method::GET,
@@ -1335,4 +1451,154 @@ async fn hardening_headers_and_body_limit() {
         .unwrap();
     let res = c.app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
+}
+
+/// Host plays USSR with the random policy through the HTTP API against four computer players.
+#[tokio::test]
+async fn full_stack_game_against_bots() {
+    use wartide_engine::{random_policy::RandomPolicy, GameState};
+    let Some(c) = setup().await else { return };
+    let u = register(&c, true).await;
+    let game = create_solo_game(&c, &u, json!({})).await;
+    let gid = game["id"].as_str().unwrap().to_string();
+    let guid: Uuid = gid.parse().unwrap();
+    let started = std::time::Instant::now();
+
+    let mut policy = RandomPolicy::new(7);
+    let mut posted = 0;
+    let mut rejected = 0;
+    let mut final_round = 0;
+    for step in 0..20_000 {
+        let (st, sv, _) = call(
+            &c.app,
+            Method::GET,
+            &format!("/api/games/{gid}/state"),
+            Some(&u.cookie),
+            None,
+        )
+        .await;
+        assert_eq!(st, StatusCode::OK, "{sv}");
+        let gs: GameState = serde_json::from_value(sv["state"].clone()).expect("engine state");
+        final_round = gs.round;
+        if gs.round >= 3 || gs.is_over() {
+            break;
+        }
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(280),
+            "too slow: step {step}, round {}",
+            gs.round
+        );
+        let (_, sum, _) = call(
+            &c.app,
+            Method::GET,
+            &format!("/api/games/{gid}"),
+            Some(&u.cookie),
+            None,
+        )
+        .await;
+        if sum["pending_power"] == "ussr" {
+            let (_, action) = policy.next_action(&gs).expect("action");
+            let (st, env, _) = call(
+                &c.app,
+                Method::POST,
+                &format!("/api/games/{gid}/actions"),
+                Some(&u.cookie),
+                Some(json!({ "action": action })),
+            )
+            .await;
+            if st == StatusCode::OK {
+                posted += 1;
+            } else {
+                rejected += 1;
+                assert_eq!(env["code"], "illegal_action", "{env}");
+            }
+        } else {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    }
+    eprintln!(
+        "full game: reached round {final_round} in {:?} ({posted} human actions, {rejected} rejected)",
+        started.elapsed()
+    );
+    assert!(final_round >= 3, "game stalled at round {final_round}");
+    assert!(posted > 10);
+
+    // team chat: bot commentary lands in the Allies channel (empty while the AI is silent)
+    let (_, chat, _) = call(
+        &c.app,
+        Method::GET,
+        &format!("/api/games/{gid}/chat?channel=team"),
+        Some(&u.cookie),
+        None,
+    )
+    .await;
+    let bot_msgs: Vec<&Value> = chat
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|m| m["sender"]["kind"] == "bot")
+        .collect();
+    if bot_msgs.is_empty() {
+        eprintln!("NOTICE: the AI produced no commentary in this game");
+    }
+    assert!(bot_msgs.iter().all(|m| m["scope"] == "allies"));
+
+    // let the bots settle, then replay the log and compare with the stored state
+    wait_idle(&c, guid).await;
+    let mut log = Vec::new();
+    let mut since = 0;
+    loop {
+        let (_, batch, _) = call(
+            &c.app,
+            Method::GET,
+            &format!("/api/games/{gid}/actions?since={since}"),
+            Some(&u.cookie),
+            None,
+        )
+        .await;
+        let batch = batch.as_array().unwrap().clone();
+        if batch.is_empty() {
+            break;
+        }
+        since = batch.last().unwrap()["seq"].as_i64().unwrap();
+        log.extend(batch);
+    }
+    let (seed,): (i64,) = sqlx::query_as("SELECT seed FROM games WHERE id=$1")
+        .bind(guid)
+        .fetch_one(&c.state.db)
+        .await
+        .unwrap();
+    let settings = wartide_server::services::rules::engine_settings(
+        &wartide_protocol::game::GameSettings::default(),
+        seed,
+    );
+    let mut stepper = GameState::new(settings.clone());
+    let mut entries = Vec::new();
+    for e in &log {
+        let seq = e["seq"].as_i64().unwrap();
+        let action: wartide_engine::Action = serde_json::from_value(e["action"].clone()).unwrap();
+        let power = match wartide_engine::pending_decision(&stepper) {
+            wartide_engine::Decision::Phase { power, .. }
+            | wartide_engine::Decision::SelectCasualties { power, .. }
+            | wartide_engine::Decision::RetreatOrPress { power, .. }
+            | wartide_engine::Decision::SubWithdrawal { power, .. } => power,
+            other => panic!("log continues after {other:?}"),
+        };
+        let seed = wartide_server::services::rules::action_seed(seed, seq);
+        wartide_engine::apply(&mut stepper, power, &action, seed).unwrap();
+        entries.push((power, action, seed));
+    }
+    assert_eq!(entries.len() as i64, since, "log is gapless from seq 1");
+    let replayed = wartide_engine::replay(settings, &entries).unwrap();
+    let (seq, stored): (i64, Value) =
+        sqlx::query_as("SELECT seq, state FROM game_states WHERE game_id=$1")
+            .bind(guid)
+            .fetch_one(&c.state.db)
+            .await
+            .unwrap();
+    assert_eq!(seq, since);
+    assert_eq!(serde_json::to_value(&replayed).unwrap(), stored);
+    assert!(log
+        .iter()
+        .all(|e| e["events"].is_array() && e["actor"].is_number()));
 }
