@@ -58,3 +58,18 @@ psql:
 reset-db:
     docker compose down -v
     docker compose up -d --wait postgres
+
+# Wait for the local server and print OK (works for `just dev` and the compose app profile)
+smoke:
+    scripts/dev-smoke.sh
+
+# Containerised app: build + run (http://localhost:8080)
+app-up:
+    docker compose --profile app up -d --build --wait
+
+app-down:
+    docker compose --profile app stop app
+
+# Full API flow (register, Mailpit verify, bot game); BASE=http://localhost:8080 by default
+smoke-full:
+    scripts/dev-smoke.sh --full

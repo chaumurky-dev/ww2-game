@@ -2,6 +2,8 @@
 FROM rust:1-bookworm AS build
 ARG TRUNK_VERSION=0.21.14
 ARG TARGETARCH
+RUN apt-get update && apt-get install -y --no-install-recommends binaryen \
+ && rm -rf /var/lib/apt/lists/*
 RUN rustup target add wasm32-unknown-unknown \
  && arch="$( [ "$(uname -m)" = aarch64 ] && echo aarch64 || echo x86_64 )" \
  && curl -fsSL "https://github.com/trunk-rs/trunk/releases/download/v${TRUNK_VERSION}/trunk-${arch}-unknown-linux-gnu.tar.gz" \
@@ -23,7 +25,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
  && cp -r dist /dist
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --system --uid 10001 --home /app wartide
 WORKDIR /app

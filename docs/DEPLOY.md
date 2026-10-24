@@ -15,7 +15,35 @@ just lint | just test | just psql | just reset-db
 Defaults for `DATABASE_URL`, `BASE_URL`, `SMTP_*`, `SESSION_SECRET`, `WEB_DIST_DIR` are baked into the
 justfile; override them in a `.env` file. Verification emails land in Mailpit.
 
-Full containerised run: `docker compose --profile app up --build` then open http://localhost:8080.
+### Containerised run (verified)
+
+```
+just build-image                  # docker build -t wartide:local .  (needs BuildKit/buildx: cache mounts)
+just app-up                       # docker compose --profile app up -d --build --wait
+just smoke                        # waits for /healthz, prints OK
+open http://localhost:8080        # SPA; verification mail appears in Mailpit http://localhost:8025
+just app-down                     # stop the app, leave Postgres/Mailpit running
+```
+
+The compose `app` service sets `COOKIE_SECURE=false` (the server defaults to secure cookies, which browsers
+drop over plain http), `SMTP_HOST=mailpit` and `DATABASE_URL` pointing at the `postgres` service.
+The image is multi-stage: `rust:1-bookworm` builds the server and the SPA (trunk, with apt `binaryen` for
+wasm-opt); the runtime stage is `debian:bookworm-slim`, runs as uid 10001 (non-root) and serves the SPA from
+`/app/dist`. Image: about 118 MB of layers
+(debian-slim 85 MB, ca-certificates 10 MB, server binary 18 MB, SPA 6 MB; `docker images` may show a larger
+number on colima because of the containerd image store). Cold build about 12 min on an x86_64 colima VM, about
+2 min with a warm cache.
+
+Verified flow (`scripts/dev-smoke.sh --full`, or `just smoke-full`): register, read the verification mail from
+Mailpit, verify, log in, create a private game vs 4 bots, then play USSR's turn by ending phases; the bots
+(seat 1-4) then made about 20 actions in the first 10 s. Bots stall only when they need a decision from the human
+(e.g. choosing casualties when USSR defends). Notes:
+
+- Colima: `docker build` needs BuildKit (cache mounts). If the macOS docker CLI has no buildx plugin, build
+  inside the VM: `colima ssh -- sh -c 'cd $PWD && docker buildx build --load -t wartide:local .'`.
+- If port 8080 is taken (for example by `just dev`), run the container on another port:
+  `APP_PORT=18080 docker compose --profile app up -d --wait app` (BASE_URL follows APP_PORT).
+- Bot commentary is posted to the team chat channel, so `GET /chat?channel=all` is normally empty.
 
 ## Architecture on AWS
 
