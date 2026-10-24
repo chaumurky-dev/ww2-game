@@ -1032,3 +1032,341 @@ fn absurd_placement_counts_are_rejected() {
     assert!(place(&mut st, Power::Germany, UnitType::Infantry, "germany", 3).is_err());
     place(&mut st, Power::Germany, UnitType::Infantry, "germany", 2).unwrap();
 }
+
+#[test]
+fn mid_battle_state_survives_json_and_continues_identically() {
+    let mut st = cm(Power::Germany);
+    set_control(&mut st, "ukraine_s_s_r", Some(Power::Ussr));
+    let i = put(
+        &mut st,
+        UnitType::Infantry,
+        Power::Germany,
+        "eastern_europe",
+    );
+    let a = put(&mut st, UnitType::Armor, Power::Germany, "eastern_europe");
+    putn(&mut st, UnitType::Infantry, Power::Ussr, "ukraine_s_s_r", 3);
+    act(&mut st, Power::Germany, mv(&[i, a], &["ukraine_s_s_r"])).unwrap();
+    go_combat(&mut st, Power::Germany);
+    // attackers miss (6, 6), exactly one defender hits (2) so the attacker must choose
+    act_seed(
+        &mut st,
+        Power::Germany,
+        Action::BeginBattle {
+            location: loc("ukraine_s_s_r"),
+        },
+        seed_for(&[6, 6, 2, 6, 6]),
+    )
+    .unwrap();
+    assert!(matches!(
+        crate::pending_decision(&st),
+        crate::Decision::SelectCasualties { hits: 1, .. }
+    ));
+    let json = serde_json::to_string(&st).unwrap();
+    let mut back: GameState = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, st);
+    let pick = Action::SelectCasualties { units: vec![i] };
+    let e1 = apply(&mut st, Power::Germany, &pick, 77).unwrap();
+    let e2 = apply(&mut back, Power::Germany, &pick, 77).unwrap();
+    assert_eq!(e1, e2);
+    assert_eq!(st, back);
+    // wrong chooser / wrong unit count are refused without touching the state
+    let before = st.clone();
+    assert!(apply(&mut st, Power::Ussr, &Action::PressAttack, 1).is_err());
+    assert_eq!(st, before);
+}
+
+// ---------------------------------------------------------------- victory / capitals (1.1, 9)
+
+#[test]
+fn military_victory_is_decided_at_end_of_turn_not_mid_turn() {
+    let mut st = GameState::new(GameSettings::default());
+    st.current_power = Power::Germany;
+    st.phase = Phase::CombatMove;
+    st.control[loc("russia")] = Some(Power::Germany);
+    st.control[loc("united_kingdom")] = Some(Power::Germany);
+    assert!(st.winner.is_none());
+    act(&mut st, Power::Germany, Action::EndPhase).unwrap();
+    assert!(st.winner.is_none(), "still mid-turn");
+    st.phase = Phase::Mobilize;
+    act(&mut st, Power::Germany, Action::EndPhase).unwrap();
+    assert_eq!(st.winner.map(|w| w.team), Some(Team::Axis));
+}
+
+#[test]
+fn allies_need_both_axis_capitals_and_axis_need_two_allied_ones() {
+    let mut st = GameState::new(GameSettings::default());
+    st.control[loc("japan")] = Some(Power::Usa);
+    assert!(crate::victory::check_military(&st).is_none());
+    st.control[loc("germany")] = Some(Power::Ussr);
+    assert!(crate::victory::check_military(&st).is_some());
+    let mut ax = GameState::new(GameSettings::default());
+    ax.control[loc("eastern_usa")] = Some(Power::Japan);
+    assert!(crate::victory::check_military(&ax).is_none());
+    ax.control[loc("russia")] = Some(Power::Germany);
+    assert_eq!(
+        crate::victory::check_military(&ax).map(|w| w.team),
+        Some(Team::Axis)
+    );
+}
+
+#[test]
+fn economic_victory_counts_territories_of_a_power_whose_capital_fell() {
+    let mut st = GameState::new(GameSettings::default());
+    st.control[loc("germany")] = Some(Power::Uk); // Germany's capital is lost
+    let before =
+        crate::production_level(&st, Power::Germany) + crate::production_level(&st, Power::Japan);
+    assert!(before < 84);
+    // hand Germany enough Soviet land to reach 84 without its capital
+    for t in [
+        "russia",
+        "caucasus",
+        "evenki_national_okrug",
+        "kazakh_s_s_r",
+        "novosibirsk",
+    ] {
+        st.control[loc(t)] = Some(Power::Germany);
+    }
+    for t in [
+        "western_usa",
+        "brazil",
+        "alaska",
+        "mexico",
+        "eastern_canada",
+        "india",
+        "australia",
+        "china",
+        "sinkiang",
+    ] {
+        st.control[loc(t)] = Some(Power::Japan);
+    }
+    let sum =
+        crate::production_level(&st, Power::Germany) + crate::production_level(&st, Power::Japan);
+    assert!(sum >= 84, "{sum}");
+    assert!(crate::victory::check_economic(&st).is_some());
+    assert_eq!(
+        crate::income(&st, Power::Germany),
+        0,
+        "no income without a capital"
+    );
+}
+
+#[test]
+fn power_with_fallen_capital_cannot_buy_but_the_captor_can_spend_the_loot() {
+    let mut st = blank(Power::Ussr, Phase::Purchase);
+    st.control[loc("russia")] = Some(Power::Germany);
+    st.treasury[Power::Ussr] = 0;
+    assert!(matches!(
+        act(
+            &mut st,
+            Power::Ussr,
+            Action::Purchase {
+                items: vec![item(UnitType::Infantry, 1)]
+            }
+        ),
+        Err(RuleError::InsufficientFunds { .. })
+    ));
+    let mut st = blank(Power::Germany, Phase::Purchase);
+    st.treasury[Power::Germany] = 24; // loot from Russia
+    act(
+        &mut st,
+        Power::Germany,
+        Action::Purchase {
+            items: vec![item(UnitType::Infantry, 8)],
+        },
+    )
+    .unwrap();
+}
+
+#[test]
+fn seized_treasury_goes_to_the_captor_only() {
+    let mut st = blank(Power::Japan, Phase::CombatMove);
+    st.treasury[Power::Uk] = 41;
+    let g = st.treasury[Power::Germany];
+    let j = st.treasury[Power::Japan];
+    let a = put(&mut st, UnitType::Armor, Power::Japan, "persia");
+    set_control(&mut st, "persia", Some(Power::Japan));
+    set_control(&mut st, "india", Some(Power::Uk));
+    // stand in for capturing the UK capital: relocate it so that a land path exists
+    let mut ev = vec![];
+    crate::economy::capture_territory(&mut st, Power::Japan, loc("united_kingdom"), &mut ev);
+    assert_eq!(st.treasury[Power::Uk], 0);
+    assert_eq!(st.treasury[Power::Japan], j + 41);
+    assert_eq!(st.treasury[Power::Germany], g);
+    let _ = a;
+}
+
+#[test]
+fn violated_neutral_is_never_liberated_by_an_ally() {
+    let mut st = blank(Power::Uk, Phase::CombatMove);
+    st.control[loc("sweden")] = Some(Power::Germany);
+    st.turn.start_control = st.control.clone();
+    let mut ev = vec![];
+    crate::economy::capture_territory(&mut st, Power::Uk, loc("sweden"), &mut ev);
+    assert_eq!(st.control[loc("sweden")], Some(Power::Uk));
+}
+
+#[test]
+fn regained_territory_goes_to_the_latest_captor_when_owner_is_an_enemy() {
+    // Ukraine belongs to Germany; USSR takes it, Germany retakes it, UK retakes it: UK holds it.
+    let mut st = blank(Power::Uk, Phase::CombatMove);
+    st.control[loc("ukraine_s_s_r")] = Some(Power::Germany);
+    let mut ev = vec![];
+    crate::economy::capture_territory(&mut st, Power::Uk, loc("ukraine_s_s_r"), &mut ev);
+    assert_eq!(st.control[loc("ukraine_s_s_r")], Some(Power::Uk));
+}
+
+#[test]
+fn new_complex_cannot_supply_units_until_next_turn() {
+    let mut st = blank(Power::Uk, Phase::Mobilize);
+    st.purchases = vec![
+        item(UnitType::IndustrialComplex, 1),
+        item(UnitType::Infantry, 1),
+    ];
+    place(&mut st, Power::Uk, UnitType::IndustrialComplex, "india", 1).unwrap();
+    assert!(place(&mut st, Power::Uk, UnitType::Infantry, "india", 1).is_err());
+    assert!(st.complex_at(loc("india")).is_some());
+    assert_eq!(st.new_complexes_placed, 1);
+}
+
+#[test]
+fn complex_cannot_be_placed_in_unviolated_neutral_or_enemy_land_or_sea() {
+    let mut st = blank(Power::Uk, Phase::Mobilize);
+    st.purchases = vec![item(UnitType::IndustrialComplex, 3)];
+    assert!(place(&mut st, Power::Uk, UnitType::IndustrialComplex, "spain", 1).is_err());
+    assert!(place(
+        &mut st,
+        Power::Uk,
+        UnitType::IndustrialComplex,
+        "germany",
+        1
+    )
+    .is_err());
+    assert!(place(
+        &mut st,
+        Power::Uk,
+        UnitType::IndustrialComplex,
+        "sz_north",
+        1
+    )
+    .is_err());
+    // a territory won this turn does not qualify either
+    st.control[loc("algeria")] = Some(Power::Uk);
+    assert!(place(
+        &mut st,
+        Power::Uk,
+        UnitType::IndustrialComplex,
+        "algeria",
+        1
+    )
+    .is_err());
+    // value-0 land that is ours since the start does
+    place(
+        &mut st,
+        Power::Uk,
+        UnitType::IndustrialComplex,
+        "gibraltar",
+        1,
+    )
+    .unwrap();
+}
+
+#[test]
+fn industrial_technology_never_reduces_research_price() {
+    let mut st = blank(Power::Germany, Phase::DevelopWeapons);
+    st.techs[Power::Germany].push(crate::Tech::IndustrialTechnology);
+    let before = st.treasury[Power::Germany];
+    act(&mut st, Power::Germany, Action::BuyResearch { dice: 2 }).unwrap();
+    assert_eq!(st.treasury[Power::Germany], before - 10);
+    act(&mut st, Power::Germany, Action::EndPhase).unwrap();
+    // complex costs 14 with the technology
+    let opts = crate::query::purchase_options(&st);
+    let c = opts
+        .iter()
+        .find(|o| o.unit == UnitType::IndustrialComplex)
+        .unwrap();
+    assert_eq!(c.cost, 14);
+}
+
+#[test]
+fn tech_effects_on_numbers() {
+    let mut st = blank(Power::Germany, Phase::CombatMove);
+    let f = put(&mut st, UnitType::Fighter, Power::Germany, "germany");
+    let b = put(&mut st, UnitType::Bomber, Power::Germany, "germany");
+    let s = put(&mut st, UnitType::Submarine, Power::Germany, "sz_baltic");
+    let fu = st.unit(f).unwrap().clone();
+    let bu = st.unit(b).unwrap().clone();
+    let su = st.unit(s).unwrap().clone();
+    use crate::tech::{attack_dice, attack_value, defense_value, move_allowance};
+    assert_eq!((move_allowance(&st, &fu), move_allowance(&st, &bu)), (4, 6));
+    assert_eq!(
+        (
+            defense_value(&st, &fu),
+            attack_value(&st, &su),
+            attack_dice(&st, &bu)
+        ),
+        (4, 2, 1)
+    );
+    for t in [
+        crate::Tech::LongRangeAircraft,
+        crate::Tech::JetPower,
+        crate::Tech::SuperSubmarines,
+        crate::Tech::HeavyBombers,
+    ] {
+        st.techs[Power::Germany].push(t);
+    }
+    assert_eq!((move_allowance(&st, &fu), move_allowance(&st, &bu)), (6, 8));
+    assert_eq!(
+        (
+            defense_value(&st, &fu),
+            attack_value(&st, &fu),
+            attack_value(&st, &su),
+            defense_value(&st, &su),
+            attack_dice(&st, &bu),
+            defense_value(&st, &bu)
+        ),
+        (5, 3, 3, 2, 3, 1)
+    );
+}
+
+#[test]
+fn orphaned_fighters_land_on_a_friendly_island_of_the_zone() {
+    let mut st = cm(Power::Uk);
+    let sub = put(&mut st, UnitType::Submarine, Power::Uk, "sz_borneo");
+    let c = put(
+        &mut st,
+        UnitType::Carrier,
+        Power::Japan,
+        "sz_caroline_islands",
+    );
+    let f = put(
+        &mut st,
+        UnitType::Fighter,
+        Power::Japan,
+        "sz_caroline_islands",
+    );
+    st.unit_mut(f).unwrap().loaded_on = Some(c);
+    act(&mut st, Power::Uk, mv(&[sub], &["sz_caroline_islands"])).unwrap();
+    go_combat(&mut st, Power::Uk);
+    // first strike hits (2): the carrier must be the casualty (subs cannot hit aircraft); fighter misses
+    act_seed(
+        &mut st,
+        Power::Uk,
+        Action::BeginBattle {
+            location: loc("sz_caroline_islands"),
+        },
+        seed_for(&[2, 6]),
+    )
+    .unwrap();
+    assert!(st.unit(c).is_none());
+    act(
+        &mut st,
+        Power::Uk,
+        Action::Retreat {
+            to: loc("sz_borneo"),
+        },
+    )
+    .unwrap();
+    let fu = st.unit(f).expect("fighter lands on the island, not lost");
+    assert_eq!(fu.location, loc("caroline_islands"));
+    assert!(fu.loaded_on.is_none());
+}

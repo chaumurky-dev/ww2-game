@@ -351,9 +351,18 @@ fn rehome_orphans(state: &mut GameState, zone: LocationId, active: Power, ev: &m
             })
             .map(|c| c.id)
             .next();
-        match carrier {
-            Some(c) => state.unit_mut(id).unwrap().loaded_on = Some(c),
-            None => lost.extend(kill_units(state, &[id])),
+        // RULES 11: otherwise a friendly island in the zone (an island territory touching it).
+        let map = crate::map::MapData::get();
+        let island = map.neighbours(zone).iter().copied().find(|&t| {
+            !map.is_sea(t)
+                && map.loc(t).is_island
+                && state.is_friendly_land(owner, t)
+                && !state.enemy_occupied_land(owner, t)
+        });
+        match (carrier, island) {
+            (Some(c), _) => state.unit_mut(id).unwrap().loaded_on = Some(c),
+            (None, Some(t)) => state.unit_mut(id).unwrap().location = t,
+            (None, None) => lost.extend(kill_units(state, &[id])),
         }
     }
     if !lost.is_empty() {

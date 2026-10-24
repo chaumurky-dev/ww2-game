@@ -44,3 +44,9 @@
   landing place (land held at turn start, or a friendly carrier with room where it stands now) must be
   reachable with the remaining range, ignoring neutrals. Aircraft still airborne when non-combat movement
   ends land on a carrier in their zone if possible, otherwise are lost.
+- 2026-10-24 (engine audit): A defending fighter whose carrier is sunk re-lands on another friendly carrier
+  with room in the zone, otherwise on a friendly *island* territory adjacent to that zone (RULES 11 says
+  "carrier slot or friendly island"; on our map islands are separate territories touching the zone, so
+  "in the zone" is read as "adjacent island that is friendly and not enemy-occupied"); otherwise it is lost.
+  Mainland coasts do not count. Research and purchase quantities use saturating arithmetic so absurd counts
+  are rejected as insufficient funds instead of overflowing.
