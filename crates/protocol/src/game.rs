@@ -93,16 +93,36 @@ impl GameMode {
     }
 }
 
+/// Per-game options. Mirrors `wartide_engine::GameSettings` (plus the turn timeout); every field
+/// has a serde default so partial JSON (and rows stored by older versions) keep working.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GameSettings {
     #[serde(default = "default_timeout")]
     pub turn_timeout_secs: u32,
+    /// Research phase enabled.
     #[serde(default = "default_true")]
     pub weapons_development: bool,
+    /// Axis economic victory threshold (combined production); `None` disables it.
+    #[serde(default = "default_axis_economic")]
+    pub axis_economic_victory: Option<u32>,
+    /// Optional Allied economic victory threshold.
     #[serde(default)]
-    pub economic_victory: bool,
-    #[serde(default = "default_threshold")]
-    pub economic_victory_threshold: u32,
+    pub allied_economic_victory: Option<u32>,
+    /// USSR may not attack on its first turn.
+    #[serde(default)]
+    pub soviet_first_turn_restriction: bool,
+    /// No new industrial complexes may be bought.
+    #[serde(default)]
+    pub original_complexes_only: bool,
+    /// Military victory also requires holding all of the winners' own capitals.
+    #[serde(default)]
+    pub total_victory: bool,
+    /// Balance option: Germany starts with jet power.
+    #[serde(default)]
+    pub germany_jet_power: bool,
+    /// Balance option: Japan starts with super submarines.
+    #[serde(default)]
+    pub japan_super_subs: bool,
 }
 
 fn default_timeout() -> u32 {
@@ -111,8 +131,8 @@ fn default_timeout() -> u32 {
 fn default_true() -> bool {
     true
 }
-fn default_threshold() -> u32 {
-    84
+fn default_axis_economic() -> Option<u32> {
+    Some(84)
 }
 
 impl Default for GameSettings {
@@ -120,8 +140,13 @@ impl Default for GameSettings {
         Self {
             turn_timeout_secs: default_timeout(),
             weapons_development: true,
-            economic_victory: false,
-            economic_victory_threshold: default_threshold(),
+            axis_economic_victory: default_axis_economic(),
+            allied_economic_victory: None,
+            soviet_first_turn_restriction: false,
+            original_complexes_only: false,
+            total_victory: false,
+            germany_jet_power: false,
+            japan_super_subs: false,
         }
     }
 }
@@ -167,6 +192,12 @@ pub struct SeatAssignment {
     /// Display name of the persona (falls back to the stored id for unknown/legacy values).
     #[serde(default)]
     pub bot_name: Option<String>,
+    /// The human left (resigned, or timed out three times in a row); a bot plays the seat.
+    #[serde(default)]
+    pub resigned: bool,
+    /// Turns this seat missed because of the timeout.
+    #[serde(default)]
+    pub timeouts: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -181,7 +212,16 @@ pub struct GameSummary {
     pub settings: GameSettings,
     pub seats: Vec<SeatAssignment>,
     pub round: i32,
+    /// Power whose turn it is.
     pub current_power: Option<Power>,
+    /// Engine phase of the current turn (`develop_weapons`, `purchase`, `combat_move`, `combat`,
+    /// `non_combat_move`, `mobilize`, ...).
+    #[serde(default)]
+    pub phase: Option<String>,
+    /// Power that must act right now; differs from `current_power` while the defender chooses
+    /// casualties or withdraws submarines.
+    #[serde(default)]
+    pub pending_power: Option<Power>,
     pub turn_deadline: Option<DateTime<Utc>>,
     pub group_id: Option<Uuid>,
     pub host_id: Option<Uuid>,
@@ -229,10 +269,12 @@ pub struct MatchmakingRequest {
     pub mode: GameMode,
 }
 
-/// Placeholder; replaced by the engine's view type later.
+/// The engine's `GameState` as JSON (all information is public in this game, so there is no
+/// per-viewer projection). See `crates/engine/README.md` for the shape.
 pub type GameStateView = serde_json::Value;
 
-/// Placeholder; engine action/event types will replace the JSON values later.
+/// One log entry. `action` is a `wartide_engine::Action` and `events` a `Vec<wartide_engine::Event>`
+/// (both as JSON); `actor` is the seat that controlled the acting power.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GameActionEnvelope {
     pub seq: i64,
@@ -268,7 +310,9 @@ mod tests {
         let s: GameSettings = serde_json::from_str("{}").unwrap();
         assert_eq!(s, GameSettings::default());
         assert_eq!(s.turn_timeout_secs, 172_800);
-        assert_eq!(s.economic_victory_threshold, 84);
+        assert_eq!(s.axis_economic_victory, Some(84));
+        assert_eq!(s.allied_economic_victory, None);
+        assert!(s.weapons_development);
     }
 
     #[test]
