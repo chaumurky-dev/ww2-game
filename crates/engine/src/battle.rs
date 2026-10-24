@@ -42,7 +42,7 @@ pub fn pending_battles(state: &GameState) -> Vec<LocationId> {
         };
         let z = tr.location;
         let zone_pending = sea.contains(&z);
-        if (!state.hostile_sea(p, z) || zone_pending) && !land.contains(&t) {
+        if (!state.hostile_sea(p, z) || zone_pending) && map.adjacent(z, t) && !land.contains(&t) {
             land.push(t);
         }
     }

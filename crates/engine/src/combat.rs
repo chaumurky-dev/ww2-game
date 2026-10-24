@@ -191,9 +191,17 @@ fn request(
         .collect::<std::collections::BTreeSet<_>>()
         .len()
         == 1;
-    if t == cand.len() || same {
+    let nonair: Vec<UnitId> = cand
+        .iter()
+        .copied()
+        .filter(|&i| state.unit(i).is_some_and(|u| !u.kind.is_air()))
+        .collect();
+    let only_subs_forced = normal == 0 && t == nonair.len();
+    if t == cand.len() || same || only_subs_forced {
         let ids = if t == cand.len() {
             cand
+        } else if only_subs_forced {
+            nonair
         } else {
             default_pick(state, &cand, normal, sub)
         };
@@ -622,11 +630,15 @@ pub fn press(
     ev: &mut Vec<Event>,
 ) -> Result<()> {
     expect_battle(state, actor, BattleStep::Choice)?;
+    let def_subs = {
+        let b = state.battle.as_ref().unwrap();
+        b.kind == BattleKind::Sea
+            && b.defenders
+                .iter()
+                .any(|&i| state.unit(i).is_some_and(|u| u.kind == UnitType::Submarine))
+            && !defender_withdraw_options(state, defending_controller(state, b)).is_empty()
+    };
     let mut b = state.battle.take().unwrap();
-    let def_subs = b.kind == BattleKind::Sea
-        && b.defenders
-            .iter()
-            .any(|&i| state.unit(i).is_some_and(|u| u.kind == UnitType::Submarine));
     if def_subs {
         b.step = BattleStep::DefenderSubChoice;
     } else {
@@ -667,7 +679,9 @@ pub fn retreat(
             let cargo: Vec<UnitId> = state.cargo_of(id).map(|c| c.id).collect();
             state.unit_mut(id).unwrap().location = to;
             for c in cargo {
-                state.unit_mut(c).unwrap().location = to;
+                let cu = state.unit_mut(c).unwrap();
+                cu.location = to;
+                cu.assault_to = None;
             }
         }
         ev.push(Event::Retreated { units: r, from, to });
