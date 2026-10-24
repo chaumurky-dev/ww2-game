@@ -31,7 +31,7 @@ fn purchases_fit_the_treasury_for_every_power_and_style() {
                 panic!("{p:?} did not buy: {a:?}");
             };
             let cost: u32 = items.iter().map(|i| i.unit.stats().cost * i.count).sum();
-            assert!(cost <= 40 && cost >= 30, "{p:?} spent {cost}");
+            assert!((30..=40).contains(&cost), "{p:?} spent {cost}");
             assert!(!chat.is_empty());
         }
     }

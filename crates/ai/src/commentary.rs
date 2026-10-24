@@ -421,6 +421,7 @@ impl Voice<'_> {
             l,
             &[
                 ("k", kind_word(top).into()),
+                ("ka", with_article(kind_word(top))),
                 ("t", name(at)),
                 ("home", home),
             ],
