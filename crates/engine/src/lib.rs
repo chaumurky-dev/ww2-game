@@ -1,5 +1,6 @@
 //! Wartide rules engine: a pure, deterministic implementation of the mechanics.
 #![forbid(unsafe_code)]
+#![deny(missing_docs)]
 
 pub mod action;
 pub mod apply;

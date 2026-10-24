@@ -687,3 +687,254 @@ fn battle_is_deterministic_for_same_seed() {
     assert_eq!(ea, eb);
     assert_eq!(a, b);
 }
+
+// ---- additional naval / amphibious flows ----
+
+fn count_events(ev: &[Event], f: impl Fn(&Event) -> bool) -> usize {
+    ev.iter().filter(|e| f(e)).count()
+}
+
+#[test]
+fn full_amphibious_flow_with_sea_battle_first() {
+    let mut st = blank(Power::Uk, Phase::CombatMove);
+    let bb = put(&mut st, UnitType::Battleship, Power::Uk, "sz_north");
+    let t = put(&mut st, UnitType::Transport, Power::Uk, "sz_north");
+    let i = put(&mut st, UnitType::Infantry, Power::Uk, "united_kingdom");
+    act(
+        &mut st,
+        Power::Uk,
+        Action::Load {
+            units: vec![i],
+            transport: t,
+        },
+    )
+    .unwrap();
+    let sub = put(&mut st, UnitType::Submarine, Power::Germany, "sz_baltic");
+    putn(&mut st, UnitType::Infantry, Power::Germany, "germany", 2);
+    act(&mut st, Power::Uk, mv(&[bb, t], &["sz_baltic"])).unwrap();
+    act(
+        &mut st,
+        Power::Uk,
+        Action::Unload {
+            transport: t,
+            units: vec![i],
+            to: loc("germany"),
+        },
+    )
+    .unwrap();
+    go_combat(&mut st, Power::Uk);
+    assert_eq!(
+        crate::battle::pending_battles(&st),
+        vec![loc("sz_baltic"), loc("germany")]
+    );
+    // battleship hits (4), sub misses (6)
+    let ev = act_seed(
+        &mut st,
+        Power::Uk,
+        Action::BeginBattle {
+            location: loc("sz_baltic"),
+        },
+        seed_for(&[4, 6]),
+    )
+    .unwrap();
+    assert!(st.unit(sub).is_none());
+    assert_eq!(outcome(&ev), Some(BattleOutcome::AttackerWins));
+    assert_eq!(crate::battle::pending_battles(&st), vec![loc("germany")]);
+    // land assault: no bombardment because the battleship fought; rolls: attacker 6, defenders 6, 6
+    let ev = act_seed(
+        &mut st,
+        Power::Uk,
+        Action::BeginBattle {
+            location: loc("germany"),
+        },
+        seed_for(&[6, 6, 6]),
+    )
+    .unwrap();
+    assert_eq!(
+        count_events(&ev, |e| matches!(e, Event::Bombardment { .. })),
+        0
+    );
+    assert!(ev.iter().any(|e| matches!(
+        e,
+        Event::BattleStarted {
+            amphibious: true,
+            ..
+        }
+    )));
+    assert!(st.unit(t).unwrap().frozen);
+    // amphibious battles never offer retreat
+    assert!(!matches!(
+        crate::pending_decision(&st),
+        Decision::RetreatOrPress { .. }
+    ));
+    assert!(act(
+        &mut st,
+        Power::Uk,
+        Action::Retreat {
+            to: loc("sz_baltic")
+        }
+    )
+    .is_err());
+}
+
+#[test]
+fn transported_aa_gun_does_not_fire_at_aircraft() {
+    let mut st = blank(Power::Uk, Phase::CombatMove);
+    let t = put(&mut st, UnitType::Transport, Power::Germany, "sz_baltic");
+    let g = put(&mut st, UnitType::AaGun, Power::Germany, "germany");
+    st.unit_mut(g).unwrap().location = loc("sz_baltic");
+    st.unit_mut(g).unwrap().loaded_on = Some(t);
+    let f = put(&mut st, UnitType::Fighter, Power::Uk, "united_kingdom");
+    let ev = act_seed(
+        &mut st,
+        Power::Uk,
+        mv(
+            &[f],
+            &["sz_north", "sz_baltic", "sz_north", "united_kingdom"],
+        ),
+        seed_for(&[1]),
+    )
+    .unwrap();
+    assert!(ev.iter().all(|e| !matches!(e, Event::AaFire { .. })));
+    assert!(st.unit(f).is_some());
+}
+
+#[test]
+fn sunk_carrier_fighters_land_on_another_carrier_or_are_lost() {
+    // two German carriers: one sinks, its fighter re-lands on the other (which has room)
+    let mut st = blank(Power::Uk, Phase::CombatMove);
+    let b = put(&mut st, UnitType::Battleship, Power::Uk, "sz_north");
+    let c1 = put(&mut st, UnitType::Carrier, Power::Germany, "sz_baltic");
+    let c2 = put(&mut st, UnitType::Carrier, Power::Germany, "sz_baltic");
+    let f = put(&mut st, UnitType::Fighter, Power::Germany, "sz_baltic");
+    st.unit_mut(f).unwrap().loaded_on = Some(c1);
+    act(&mut st, Power::Uk, mv(&[b], &["sz_baltic"])).unwrap();
+    go_combat(&mut st, Power::Uk);
+    // battleship hits once; defenders (carrier 3, carrier 3, fighter 4) all miss -> choose c1
+    act_seed(
+        &mut st,
+        Power::Uk,
+        Action::BeginBattle {
+            location: loc("sz_baltic"),
+        },
+        seed_for(&[4, 6, 6, 6]),
+    )
+    .unwrap();
+    act(
+        &mut st,
+        Power::Germany,
+        Action::SelectCasualties { units: vec![c1] },
+    )
+    .unwrap();
+    // attacker retreats; fighter should now sit on carrier two
+    act(
+        &mut st,
+        Power::Uk,
+        Action::Retreat {
+            to: loc("sz_north"),
+        },
+    )
+    .unwrap();
+    assert!(st.unit(c1).is_none());
+    assert_eq!(st.unit(f).unwrap().loaded_on, Some(c2));
+    // with no spare carrier the fighter is lost
+    let mut st = blank(Power::Uk, Phase::CombatMove);
+    let b = put(&mut st, UnitType::Battleship, Power::Uk, "sz_north");
+    let c1 = put(&mut st, UnitType::Carrier, Power::Germany, "sz_baltic");
+    let f = put(&mut st, UnitType::Fighter, Power::Germany, "sz_baltic");
+    st.unit_mut(f).unwrap().loaded_on = Some(c1);
+    act(&mut st, Power::Uk, mv(&[b], &["sz_baltic"])).unwrap();
+    go_combat(&mut st, Power::Uk);
+    act_seed(
+        &mut st,
+        Power::Uk,
+        Action::BeginBattle {
+            location: loc("sz_baltic"),
+        },
+        seed_for(&[4, 6, 6]),
+    )
+    .unwrap();
+    act(
+        &mut st,
+        Power::Germany,
+        Action::SelectCasualties { units: vec![c1] },
+    )
+    .unwrap();
+    act(
+        &mut st,
+        Power::Uk,
+        Action::Retreat {
+            to: loc("sz_north"),
+        },
+    )
+    .unwrap();
+    assert!(st.unit(f).is_none());
+}
+
+#[test]
+fn allied_defenders_roll_their_own_dice() {
+    let mut st = blank(Power::Germany, Phase::CombatMove);
+    set_control(&mut st, "ukraine_s_s_r", Some(Power::Ussr));
+    let atk = putn(
+        &mut st,
+        UnitType::Infantry,
+        Power::Germany,
+        "eastern_europe",
+        2,
+    );
+    put(&mut st, UnitType::Infantry, Power::Ussr, "ukraine_s_s_r");
+    put(&mut st, UnitType::Armor, Power::Uk, "ukraine_s_s_r");
+    act(&mut st, Power::Germany, mv(&atk, &["ukraine_s_s_r"])).unwrap();
+    end_cm(&mut st, Power::Germany);
+    let ev = act_seed(
+        &mut st,
+        Power::Germany,
+        Action::BeginBattle {
+            location: loc("ukraine_s_s_r"),
+        },
+        seed_for(&[6, 6, 6, 6]),
+    )
+    .unwrap();
+    let defense_rolls: Vec<_> = ev
+        .iter()
+        .filter_map(|e| match e {
+            Event::DiceRolled {
+                power,
+                context: DiceContext::Defense { .. },
+                ..
+            } => Some(*power),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(defense_rolls, vec![Power::Ussr, Power::Uk]);
+}
+
+#[test]
+fn research_disabled_when_setting_off() {
+    let mut st = GameState::new(GameSettings {
+        weapons_development: false,
+        ..Default::default()
+    });
+    assert!(act(&mut st, Power::Ussr, Action::BuyResearch { dice: 1 }).is_err());
+}
+
+#[test]
+fn combat_waits_for_rocket_but_ends_when_none() {
+    let mut st = blank(Power::Germany, Phase::CombatMove);
+    st.techs[Power::Germany].push(Tech::Rockets);
+    put(&mut st, UnitType::AaGun, Power::Germany, "germany");
+    put(
+        &mut st,
+        UnitType::IndustrialComplex,
+        Power::Uk,
+        "united_kingdom",
+    );
+    act(&mut st, Power::Germany, Action::EndPhase).unwrap();
+    assert_eq!(
+        st.phase,
+        Phase::Combat,
+        "rocket available: wait for the player"
+    );
+    act(&mut st, Power::Germany, Action::EndPhase).unwrap();
+    assert_eq!(st.phase, Phase::NonCombatMove);
+}

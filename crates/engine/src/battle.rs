@@ -54,6 +54,30 @@ pub fn pending_battles(state: &GameState) -> Vec<LocationId> {
         .collect()
 }
 
+/// Is the land battle at `loc` waiting for a preliminary sea battle in an assault zone?
+fn blocked_by_sea_battle(state: &GameState, loc: LocationId, pending: &[LocationId]) -> bool {
+    let p = state.current_power;
+    state
+        .units
+        .iter()
+        .filter(|u| u.owner == p && u.assault_to == Some(loc))
+        .any(|u| {
+            u.loaded_on
+                .and_then(|t| state.unit(t))
+                .is_some_and(|t| pending.contains(&t.location))
+        })
+}
+
+/// Pending battles that may be started right now (assaults wait for their sea battles).
+pub fn beginnable_battles(state: &GameState) -> Vec<LocationId> {
+    let pending = pending_battles(state);
+    pending
+        .iter()
+        .copied()
+        .filter(|&l| !blocked_by_sea_battle(state, l, &pending))
+        .collect()
+}
+
 /// Everything fought over a given site, for starting a battle.
 fn participants(
     state: &GameState,

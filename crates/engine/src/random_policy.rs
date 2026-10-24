@@ -1,7 +1,7 @@
 //! A simple random legal-action policy: drives a game using only `pending_decision` and the
 //! `query` helpers. Used by the fuzz tests and as a fallback "bot" by other crates.
 use crate::action::Action;
-use crate::battle::{defender_withdraw_options, pending_battles, sub_withdraw_options};
+use crate::battle::{beginnable_battles, defender_withdraw_options, sub_withdraw_options};
 use crate::bombing::{bombing_targets, rocket_targets};
 use crate::combat::{candidates, required_casualties};
 use crate::decision::{pending_decision, Decision};
@@ -258,7 +258,18 @@ impl RandomPolicy {
                 }
             }
             if unit.kind == UnitType::Transport && state.cargo_of(u).any(|c| c.owner == p) {
-                if let Some(to) = self.pick(&unload_options(state, u)) {
+                let opts = unload_options(state, u);
+                let hostile: Vec<_> = opts
+                    .iter()
+                    .copied()
+                    .filter(|&l| !state.is_friendly_land(p, l))
+                    .collect();
+                let pool = if !hostile.is_empty() && self.chance(0.8) {
+                    hostile
+                } else {
+                    opts
+                };
+                if let Some(to) = self.pick(&pool) {
                     let cargo: Vec<UnitId> = state
                         .cargo_of(u)
                         .filter(|c| c.owner == p)
@@ -280,7 +291,17 @@ impl RandomPolicy {
             }
             let u = state.unit(id).unwrap();
             let battles: Vec<_> = reach.iter().filter(|r| r.battle).cloned().collect();
-            let r = if cm && !battles.is_empty() && self.chance(self.aggression) {
+            let raids: Vec<_> = reach
+                .iter()
+                .filter(|r| {
+                    u.kind == UnitType::Bomber
+                        && state.complex_at(r.to).is_some_and(|c| !c.owner.is_ally(p))
+                })
+                .cloned()
+                .collect();
+            let r = if cm && !raids.is_empty() && self.chance(0.7) {
+                self.pick(&raids).unwrap()
+            } else if cm && !battles.is_empty() && self.chance(self.aggression) {
                 self.pick(&battles).unwrap()
             } else if !cm && u.kind.is_air() {
                 let landing: Vec<_> = reach.iter().filter(|r| r.landing).cloned().collect();
@@ -329,7 +350,7 @@ impl RandomPolicy {
     }
 
     fn combat(&mut self, state: &GameState, p: Power) -> Action {
-        if let Some(l) = self.pick(&pending_battles(state)) {
+        if let Some(l) = self.pick(&beginnable_battles(state)) {
             return Action::BeginBattle { location: l };
         }
         if self.budget > 0 {

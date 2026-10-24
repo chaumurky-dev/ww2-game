@@ -56,7 +56,10 @@ impl GameState {
         for s in map.starting_units() {
             for _ in 0..s.count {
                 let id = st.spawn(s.unit, s.owner, s.location);
-                debug_assert!(id > 0);
+                // Printed pieces predate turn 1 (complexes are usable on the first turn).
+                if let Some(u) = st.unit_mut(id) {
+                    u.born_turn = 0;
+                }
             }
         }
         debug_assert!(st

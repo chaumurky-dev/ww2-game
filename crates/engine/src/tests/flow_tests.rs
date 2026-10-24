@@ -1,5 +1,5 @@
 use super::*;
-use crate::state::VictoryReason;
+use crate::state::{PurchaseItem, VictoryReason};
 
 // ---------- turn flow and income ----------
 
@@ -377,4 +377,38 @@ fn concession_ends_game_when_whole_team_concedes() {
             ..
         }
     )));
+}
+
+#[test]
+fn printed_complexes_are_usable_on_the_first_turn() {
+    let mut st = GameState::new(GameSettings {
+        weapons_development: false,
+        ..Default::default()
+    });
+    act(
+        &mut st,
+        Power::Ussr,
+        Action::Purchase {
+            items: vec![PurchaseItem {
+                unit: UnitType::Infantry,
+                count: 8,
+            }],
+        },
+    )
+    .unwrap();
+    for _ in 0..3 {
+        act(&mut st, Power::Ussr, Action::EndPhase).unwrap();
+    }
+    assert_eq!(st.phase, Phase::Mobilize);
+    act(
+        &mut st,
+        Power::Ussr,
+        Action::Place {
+            unit: UnitType::Infantry,
+            location: loc("russia"),
+            count: 8,
+            from: None,
+        },
+    )
+    .unwrap();
 }
