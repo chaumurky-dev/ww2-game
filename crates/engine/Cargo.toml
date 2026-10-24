@@ -1,0 +1,12 @@
+[package]
+name = "wartide-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Deterministic rules engine for Wartide (pure, wasm-safe)"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+rand_chacha.workspace = true
