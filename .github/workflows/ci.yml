@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  DATABASE_URL: postgres://wartide:wartide@localhost:5432/wartide
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --exclude wartide-web --all-targets -- -D warnings
+      - run: cargo clippy -p wartide-web --target wasm32-unknown-unknown -- -D warnings
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: wartide
+          POSTGRES_PASSWORD: wartide
+          POSTGRES_DB: wartide
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U wartide -d wartide"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace
+
+  web-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: jetli/trunk-action@v0.5.0
+        with:
+          version: v0.21.14
+      - run: cd crates/web && trunk build --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: crates/web/dist
+          retention-days: 7
