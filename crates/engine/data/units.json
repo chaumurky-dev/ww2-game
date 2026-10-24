@@ -1,0 +1,12 @@
+[
+ {"id":"infantry","name":"Infantry","cost":3,"attack":1,"defense":2,"move":1,"domain":"land","transport_slots":1,"flags":["transportable"]},
+ {"id":"armor","name":"Armor","cost":5,"attack":3,"defense":2,"move":2,"domain":"land","transport_slots":2,"flags":["transportable","blitz"]},
+ {"id":"fighter","name":"Fighter","cost":12,"attack":3,"defense":4,"move":4,"domain":"air","flags":["air","carrier_based","hits_subs_no","landing_required"]},
+ {"id":"bomber","name":"Bomber","cost":15,"attack":4,"defense":1,"move":6,"domain":"air","flags":["air","strategic_bombing","landing_required","no_carrier_landing"]},
+ {"id":"battleship","name":"Battleship","cost":24,"attack":4,"defense":4,"move":2,"domain":"sea","flags":["naval","shore_bombard"]},
+ {"id":"carrier","name":"Aircraft Carrier","cost":18,"attack":1,"defense":3,"move":2,"domain":"sea","carrier_capacity":2,"flags":["naval","carries_fighters"]},
+ {"id":"transport","name":"Transport","cost":8,"attack":0,"defense":1,"move":2,"domain":"sea","flags":["naval","transport","no_attack","bridge"],"transport_capacity":"1 tank OR 1-2 infantry OR 1 aa_gun (capacity 2 slots: infantry=1, armor=2, aa_gun=2)"},
+ {"id":"submarine","name":"Submarine","cost":8,"attack":2,"defense":2,"move":2,"domain":"sea","flags":["naval","submarine","first_strike","may_withdraw","cannot_hit_air"]},
+ {"id":"aa_gun","name":"Antiaircraft Gun","cost":5,"attack":0,"defense":0,"move":1,"domain":"land","transport_slots":2,"flags":["transportable","aa","one_per_territory","captured_not_destroyed"]},
+ {"id":"industrial_complex","name":"Industrial Complex","cost":15,"attack":0,"defense":0,"move":0,"domain":"land","flags":["structure","immovable","one_per_territory","captured_not_destroyed","unowned_tray"]}
+]

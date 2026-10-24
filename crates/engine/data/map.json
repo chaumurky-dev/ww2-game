@@ -1,0 +1,2666 @@
+{
+ "powers": [
+  {
+   "id": "ussr",
+   "name": "Soviet Union",
+   "team": "allies",
+   "capital": "russia",
+   "starting_ipcs": 24,
+   "color": "#a0522d"
+  },
+  {
+   "id": "germany",
+   "name": "Germany",
+   "team": "axis",
+   "capital": "germany",
+   "starting_ipcs": 32,
+   "color": "#6b6b6b"
+  },
+  {
+   "id": "uk",
+   "name": "United Kingdom",
+   "team": "allies",
+   "capital": "united_kingdom",
+   "starting_ipcs": 30,
+   "color": "#d8c38a"
+  },
+  {
+   "id": "japan",
+   "name": "Japan",
+   "team": "axis",
+   "capital": "japan",
+   "starting_ipcs": 25,
+   "color": "#e2b007"
+  },
+  {
+   "id": "usa",
+   "name": "United States",
+   "team": "allies",
+   "capital": "eastern_usa",
+   "starting_ipcs": 36,
+   "color": "#4f8a3c"
+  }
+ ],
+ "territories": [
+  {
+   "id": "afghanistan",
+   "name": "Afghanistan",
+   "ipc": 0,
+   "original_owner": null,
+   "neutral": true,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "india",
+    "kazakh_s_s_r",
+    "persia",
+    "sinkiang"
+   ]
+  },
+  {
+   "id": "alaska",
+   "name": "Alaska",
+   "ipc": 2,
+   "original_owner": "usa",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "sz_alaska",
+    "sz_west_canada",
+    "western_canada"
+   ]
+  },
+  {
+   "id": "algeria",
+   "name": "Algeria",
+   "ipc": 1,
+   "original_owner": "germany",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "french_equatorial_africa",
+    "french_west_africa",
+    "libya",
+    "sz_west_mediterranean",
+    "sz_west_spain"
+   ]
+  },
+  {
+   "id": "anglo_egypt_sudan",
+   "name": "Anglo-Egypt Sudan",
+   "ipc": 2,
+   "original_owner": "uk",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "congo",
+    "french_equatorial_africa",
+    "italian_east_africa",
+    "kenya_rhodesia",
+    "libya",
+    "syria_iraq",
+    "sz_east_mediterranean",
+    "sz_red"
+   ]
+  },
+  {
+   "id": "angola",
+   "name": "Angola",
+   "ipc": 0,
+   "original_owner": null,
+   "neutral": true,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "congo",
+    "kenya_rhodesia",
+    "south_africa",
+    "sz_angola"
+   ]
+  },
+  {
+   "id": "argentina_chile",
+   "name": "Argentina-Chile",
+   "ipc": 0,
+   "original_owner": null,
+   "neutral": true,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "brazil",
+    "peru",
+    "sz_east_argentina",
+    "sz_peru",
+    "sz_south_argentina"
+   ]
+  },
+  {
+   "id": "australia",
+   "name": "Australia",
+   "ipc": 2,
+   "original_owner": "uk",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": true,
+   "neighbors": [
+    "sz_north_australia",
+    "sz_south_australia",
+    "sz_west_australia"
+   ]
+  },
+  {
+   "id": "borneo_celebes",
+   "name": "Borneo Celebes",
+   "ipc": 1,
+   "original_owner": "japan",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": true,
+   "neighbors": [
+    "sz_borneo"
+   ]
+  },
+  {
+   "id": "brazil",
+   "name": "Brazil",
+   "ipc": 3,
+   "original_owner": "usa",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "argentina_chile",
+    "columbia",
+    "peru",
+    "sz_north_brazil",
+    "sz_south_brazil"
+   ]
+  },
+  {
+   "id": "caroline_islands",
+   "name": "Caroline Islands",
+   "ipc": 0,
+   "original_owner": "japan",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": true,
+   "neighbors": [
+    "sz_caroline_islands"
+   ]
+  },
+  {
+   "id": "caucasus",
+   "name": "Caucasus",
+   "ipc": 3,
+   "original_owner": "ussr",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "karelia_s_s_r",
+    "persia",
+    "russia",
+    "sz_black",
+    "sz_caspian",
+    "turkey",
+    "ukraine_s_s_r"
+   ]
+  },
+  {
+   "id": "china",
+   "name": "China",
+   "ipc": 2,
+   "original_owner": "usa",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "french_indo_china",
+    "kwangtung",
+    "manchuria",
+    "mongolia",
+    "sinkiang"
+   ]
+  },
+  {
+   "id": "columbia",
+   "name": "Columbia",
+   "ipc": 0,
+   "original_owner": null,
+   "neutral": true,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "brazil",
+    "panama",
+    "peru",
+    "sz_caribbean",
+    "sz_west_panama"
+   ]
+  },
+  {
+   "id": "congo",
+   "name": "Congo",
+   "ipc": 1,
+   "original_owner": "uk",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "anglo_egypt_sudan",
+    "angola",
+    "french_equatorial_africa",
+    "kenya_rhodesia",
+    "sz_congo"
+   ]
+  },
+  {
+   "id": "cuba",
+   "name": "Cuba",
+   "ipc": 1,
+   "original_owner": "usa",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": true,
+   "neighbors": [
+    "sz_caribbean"
+   ]
+  },
+  {
+   "id": "east_indies",
+   "name": "East Indies",
+   "ipc": 2,
+   "original_owner": "japan",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": true,
+   "neighbors": [
+    "sz_east_indies"
+   ]
+  },
+  {
+   "id": "eastern_canada",
+   "name": "Eastern Canada",
+   "ipc": 3,
+   "original_owner": "uk",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "eastern_usa",
+    "sz_east_canada",
+    "western_canada"
+   ]
+  },
+  {
+   "id": "eastern_europe",
+   "name": "Eastern Europe",
+   "ipc": 3,
+   "original_owner": "germany",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "germany",
+    "karelia_s_s_r",
+    "southern_europe",
+    "sz_baltic",
+    "sz_black",
+    "ukraine_s_s_r"
+   ]
+  },
+  {
+   "id": "eastern_usa",
+   "name": "Eastern U.S.A.",
+   "ipc": 12,
+   "original_owner": "usa",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": true,
+   "capital_of": "usa",
+   "industrial_complex": true,
+   "is_island": false,
+   "neighbors": [
+    "eastern_canada",
+    "sz_east_us",
+    "western_usa"
+   ]
+  },
+  {
+   "id": "eire",
+   "name": "Eire",
+   "ipc": 0,
+   "original_owner": null,
+   "neutral": true,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": true,
+   "neighbors": [
+    "sz_north"
+   ]
+  },
+  {
+   "id": "evenki_national_okrug",
+   "name": "Evenki National Okrug",
+   "ipc": 2,
+   "original_owner": "ussr",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "novosibirsk",
+    "russia",
+    "yakut_s_s_r"
+   ]
+  },
+  {
+   "id": "finland_norway",
+   "name": "Finland Norway",
+   "ipc": 2,
+   "original_owner": "germany",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "karelia_s_s_r",
+    "sweden",
+    "sz_baltic",
+    "sz_north"
+   ]
+  },
+  {
+   "id": "french_equatorial_africa",
+   "name": "French Equatorial Africa",
+   "ipc": 1,
+   "original_owner": "uk",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "algeria",
+    "anglo_egypt_sudan",
+    "congo",
+    "french_west_africa",
+    "libya",
+    "sz_congo"
+   ]
+  },
+  {
+   "id": "french_indo_china",
+   "name": "French Indo China",
+   "ipc": 3,
+   "original_owner": "japan",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "china",
+    "india",
+    "kwangtung",
+    "sinkiang",
+    "sz_french_indo_china"
+   ]
+  },
+  {
+   "id": "french_west_africa",
+   "name": "French West Africa",
+   "ipc": 1,
+   "original_owner": "uk",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "algeria",
+    "french_equatorial_africa",
+    "rio_del_oro",
+    "sz_west_africa"
+   ]
+  },
+  {
+   "id": "germany",
+   "name": "Germany",
+   "ipc": 10,
+   "original_owner": "germany",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": true,
+   "capital_of": "germany",
+   "industrial_complex": true,
+   "is_island": false,
+   "neighbors": [
+    "eastern_europe",
+    "southern_europe",
+    "switzerland",
+    "sz_baltic",
+    "western_europe"
+   ]
+  },
+  {
+   "id": "gibraltar",
+   "name": "Gibraltar",
+   "ipc": 0,
+   "original_owner": "uk",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "spain",
+    "sz_west_mediterranean"
+   ]
+  },
+  {
+   "id": "hawaiian_islands",
+   "name": "Hawaiian Islands",
+   "ipc": 1,
+   "original_owner": "usa",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": true,
+   "neighbors": [
+    "sz_hawaii"
+   ]
+  },
+  {
+   "id": "india",
+   "name": "India",
+   "ipc": 3,
+   "original_owner": "uk",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "afghanistan",
+    "french_indo_china",
+    "persia",
+    "sinkiang",
+    "sz_indian_ocean"
+   ]
+  },
+  {
+   "id": "italian_east_africa",
+   "name": "Italian East Africa",
+   "ipc": 1,
+   "original_owner": "uk",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "anglo_egypt_sudan",
+    "kenya_rhodesia",
+    "sz_red"
+   ]
+  },
+  {
+   "id": "japan",
+   "name": "Japan",
+   "ipc": 8,
+   "original_owner": "japan",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": true,
+   "capital_of": "japan",
+   "industrial_complex": true,
+   "is_island": true,
+   "neighbors": [
+    "sz_japan"
+   ]
+  },
+  {
+   "id": "karelia_s_s_r",
+   "name": "Karelia S.S.R.",
+   "ipc": 3,
+   "original_owner": "ussr",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": true,
+   "is_island": false,
+   "neighbors": [
+    "caucasus",
+    "eastern_europe",
+    "finland_norway",
+    "russia",
+    "sz_baltic",
+    "sz_karelia",
+    "ukraine_s_s_r"
+   ]
+  },
+  {
+   "id": "kazakh_s_s_r",
+   "name": "Kazakh S.S.R.",
+   "ipc": 2,
+   "original_owner": "ussr",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "afghanistan",
+    "novosibirsk",
+    "persia",
+    "russia",
+    "sinkiang",
+    "sz_caspian"
+   ]
+  },
+  {
+   "id": "kenya_rhodesia",
+   "name": "Kenya-Rhodesia",
+   "ipc": 1,
+   "original_owner": "uk",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "anglo_egypt_sudan",
+    "angola",
+    "congo",
+    "italian_east_africa",
+    "mozambique",
+    "south_africa",
+    "sz_mozambique"
+   ]
+  },
+  {
+   "id": "kwangtung",
+   "name": "Kwangtung",
+   "ipc": 3,
+   "original_owner": "japan",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "china",
+    "french_indo_china",
+    "manchuria",
+    "sz_kwangtung"
+   ]
+  },
+  {
+   "id": "libya",
+   "name": "Libya",
+   "ipc": 1,
+   "original_owner": "germany",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "algeria",
+    "anglo_egypt_sudan",
+    "french_equatorial_africa",
+    "sz_central_mediterranean"
+   ]
+  },
+  {
+   "id": "madagascar",
+   "name": "Madagascar",
+   "ipc": 1,
+   "original_owner": "uk",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": true,
+   "neighbors": [
+    "sz_mozambique",
+    "sz_south_africa",
+    "sz_south_east_madagascar",
+    "sz_west_compass"
+   ]
+  },
+  {
+   "id": "manchuria",
+   "name": "Manchuria",
+   "ipc": 3,
+   "original_owner": "japan",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "china",
+    "kwangtung",
+    "mongolia",
+    "soviet_far_east",
+    "sz_japan",
+    "yakut_s_s_r"
+   ]
+  },
+  {
+   "id": "mexico",
+   "name": "Mexico",
+   "ipc": 2,
+   "original_owner": "usa",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "panama",
+    "sz_gulf_of_mexico",
+    "sz_mexico",
+    "western_usa"
+   ]
+  },
+  {
+   "id": "midway",
+   "name": "Midway",
+   "ipc": 0,
+   "original_owner": "usa",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": true,
+   "neighbors": [
+    "sz_midway"
+   ]
+  },
+  {
+   "id": "mongolia",
+   "name": "Mongolia",
+   "ipc": 0,
+   "original_owner": null,
+   "neutral": true,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "china",
+    "manchuria",
+    "novosibirsk",
+    "sinkiang",
+    "yakut_s_s_r"
+   ]
+  },
+  {
+   "id": "mozambique",
+   "name": "Mozambique",
+   "ipc": 0,
+   "original_owner": null,
+   "neutral": true,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "kenya_rhodesia",
+    "south_africa",
+    "sz_mozambique"
+   ]
+  },
+  {
+   "id": "new_guinea",
+   "name": "New Guinea",
+   "ipc": 1,
+   "original_owner": "japan",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": true,
+   "neighbors": [
+    "sz_new_guinea"
+   ]
+  },
+  {
+   "id": "new_zealand",
+   "name": "New Zealand",
+   "ipc": 1,
+   "original_owner": "uk",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": true,
+   "neighbors": [
+    "sz_new_zealand"
+   ]
+  },
+  {
+   "id": "novosibirsk",
+   "name": "Novosibirsk",
+   "ipc": 2,
+   "original_owner": "ussr",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "evenki_national_okrug",
+    "kazakh_s_s_r",
+    "mongolia",
+    "russia",
+    "sinkiang",
+    "yakut_s_s_r"
+   ]
+  },
+  {
+   "id": "okinawa",
+   "name": "Okinawa",
+   "ipc": 1,
+   "original_owner": "japan",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": true,
+   "neighbors": [
+    "sz_okinawa"
+   ]
+  },
+  {
+   "id": "panama",
+   "name": "Panama",
+   "ipc": 1,
+   "original_owner": "usa",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "columbia",
+    "mexico",
+    "sz_caribbean",
+    "sz_west_panama"
+   ]
+  },
+  {
+   "id": "persia",
+   "name": "Persia",
+   "ipc": 1,
+   "original_owner": "uk",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "afghanistan",
+    "caucasus",
+    "india",
+    "kazakh_s_s_r",
+    "saudi_arabia",
+    "syria_iraq",
+    "sz_caspian",
+    "sz_red",
+    "turkey"
+   ]
+  },
+  {
+   "id": "peru",
+   "name": "Peru",
+   "ipc": 0,
+   "original_owner": null,
+   "neutral": true,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "argentina_chile",
+    "brazil",
+    "columbia",
+    "sz_peru"
+   ]
+  },
+  {
+   "id": "philippines",
+   "name": "Philippines",
+   "ipc": 3,
+   "original_owner": "japan",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": true,
+   "neighbors": [
+    "sz_philippines"
+   ]
+  },
+  {
+   "id": "rio_del_oro",
+   "name": "Rio del Oro",
+   "ipc": 0,
+   "original_owner": null,
+   "neutral": true,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "french_west_africa",
+    "sz_west_africa"
+   ]
+  },
+  {
+   "id": "russia",
+   "name": "Russia",
+   "ipc": 8,
+   "original_owner": "ussr",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": true,
+   "capital_of": "ussr",
+   "industrial_complex": true,
+   "is_island": false,
+   "neighbors": [
+    "caucasus",
+    "evenki_national_okrug",
+    "karelia_s_s_r",
+    "kazakh_s_s_r",
+    "novosibirsk",
+    "sz_caspian"
+   ]
+  },
+  {
+   "id": "saudi_arabia",
+   "name": "Saudi Arabia",
+   "ipc": 0,
+   "original_owner": null,
+   "neutral": true,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "persia",
+    "syria_iraq",
+    "sz_red"
+   ]
+  },
+  {
+   "id": "sinkiang",
+   "name": "Sinkiang",
+   "ipc": 2,
+   "original_owner": "usa",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "afghanistan",
+    "china",
+    "french_indo_china",
+    "india",
+    "kazakh_s_s_r",
+    "mongolia",
+    "novosibirsk"
+   ]
+  },
+  {
+   "id": "solomon_islands",
+   "name": "Solomon Islands",
+   "ipc": 0,
+   "original_owner": "japan",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": true,
+   "neighbors": [
+    "sz_solomon_islands"
+   ]
+  },
+  {
+   "id": "south_africa",
+   "name": "South Africa",
+   "ipc": 2,
+   "original_owner": "uk",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "angola",
+    "kenya_rhodesia",
+    "mozambique",
+    "sz_angola",
+    "sz_mozambique",
+    "sz_south_africa"
+   ]
+  },
+  {
+   "id": "southern_europe",
+   "name": "Southern Europe",
+   "ipc": 6,
+   "original_owner": "germany",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": true,
+   "is_island": false,
+   "neighbors": [
+    "eastern_europe",
+    "germany",
+    "switzerland",
+    "sz_central_mediterranean",
+    "western_europe"
+   ]
+  },
+  {
+   "id": "soviet_far_east",
+   "name": "Soviet Far East",
+   "ipc": 2,
+   "original_owner": "ussr",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "manchuria",
+    "sz_soviet_far_east",
+    "yakut_s_s_r"
+   ]
+  },
+  {
+   "id": "spain",
+   "name": "Spain",
+   "ipc": 0,
+   "original_owner": null,
+   "neutral": true,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "gibraltar",
+    "sz_west_mediterranean",
+    "sz_west_spain",
+    "western_europe"
+   ]
+  },
+  {
+   "id": "sweden",
+   "name": "Sweden",
+   "ipc": 0,
+   "original_owner": null,
+   "neutral": true,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "finland_norway",
+    "sz_baltic"
+   ]
+  },
+  {
+   "id": "switzerland",
+   "name": "Switzerland",
+   "ipc": 0,
+   "original_owner": null,
+   "neutral": true,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "germany",
+    "southern_europe",
+    "western_europe"
+   ]
+  },
+  {
+   "id": "syria_iraq",
+   "name": "Syria Iraq",
+   "ipc": 1,
+   "original_owner": "uk",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "anglo_egypt_sudan",
+    "persia",
+    "saudi_arabia",
+    "sz_east_mediterranean",
+    "sz_red",
+    "turkey"
+   ]
+  },
+  {
+   "id": "turkey",
+   "name": "Turkey",
+   "ipc": 0,
+   "original_owner": null,
+   "neutral": true,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "caucasus",
+    "persia",
+    "syria_iraq",
+    "sz_black",
+    "sz_east_mediterranean"
+   ]
+  },
+  {
+   "id": "ukraine_s_s_r",
+   "name": "Ukraine S.S.R.",
+   "ipc": 3,
+   "original_owner": "germany",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "caucasus",
+    "eastern_europe",
+    "karelia_s_s_r",
+    "sz_black"
+   ]
+  },
+  {
+   "id": "united_kingdom",
+   "name": "United Kingdom",
+   "ipc": 8,
+   "original_owner": "uk",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": true,
+   "capital_of": "uk",
+   "industrial_complex": true,
+   "is_island": true,
+   "neighbors": [
+    "sz_north"
+   ]
+  },
+  {
+   "id": "wake_island",
+   "name": "Wake Island",
+   "ipc": 0,
+   "original_owner": "japan",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": true,
+   "neighbors": [
+    "sz_wake_island"
+   ]
+  },
+  {
+   "id": "western_canada",
+   "name": "Western Canada",
+   "ipc": 1,
+   "original_owner": "uk",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "alaska",
+    "eastern_canada",
+    "sz_east_canada",
+    "sz_west_canada",
+    "sz_west_us",
+    "western_usa"
+   ]
+  },
+  {
+   "id": "western_europe",
+   "name": "Western Europe",
+   "ipc": 6,
+   "original_owner": "germany",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "germany",
+    "southern_europe",
+    "spain",
+    "switzerland",
+    "sz_baltic",
+    "sz_north",
+    "sz_west_mediterranean",
+    "sz_west_spain"
+   ]
+  },
+  {
+   "id": "western_usa",
+   "name": "Western U.S.A.",
+   "ipc": 10,
+   "original_owner": "usa",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": true,
+   "is_island": false,
+   "neighbors": [
+    "eastern_usa",
+    "mexico",
+    "sz_gulf_of_mexico",
+    "sz_west_us",
+    "western_canada"
+   ]
+  },
+  {
+   "id": "yakut_s_s_r",
+   "name": "Yakut S.S.R.",
+   "ipc": 2,
+   "original_owner": "ussr",
+   "neutral": false,
+   "impassable": false,
+   "is_capital": false,
+   "industrial_complex": false,
+   "is_island": false,
+   "neighbors": [
+    "evenki_national_okrug",
+    "manchuria",
+    "mongolia",
+    "novosibirsk",
+    "soviet_far_east"
+   ]
+  }
+ ],
+ "sea_zones": [
+  {
+   "id": "sz_alaska",
+   "name": "Alaska Sea Zone",
+   "neighbors": [
+    "alaska",
+    "sz_midway",
+    "sz_north_pacific",
+    "sz_soviet_far_east",
+    "sz_west_canada"
+   ]
+  },
+  {
+   "id": "sz_angola",
+   "name": "Angola Sea Zone",
+   "neighbors": [
+    "angola",
+    "south_africa",
+    "sz_antarctic",
+    "sz_congo",
+    "sz_south_africa",
+    "sz_south_atlantic"
+   ]
+  },
+  {
+   "id": "sz_antarctic",
+   "name": "Antarctic Sea Zone",
+   "neighbors": [
+    "sz_angola",
+    "sz_south_argentina",
+    "sz_south_atlantic"
+   ]
+  },
+  {
+   "id": "sz_baltic",
+   "name": "Baltic Sea Zone",
+   "neighbors": [
+    "eastern_europe",
+    "finland_norway",
+    "germany",
+    "karelia_s_s_r",
+    "sweden",
+    "sz_north",
+    "western_europe"
+   ]
+  },
+  {
+   "id": "sz_black",
+   "name": "Black Sea Zone",
+   "neighbors": [
+    "caucasus",
+    "eastern_europe",
+    "sz_central_mediterranean",
+    "sz_east_mediterranean",
+    "turkey",
+    "ukraine_s_s_r"
+   ]
+  },
+  {
+   "id": "sz_borneo",
+   "name": "Borneo Sea Zone",
+   "neighbors": [
+    "borneo_celebes",
+    "sz_caroline_islands",
+    "sz_east_indies",
+    "sz_french_indo_china",
+    "sz_new_guinea",
+    "sz_north_australia",
+    "sz_philippines"
+   ]
+  },
+  {
+   "id": "sz_caribbean",
+   "name": "Caribbean Sea Zone",
+   "neighbors": [
+    "columbia",
+    "cuba",
+    "panama",
+    "sz_east_us",
+    "sz_gulf_of_mexico",
+    "sz_north_atlantic",
+    "sz_north_brazil",
+    "sz_west_panama"
+   ]
+  },
+  {
+   "id": "sz_caroline_islands",
+   "name": "Caroline Islands Sea Zone",
+   "neighbors": [
+    "caroline_islands",
+    "sz_borneo",
+    "sz_new_guinea",
+    "sz_okinawa",
+    "sz_philippines",
+    "sz_solomon_islands",
+    "sz_wake_island"
+   ]
+  },
+  {
+   "id": "sz_caspian",
+   "name": "Caspian Sea Zone",
+   "neighbors": [
+    "caucasus",
+    "kazakh_s_s_r",
+    "persia",
+    "russia"
+   ]
+  },
+  {
+   "id": "sz_central_mediterranean",
+   "name": "Central Mediterranean Sea Zone",
+   "neighbors": [
+    "libya",
+    "southern_europe",
+    "sz_black",
+    "sz_east_mediterranean",
+    "sz_west_mediterranean"
+   ]
+  },
+  {
+   "id": "sz_congo",
+   "name": "Congo Sea Zone",
+   "neighbors": [
+    "congo",
+    "french_equatorial_africa",
+    "sz_angola",
+    "sz_south_atlantic",
+    "sz_south_brazil",
+    "sz_west_africa"
+   ]
+  },
+  {
+   "id": "sz_east_argentina",
+   "name": "East Argentina Sea Zone",
+   "neighbors": [
+    "argentina_chile",
+    "sz_south_argentina",
+    "sz_south_atlantic",
+    "sz_south_brazil"
+   ]
+  },
+  {
+   "id": "sz_east_canada",
+   "name": "East Canada Sea Zone",
+   "neighbors": [
+    "eastern_canada",
+    "sz_east_us",
+    "sz_north",
+    "sz_north_atlantic",
+    "sz_west_spain",
+    "western_canada"
+   ]
+  },
+  {
+   "id": "sz_east_compass",
+   "name": "East Compass Sea Zone",
+   "neighbors": [
+    "sz_east_indies",
+    "sz_indian_ocean",
+    "sz_south_australia",
+    "sz_south_compass",
+    "sz_west_australia",
+    "sz_west_compass"
+   ]
+  },
+  {
+   "id": "sz_east_indies",
+   "name": "East Indies Sea Zone",
+   "neighbors": [
+    "east_indies",
+    "sz_borneo",
+    "sz_east_compass",
+    "sz_french_indo_china",
+    "sz_indian_ocean",
+    "sz_north_australia",
+    "sz_west_australia"
+   ]
+  },
+  {
+   "id": "sz_east_mediterranean",
+   "name": "East Mediterranean Sea Zone",
+   "neighbors": [
+    "anglo_egypt_sudan",
+    "syria_iraq",
+    "sz_black",
+    "sz_central_mediterranean",
+    "sz_red",
+    "turkey"
+   ]
+  },
+  {
+   "id": "sz_east_pacific",
+   "name": "East Pacific Sea Zone",
+   "neighbors": [
+    "sz_mexico",
+    "sz_new_zealand",
+    "sz_peru",
+    "sz_south_pacific"
+   ]
+  },
+  {
+   "id": "sz_east_us",
+   "name": "East US Sea Zone",
+   "neighbors": [
+    "eastern_usa",
+    "sz_caribbean",
+    "sz_east_canada",
+    "sz_gulf_of_mexico",
+    "sz_north_atlantic"
+   ]
+  },
+  {
+   "id": "sz_french_indo_china",
+   "name": "French Indo China Sea Zone",
+   "neighbors": [
+    "french_indo_china",
+    "sz_borneo",
+    "sz_east_indies",
+    "sz_indian_ocean",
+    "sz_kwangtung",
+    "sz_philippines"
+   ]
+  },
+  {
+   "id": "sz_gulf_of_mexico",
+   "name": "Gulf of Mexico Sea Zone",
+   "neighbors": [
+    "mexico",
+    "sz_caribbean",
+    "sz_east_us",
+    "sz_mexico",
+    "western_usa"
+   ]
+  },
+  {
+   "id": "sz_hawaii",
+   "name": "Hawaii Sea Zone",
+   "neighbors": [
+    "hawaiian_islands",
+    "sz_mexico",
+    "sz_midway",
+    "sz_north_pacific",
+    "sz_solomon_islands",
+    "sz_south_pacific",
+    "sz_wake_island",
+    "sz_west_us"
+   ]
+  },
+  {
+   "id": "sz_indian_ocean",
+   "name": "Indian Ocean Sea Zone",
+   "neighbors": [
+    "india",
+    "sz_east_compass",
+    "sz_east_indies",
+    "sz_french_indo_china",
+    "sz_red",
+    "sz_west_compass"
+   ]
+  },
+  {
+   "id": "sz_japan",
+   "name": "Japan Sea Zone",
+   "neighbors": [
+    "japan",
+    "manchuria",
+    "sz_kwangtung",
+    "sz_north_pacific",
+    "sz_okinawa",
+    "sz_philippines",
+    "sz_soviet_far_east",
+    "sz_wake_island"
+   ]
+  },
+  {
+   "id": "sz_karelia",
+   "name": "Karelia Sea Zone",
+   "neighbors": [
+    "karelia_s_s_r",
+    "sz_north"
+   ]
+  },
+  {
+   "id": "sz_kwangtung",
+   "name": "Kwangtung Sea Zone",
+   "neighbors": [
+    "kwangtung",
+    "sz_french_indo_china",
+    "sz_japan",
+    "sz_philippines"
+   ]
+  },
+  {
+   "id": "sz_mexico",
+   "name": "Mexico Sea Zone",
+   "neighbors": [
+    "mexico",
+    "sz_east_pacific",
+    "sz_gulf_of_mexico",
+    "sz_hawaii",
+    "sz_south_pacific",
+    "sz_west_panama",
+    "sz_west_us"
+   ]
+  },
+  {
+   "id": "sz_midway",
+   "name": "Midway Sea Zone",
+   "neighbors": [
+    "midway",
+    "sz_alaska",
+    "sz_hawaii",
+    "sz_north_pacific",
+    "sz_west_canada",
+    "sz_west_us"
+   ]
+  },
+  {
+   "id": "sz_mozambique",
+   "name": "Mozambique Sea Zone",
+   "neighbors": [
+    "kenya_rhodesia",
+    "madagascar",
+    "mozambique",
+    "south_africa",
+    "sz_red",
+    "sz_south_africa",
+    "sz_west_compass"
+   ]
+  },
+  {
+   "id": "sz_new_guinea",
+   "name": "New Guinea Sea Zone",
+   "neighbors": [
+    "new_guinea",
+    "sz_borneo",
+    "sz_caroline_islands",
+    "sz_north_australia",
+    "sz_solomon_islands"
+   ]
+  },
+  {
+   "id": "sz_new_zealand",
+   "name": "New Zealand Sea Zone",
+   "neighbors": [
+    "new_zealand",
+    "sz_east_pacific",
+    "sz_north_australia",
+    "sz_peru",
+    "sz_solomon_islands",
+    "sz_south_argentina",
+    "sz_south_australia",
+    "sz_south_pacific"
+   ]
+  },
+  {
+   "id": "sz_north",
+   "name": "North Sea Zone",
+   "neighbors": [
+    "eire",
+    "finland_norway",
+    "sz_baltic",
+    "sz_east_canada",
+    "sz_karelia",
+    "sz_west_spain",
+    "united_kingdom",
+    "western_europe"
+   ]
+  },
+  {
+   "id": "sz_north_atlantic",
+   "name": "North Atlantic Sea Zone",
+   "neighbors": [
+    "sz_caribbean",
+    "sz_east_canada",
+    "sz_east_us",
+    "sz_north_brazil",
+    "sz_west_africa",
+    "sz_west_spain"
+   ]
+  },
+  {
+   "id": "sz_north_australia",
+   "name": "North Australia Sea Zone",
+   "neighbors": [
+    "australia",
+    "sz_borneo",
+    "sz_east_indies",
+    "sz_new_guinea",
+    "sz_new_zealand",
+    "sz_solomon_islands",
+    "sz_south_australia",
+    "sz_west_australia"
+   ]
+  },
+  {
+   "id": "sz_north_brazil",
+   "name": "North Brazil Sea Zone",
+   "neighbors": [
+    "brazil",
+    "sz_caribbean",
+    "sz_north_atlantic",
+    "sz_south_brazil",
+    "sz_west_africa"
+   ]
+  },
+  {
+   "id": "sz_north_pacific",
+   "name": "North Pacific Sea Zone",
+   "neighbors": [
+    "sz_alaska",
+    "sz_hawaii",
+    "sz_japan",
+    "sz_midway",
+    "sz_soviet_far_east",
+    "sz_wake_island"
+   ]
+  },
+  {
+   "id": "sz_okinawa",
+   "name": "Okinawa Sea Zone",
+   "neighbors": [
+    "okinawa",
+    "sz_caroline_islands",
+    "sz_japan",
+    "sz_philippines",
+    "sz_wake_island"
+   ]
+  },
+  {
+   "id": "sz_peru",
+   "name": "Peru Sea Zone",
+   "neighbors": [
+    "argentina_chile",
+    "peru",
+    "sz_east_pacific",
+    "sz_new_zealand",
+    "sz_south_argentina",
+    "sz_west_panama"
+   ]
+  },
+  {
+   "id": "sz_philippines",
+   "name": "Philippines Sea Zone",
+   "neighbors": [
+    "philippines",
+    "sz_borneo",
+    "sz_caroline_islands",
+    "sz_french_indo_china",
+    "sz_japan",
+    "sz_kwangtung",
+    "sz_okinawa"
+   ]
+  },
+  {
+   "id": "sz_red",
+   "name": "Red Sea Zone",
+   "neighbors": [
+    "anglo_egypt_sudan",
+    "italian_east_africa",
+    "persia",
+    "saudi_arabia",
+    "syria_iraq",
+    "sz_east_mediterranean",
+    "sz_indian_ocean",
+    "sz_mozambique",
+    "sz_west_compass"
+   ]
+  },
+  {
+   "id": "sz_solomon_islands",
+   "name": "Solomon Islands Sea Zone",
+   "neighbors": [
+    "solomon_islands",
+    "sz_caroline_islands",
+    "sz_hawaii",
+    "sz_new_guinea",
+    "sz_new_zealand",
+    "sz_north_australia",
+    "sz_south_pacific",
+    "sz_wake_island"
+   ]
+  },
+  {
+   "id": "sz_south_africa",
+   "name": "South Africa Sea Zone",
+   "neighbors": [
+    "madagascar",
+    "south_africa",
+    "sz_angola",
+    "sz_mozambique",
+    "sz_south_east_madagascar"
+   ]
+  },
+  {
+   "id": "sz_south_argentina",
+   "name": "South Argentina Sea Zone",
+   "neighbors": [
+    "argentina_chile",
+    "sz_antarctic",
+    "sz_east_argentina",
+    "sz_new_zealand",
+    "sz_peru",
+    "sz_south_atlantic"
+   ]
+  },
+  {
+   "id": "sz_south_atlantic",
+   "name": "South Atlantic Sea Zone",
+   "neighbors": [
+    "sz_angola",
+    "sz_antarctic",
+    "sz_congo",
+    "sz_east_argentina",
+    "sz_south_argentina",
+    "sz_south_brazil"
+   ]
+  },
+  {
+   "id": "sz_south_australia",
+   "name": "South Australia Sea Zone",
+   "neighbors": [
+    "australia",
+    "sz_east_compass",
+    "sz_new_zealand",
+    "sz_north_australia",
+    "sz_south_compass",
+    "sz_west_australia"
+   ]
+  },
+  {
+   "id": "sz_south_brazil",
+   "name": "South Brazil Sea Zone",
+   "neighbors": [
+    "brazil",
+    "sz_congo",
+    "sz_east_argentina",
+    "sz_north_brazil",
+    "sz_south_atlantic",
+    "sz_west_africa"
+   ]
+  },
+  {
+   "id": "sz_south_compass",
+   "name": "South Compass Sea Zone",
+   "neighbors": [
+    "sz_east_compass",
+    "sz_south_australia",
+    "sz_south_east_madagascar",
+    "sz_west_compass"
+   ]
+  },
+  {
+   "id": "sz_south_east_madagascar",
+   "name": "South East Madagascar Sea Zone",
+   "neighbors": [
+    "madagascar",
+    "sz_south_africa",
+    "sz_south_compass",
+    "sz_west_compass"
+   ]
+  },
+  {
+   "id": "sz_south_pacific",
+   "name": "South Pacific Sea Zone",
+   "neighbors": [
+    "sz_east_pacific",
+    "sz_hawaii",
+    "sz_mexico",
+    "sz_new_zealand",
+    "sz_solomon_islands"
+   ]
+  },
+  {
+   "id": "sz_soviet_far_east",
+   "name": "Soviet Far East Sea Zone",
+   "neighbors": [
+    "soviet_far_east",
+    "sz_alaska",
+    "sz_japan",
+    "sz_north_pacific"
+   ]
+  },
+  {
+   "id": "sz_wake_island",
+   "name": "Wake Island Sea Zone",
+   "neighbors": [
+    "sz_caroline_islands",
+    "sz_hawaii",
+    "sz_japan",
+    "sz_north_pacific",
+    "sz_okinawa",
+    "sz_solomon_islands",
+    "wake_island"
+   ]
+  },
+  {
+   "id": "sz_west_africa",
+   "name": "West Africa Sea Zone",
+   "neighbors": [
+    "french_west_africa",
+    "rio_del_oro",
+    "sz_congo",
+    "sz_north_atlantic",
+    "sz_north_brazil",
+    "sz_south_brazil",
+    "sz_west_spain"
+   ]
+  },
+  {
+   "id": "sz_west_australia",
+   "name": "West Australia Sea Zone",
+   "neighbors": [
+    "australia",
+    "sz_east_compass",
+    "sz_east_indies",
+    "sz_north_australia",
+    "sz_south_australia"
+   ]
+  },
+  {
+   "id": "sz_west_canada",
+   "name": "West Canada Sea Zone",
+   "neighbors": [
+    "alaska",
+    "sz_alaska",
+    "sz_midway",
+    "sz_west_us",
+    "western_canada"
+   ]
+  },
+  {
+   "id": "sz_west_compass",
+   "name": "West Compass Sea Zone",
+   "neighbors": [
+    "madagascar",
+    "sz_east_compass",
+    "sz_indian_ocean",
+    "sz_mozambique",
+    "sz_red",
+    "sz_south_compass",
+    "sz_south_east_madagascar"
+   ]
+  },
+  {
+   "id": "sz_west_mediterranean",
+   "name": "West Mediterranean Sea Zone",
+   "neighbors": [
+    "algeria",
+    "gibraltar",
+    "spain",
+    "sz_central_mediterranean",
+    "sz_west_spain",
+    "western_europe"
+   ]
+  },
+  {
+   "id": "sz_west_panama",
+   "name": "West Panama Sea Zone",
+   "neighbors": [
+    "columbia",
+    "panama",
+    "sz_caribbean",
+    "sz_mexico",
+    "sz_peru"
+   ]
+  },
+  {
+   "id": "sz_west_spain",
+   "name": "West Spain Sea Zone",
+   "neighbors": [
+    "algeria",
+    "spain",
+    "sz_east_canada",
+    "sz_north",
+    "sz_north_atlantic",
+    "sz_west_africa",
+    "sz_west_mediterranean",
+    "western_europe"
+   ]
+  },
+  {
+   "id": "sz_west_us",
+   "name": "West US Sea Zone",
+   "neighbors": [
+    "sz_hawaii",
+    "sz_mexico",
+    "sz_midway",
+    "sz_west_canada",
+    "western_canada",
+    "western_usa"
+   ]
+  }
+ ],
+ "starting_units": [
+  {
+   "location": "caucasus",
+   "owner": "ussr",
+   "unit": "infantry",
+   "count": 5
+  },
+  {
+   "location": "evenki_national_okrug",
+   "owner": "ussr",
+   "unit": "infantry",
+   "count": 2
+  },
+  {
+   "location": "karelia_s_s_r",
+   "owner": "ussr",
+   "unit": "aa_gun",
+   "count": 1
+  },
+  {
+   "location": "karelia_s_s_r",
+   "owner": "ussr",
+   "unit": "armor",
+   "count": 1
+  },
+  {
+   "location": "karelia_s_s_r",
+   "owner": "ussr",
+   "unit": "fighter",
+   "count": 1
+  },
+  {
+   "location": "karelia_s_s_r",
+   "owner": "ussr",
+   "unit": "industrial_complex",
+   "count": 1
+  },
+  {
+   "location": "karelia_s_s_r",
+   "owner": "ussr",
+   "unit": "infantry",
+   "count": 3
+  },
+  {
+   "location": "russia",
+   "owner": "ussr",
+   "unit": "aa_gun",
+   "count": 1
+  },
+  {
+   "location": "russia",
+   "owner": "ussr",
+   "unit": "armor",
+   "count": 2
+  },
+  {
+   "location": "russia",
+   "owner": "ussr",
+   "unit": "fighter",
+   "count": 1
+  },
+  {
+   "location": "russia",
+   "owner": "ussr",
+   "unit": "industrial_complex",
+   "count": 1
+  },
+  {
+   "location": "russia",
+   "owner": "ussr",
+   "unit": "infantry",
+   "count": 4
+  },
+  {
+   "location": "soviet_far_east",
+   "owner": "ussr",
+   "unit": "armor",
+   "count": 1
+  },
+  {
+   "location": "soviet_far_east",
+   "owner": "ussr",
+   "unit": "infantry",
+   "count": 2
+  },
+  {
+   "location": "sz_karelia",
+   "owner": "ussr",
+   "unit": "submarine",
+   "count": 1
+  },
+  {
+   "location": "sz_karelia",
+   "owner": "ussr",
+   "unit": "transport",
+   "count": 1
+  },
+  {
+   "location": "yakut_s_s_r",
+   "owner": "ussr",
+   "unit": "infantry",
+   "count": 3
+  },
+  {
+   "location": "algeria",
+   "owner": "germany",
+   "unit": "infantry",
+   "count": 1
+  },
+  {
+   "location": "eastern_europe",
+   "owner": "germany",
+   "unit": "armor",
+   "count": 1
+  },
+  {
+   "location": "eastern_europe",
+   "owner": "germany",
+   "unit": "fighter",
+   "count": 1
+  },
+  {
+   "location": "eastern_europe",
+   "owner": "germany",
+   "unit": "infantry",
+   "count": 3
+  },
+  {
+   "location": "finland_norway",
+   "owner": "germany",
+   "unit": "armor",
+   "count": 1
+  },
+  {
+   "location": "finland_norway",
+   "owner": "germany",
+   "unit": "fighter",
+   "count": 1
+  },
+  {
+   "location": "finland_norway",
+   "owner": "germany",
+   "unit": "infantry",
+   "count": 3
+  },
+  {
+   "location": "germany",
+   "owner": "germany",
+   "unit": "aa_gun",
+   "count": 1
+  },
+  {
+   "location": "germany",
+   "owner": "germany",
+   "unit": "armor",
+   "count": 2
+  },
+  {
+   "location": "germany",
+   "owner": "germany",
+   "unit": "bomber",
+   "count": 1
+  },
+  {
+   "location": "germany",
+   "owner": "germany",
+   "unit": "fighter",
+   "count": 1
+  },
+  {
+   "location": "germany",
+   "owner": "germany",
+   "unit": "industrial_complex",
+   "count": 1
+  },
+  {
+   "location": "germany",
+   "owner": "germany",
+   "unit": "infantry",
+   "count": 4
+  },
+  {
+   "location": "libya",
+   "owner": "germany",
+   "unit": "armor",
+   "count": 1
+  },
+  {
+   "location": "libya",
+   "owner": "germany",
+   "unit": "infantry",
+   "count": 1
+  },
+  {
+   "location": "southern_europe",
+   "owner": "germany",
+   "unit": "aa_gun",
+   "count": 1
+  },
+  {
+   "location": "southern_europe",
+   "owner": "germany",
+   "unit": "armor",
+   "count": 1
+  },
+  {
+   "location": "southern_europe",
+   "owner": "germany",
+   "unit": "industrial_complex",
+   "count": 1
+  },
+  {
+   "location": "southern_europe",
+   "owner": "germany",
+   "unit": "infantry",
+   "count": 2
+  },
+  {
+   "location": "sz_baltic",
+   "owner": "germany",
+   "unit": "submarine",
+   "count": 1
+  },
+  {
+   "location": "sz_baltic",
+   "owner": "germany",
+   "unit": "transport",
+   "count": 1
+  },
+  {
+   "location": "sz_central_mediterranean",
+   "owner": "germany",
+   "unit": "battleship",
+   "count": 1
+  },
+  {
+   "location": "sz_central_mediterranean",
+   "owner": "germany",
+   "unit": "transport",
+   "count": 1
+  },
+  {
+   "location": "sz_west_spain",
+   "owner": "germany",
+   "unit": "submarine",
+   "count": 1
+  },
+  {
+   "location": "ukraine_s_s_r",
+   "owner": "germany",
+   "unit": "armor",
+   "count": 2
+  },
+  {
+   "location": "ukraine_s_s_r",
+   "owner": "germany",
+   "unit": "fighter",
+   "count": 1
+  },
+  {
+   "location": "ukraine_s_s_r",
+   "owner": "germany",
+   "unit": "infantry",
+   "count": 3
+  },
+  {
+   "location": "western_europe",
+   "owner": "germany",
+   "unit": "aa_gun",
+   "count": 1
+  },
+  {
+   "location": "western_europe",
+   "owner": "germany",
+   "unit": "armor",
+   "count": 2
+  },
+  {
+   "location": "western_europe",
+   "owner": "germany",
+   "unit": "fighter",
+   "count": 1
+  },
+  {
+   "location": "western_europe",
+   "owner": "germany",
+   "unit": "infantry",
+   "count": 2
+  },
+  {
+   "location": "anglo_egypt_sudan",
+   "owner": "uk",
+   "unit": "armor",
+   "count": 1
+  },
+  {
+   "location": "anglo_egypt_sudan",
+   "owner": "uk",
+   "unit": "infantry",
+   "count": 1
+  },
+  {
+   "location": "australia",
+   "owner": "uk",
+   "unit": "infantry",
+   "count": 2
+  },
+  {
+   "location": "eastern_canada",
+   "owner": "uk",
+   "unit": "armor",
+   "count": 1
+  },
+  {
+   "location": "india",
+   "owner": "uk",
+   "unit": "fighter",
+   "count": 1
+  },
+  {
+   "location": "india",
+   "owner": "uk",
+   "unit": "infantry",
+   "count": 2
+  },
+  {
+   "location": "south_africa",
+   "owner": "uk",
+   "unit": "infantry",
+   "count": 1
+  },
+  {
+   "location": "syria_iraq",
+   "owner": "uk",
+   "unit": "infantry",
+   "count": 1
+  },
+  {
+   "location": "sz_east_canada",
+   "owner": "uk",
+   "unit": "transport",
+   "count": 1
+  },
+  {
+   "location": "sz_east_mediterranean",
+   "owner": "uk",
+   "unit": "submarine",
+   "count": 1
+  },
+  {
+   "location": "sz_indian_ocean",
+   "owner": "uk",
+   "unit": "transport",
+   "count": 1
+  },
+  {
+   "location": "sz_north",
+   "owner": "uk",
+   "unit": "battleship",
+   "count": 1
+  },
+  {
+   "location": "sz_north",
+   "owner": "uk",
+   "unit": "transport",
+   "count": 1
+  },
+  {
+   "location": "sz_west_mediterranean",
+   "owner": "uk",
+   "unit": "battleship",
+   "count": 1
+  },
+  {
+   "location": "united_kingdom",
+   "owner": "uk",
+   "unit": "aa_gun",
+   "count": 1
+  },
+  {
+   "location": "united_kingdom",
+   "owner": "uk",
+   "unit": "armor",
+   "count": 1
+  },
+  {
+   "location": "united_kingdom",
+   "owner": "uk",
+   "unit": "bomber",
+   "count": 1
+  },
+  {
+   "location": "united_kingdom",
+   "owner": "uk",
+   "unit": "fighter",
+   "count": 2
+  },
+  {
+   "location": "united_kingdom",
+   "owner": "uk",
+   "unit": "industrial_complex",
+   "count": 1
+  },
+  {
+   "location": "united_kingdom",
+   "owner": "uk",
+   "unit": "infantry",
+   "count": 2
+  },
+  {
+   "location": "western_canada",
+   "owner": "uk",
+   "unit": "infantry",
+   "count": 1
+  },
+  {
+   "location": "borneo_celebes",
+   "owner": "japan",
+   "unit": "infantry",
+   "count": 1
+  },
+  {
+   "location": "caroline_islands",
+   "owner": "japan",
+   "unit": "infantry",
+   "count": 1
+  },
+  {
+   "location": "east_indies",
+   "owner": "japan",
+   "unit": "infantry",
+   "count": 1
+  },
+  {
+   "location": "french_indo_china",
+   "owner": "japan",
+   "unit": "fighter",
+   "count": 1
+  },
+  {
+   "location": "french_indo_china",
+   "owner": "japan",
+   "unit": "infantry",
+   "count": 2
+  },
+  {
+   "location": "japan",
+   "owner": "japan",
+   "unit": "aa_gun",
+   "count": 1
+  },
+  {
+   "location": "japan",
+   "owner": "japan",
+   "unit": "armor",
+   "count": 1
+  },
+  {
+   "location": "japan",
+   "owner": "japan",
+   "unit": "bomber",
+   "count": 1
+  },
+  {
+   "location": "japan",
+   "owner": "japan",
+   "unit": "fighter",
+   "count": 1
+  },
+  {
+   "location": "japan",
+   "owner": "japan",
+   "unit": "industrial_complex",
+   "count": 1
+  },
+  {
+   "location": "japan",
+   "owner": "japan",
+   "unit": "infantry",
+   "count": 3
+  },
+  {
+   "location": "kwangtung",
+   "owner": "japan",
+   "unit": "infantry",
+   "count": 2
+  },
+  {
+   "location": "manchuria",
+   "owner": "japan",
+   "unit": "fighter",
+   "count": 1
+  },
+  {
+   "location": "manchuria",
+   "owner": "japan",
+   "unit": "infantry",
+   "count": 3
+  },
+  {
+   "location": "new_guinea",
+   "owner": "japan",
+   "unit": "infantry",
+   "count": 1
+  },
+  {
+   "location": "okinawa",
+   "owner": "japan",
+   "unit": "infantry",
+   "count": 1
+  },
+  {
+   "location": "philippines",
+   "owner": "japan",
+   "unit": "fighter",
+   "count": 1
+  },
+  {
+   "location": "philippines",
+   "owner": "japan",
+   "unit": "infantry",
+   "count": 2
+  },
+  {
+   "location": "solomon_islands",
+   "owner": "japan",
+   "unit": "infantry",
+   "count": 1
+  },
+  {
+   "location": "sz_caroline_islands",
+   "owner": "japan",
+   "unit": "battleship",
+   "count": 1
+  },
+  {
+   "location": "sz_caroline_islands",
+   "owner": "japan",
+   "unit": "carrier",
+   "count": 1
+  },
+  {
+   "location": "sz_caroline_islands",
+   "owner": "japan",
+   "unit": "fighter",
+   "count": 1
+  },
+  {
+   "location": "sz_japan",
+   "owner": "japan",
+   "unit": "battleship",
+   "count": 1
+  },
+  {
+   "location": "sz_japan",
+   "owner": "japan",
+   "unit": "transport",
+   "count": 1
+  },
+  {
+   "location": "sz_philippines",
+   "owner": "japan",
+   "unit": "transport",
+   "count": 1
+  },
+  {
+   "location": "sz_solomon_islands",
+   "owner": "japan",
+   "unit": "submarine",
+   "count": 1
+  },
+  {
+   "location": "wake_island",
+   "owner": "japan",
+   "unit": "infantry",
+   "count": 1
+  },
+  {
+   "location": "alaska",
+   "owner": "usa",
+   "unit": "infantry",
+   "count": 1
+  },
+  {
+   "location": "china",
+   "owner": "usa",
+   "unit": "fighter",
+   "count": 1
+  },
+  {
+   "location": "china",
+   "owner": "usa",
+   "unit": "infantry",
+   "count": 2
+  },
+  {
+   "location": "eastern_usa",
+   "owner": "usa",
+   "unit": "aa_gun",
+   "count": 1
+  },
+  {
+   "location": "eastern_usa",
+   "owner": "usa",
+   "unit": "armor",
+   "count": 1
+  },
+  {
+   "location": "eastern_usa",
+   "owner": "usa",
+   "unit": "bomber",
+   "count": 1
+  },
+  {
+   "location": "eastern_usa",
+   "owner": "usa",
+   "unit": "fighter",
+   "count": 1
+  },
+  {
+   "location": "eastern_usa",
+   "owner": "usa",
+   "unit": "industrial_complex",
+   "count": 1
+  },
+  {
+   "location": "eastern_usa",
+   "owner": "usa",
+   "unit": "infantry",
+   "count": 2
+  },
+  {
+   "location": "hawaiian_islands",
+   "owner": "usa",
+   "unit": "infantry",
+   "count": 1
+  },
+  {
+   "location": "midway",
+   "owner": "usa",
+   "unit": "infantry",
+   "count": 1
+  },
+  {
+   "location": "sinkiang",
+   "owner": "usa",
+   "unit": "infantry",
+   "count": 2
+  },
+  {
+   "location": "sz_east_us",
+   "owner": "usa",
+   "unit": "transport",
+   "count": 1
+  },
+  {
+   "location": "sz_hawaii",
+   "owner": "usa",
+   "unit": "carrier",
+   "count": 1
+  },
+  {
+   "location": "sz_hawaii",
+   "owner": "usa",
+   "unit": "fighter",
+   "count": 1
+  },
+  {
+   "location": "sz_hawaii",
+   "owner": "usa",
+   "unit": "submarine",
+   "count": 1
+  },
+  {
+   "location": "sz_west_us",
+   "owner": "usa",
+   "unit": "battleship",
+   "count": 1
+  },
+  {
+   "location": "sz_west_us",
+   "owner": "usa",
+   "unit": "transport",
+   "count": 1
+  },
+  {
+   "location": "western_usa",
+   "owner": "usa",
+   "unit": "aa_gun",
+   "count": 1
+  },
+  {
+   "location": "western_usa",
+   "owner": "usa",
+   "unit": "fighter",
+   "count": 1
+  },
+  {
+   "location": "western_usa",
+   "owner": "usa",
+   "unit": "industrial_complex",
+   "count": 1
+  },
+  {
+   "location": "western_usa",
+   "owner": "usa",
+   "unit": "infantry",
+   "count": 2
+  }
+ ],
+ "canals": [
+  {
+   "name": "Suez Canal",
+   "sea_zones": [
+    "sz_east_mediterranean",
+    "sz_red"
+   ],
+   "land_territories": [
+    "anglo_egypt_sudan",
+    "syria_iraq"
+   ],
+   "rule": "sea units may pass between the two sea zones only if the moving power or its allies control BOTH land territories at the start of its turn"
+  },
+  {
+   "name": "Panama Canal",
+   "sea_zones": [
+    "sz_caribbean",
+    "sz_west_panama"
+   ],
+   "land_territories": [
+    "panama"
+   ],
+   "rule": "sea units may pass between the two sea zones only if the moving power or its allies control Panama at the start of its turn"
+  }
+ ]
+}
