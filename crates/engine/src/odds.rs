@@ -36,6 +36,18 @@ pub fn battle_odds(
     base.battle = None;
     let mut ev = vec![];
     crate::battle::begin_battle(&mut base, loc, &mut ev).ok()?;
+    simulate(&base, loc, trials, seed)
+}
+
+/// Simulate the remainder of the battle currently in progress (`state.battle`), starting from its
+/// exact state (pending casualties are resolved cheapest-first, then the attacker presses every round).
+/// `None` when no battle is in progress.
+pub fn current_battle_odds(state: &GameState, trials: u32, seed: u64) -> Option<BattleOdds> {
+    let b = state.battle.as_ref()?;
+    simulate(state, b.location, trials, seed)
+}
+
+fn simulate(base: &GameState, loc: LocationId, trials: u32, seed: u64) -> Option<BattleOdds> {
     let attacker = base.battle.as_ref().map(|b| b.attacker);
     let (mut aw, mut dw, mut st) = (0u32, 0u32, 0u32);
     let (mut al, mut dl) = (0u64, 0u64);

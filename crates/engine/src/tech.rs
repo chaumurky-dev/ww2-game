@@ -1,4 +1,5 @@
 //! Weapons development: technologies and their numeric effects.
+use crate::event::plain_die;
 use crate::power::Power;
 use crate::state::GameState;
 use crate::units::{Unit, UnitType};
@@ -137,6 +138,14 @@ pub fn research(
         power: p,
         context: DiceContext::Research,
         rolls: rolls.clone(),
+        details: rolls
+            .iter()
+            .map(|&r| {
+                let mut d = plain_die(p, 6, r);
+                d.hit = r == 6;
+                d
+            })
+            .collect(),
     });
     for _ in rolls.iter().filter(|&&r| r == 6) {
         if state.techs[p].len() >= Tech::ALL.len() {
@@ -151,6 +160,7 @@ pub fn research(
                 ev.push(Event::DiceRolled {
                     power: p,
                     context: DiceContext::ResearchTech,
+                    details: tried.iter().map(|&r| plain_die(p, 0, r)).collect(),
                     rolls: tried,
                 });
                 state.techs[p].push(t);

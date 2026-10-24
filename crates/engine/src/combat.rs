@@ -3,7 +3,7 @@ use crate::battle::{capture_after_win, defending_controller};
 use crate::casualties::{chooser, kill_units, remove_now, request};
 use crate::decision::Decision;
 use crate::dice::{d6, Rng};
-use crate::event::{BattleOutcome, DiceContext, Event};
+use crate::event::{BattleOutcome, DiceContext, DieDetail, Event};
 use crate::map::LocationId;
 use crate::power::Power;
 use crate::state::{Battle, BattleKind, BattleStep, GameState, PendingHits, Side};
@@ -77,12 +77,35 @@ fn can_hit(state: &GameState, shooters: &[UnitId], targets: &[UnitId], attacking
     })
 }
 
-fn roll_hits(rng: &mut Rng, n: u32, target: u8, rolls: &mut Vec<u8>) -> u32 {
+/// Who rolled the dice being recorded.
+struct Roller {
+    unit: UnitId,
+    kind: UnitType,
+    owner: Power,
+}
+
+fn roll_hits(
+    rng: &mut Rng,
+    n: u32,
+    target: u8,
+    who: &Roller,
+    rolls: &mut Vec<u8>,
+    details: &mut Vec<DieDetail>,
+) -> u32 {
     let mut h = 0;
     for _ in 0..n {
         let r = d6(rng);
         rolls.push(r);
-        if r <= target {
+        let hit = r <= target;
+        details.push(DieDetail {
+            unit: Some(who.unit),
+            unit_type: Some(who.kind),
+            owner: who.owner,
+            hit_on: target,
+            roll: r,
+            hit,
+        });
+        if hit {
             h += 1;
         }
     }
@@ -105,7 +128,16 @@ fn bombard(state: &mut GameState, b: &mut Battle, rng: &mut Rng, ev: &mut Vec<Ev
         return;
     }
     let mut rolls = vec![];
-    let hits = roll_hits(rng, ships.len() as u32, 4, &mut rolls);
+    let mut details = vec![];
+    let mut hits = 0;
+    for &s in &ships {
+        let who = Roller {
+            unit: s,
+            kind: UnitType::Battleship,
+            owner: b.attacker,
+        };
+        hits += roll_hits(rng, 1, 4, &who, &mut rolls, &mut details);
+    }
     for s in ships {
         state.unit_mut(s).unwrap().fought = true;
     }
@@ -115,6 +147,7 @@ fn bombard(state: &mut GameState, b: &mut Battle, rng: &mut Rng, ev: &mut Vec<Ev
             location: b.location,
         },
         rolls,
+        details,
     });
     ev.push(Event::Bombardment {
         location: b.location,
@@ -136,10 +169,23 @@ fn first_strike(state: &mut GameState, b: &mut Battle, rng: &mut Rng, ev: &mut V
         return;
     }
     let mut rolls = vec![];
+    let mut details = vec![];
     let mut hits = 0;
     for s in subs {
         let u = state.unit(s).unwrap();
-        hits += roll_hits(rng, 1, attack_value(state, u), &mut rolls);
+        let who = Roller {
+            unit: s,
+            kind: u.kind,
+            owner: u.owner,
+        };
+        hits += roll_hits(
+            rng,
+            1,
+            attack_value(state, u),
+            &who,
+            &mut rolls,
+            &mut details,
+        );
     }
     ev.push(Event::DiceRolled {
         power: b.attacker,
@@ -148,6 +194,7 @@ fn first_strike(state: &mut GameState, b: &mut Battle, rng: &mut Rng, ev: &mut V
             round: b.round,
         },
         rolls,
+        details,
     });
     ev.push(Event::HitsScored {
         location: b.location,
@@ -161,17 +208,25 @@ fn first_strike(state: &mut GameState, b: &mut Battle, rng: &mut Rng, ev: &mut V
 
 fn main_fire(state: &mut GameState, b: &mut Battle, rng: &mut Rng, ev: &mut Vec<Event>) {
     let mut rolls = vec![];
+    let mut details = vec![];
     let mut a_hits = 0;
     for &id in &b.attackers {
         let Some(u) = state.unit(id) else { continue };
         if u.kind == UnitType::Submarine && b.kind == BattleKind::Sea {
             continue;
         }
+        let who = Roller {
+            unit: id,
+            kind: u.kind,
+            owner: u.owner,
+        };
         a_hits += roll_hits(
             rng,
             attack_dice(state, u),
             attack_value(state, u),
+            &who,
             &mut rolls,
+            &mut details,
         );
     }
     if !rolls.is_empty() {
@@ -182,6 +237,7 @@ fn main_fire(state: &mut GameState, b: &mut Battle, rng: &mut Rng, ev: &mut Vec<
                 round: b.round,
             },
             rolls,
+            details,
         });
     }
     ev.push(Event::HitsScored {
@@ -192,6 +248,7 @@ fn main_fire(state: &mut GameState, b: &mut Battle, rng: &mut Rng, ev: &mut Vec<
     let (mut d_norm, mut d_sub) = (0, 0);
     for pw in Power::ALL {
         let mut rolls = vec![];
+        let mut details = vec![];
         for &id in &b.defenders {
             let Some(u) = state.unit(id) else { continue };
             if u.owner != pw {
@@ -201,7 +258,12 @@ fn main_fire(state: &mut GameState, b: &mut Battle, rng: &mut Rng, ev: &mut Vec<
             if dv == 0 {
                 continue;
             }
-            let h = roll_hits(rng, 1, dv, &mut rolls);
+            let who = Roller {
+                unit: id,
+                kind: u.kind,
+                owner: u.owner,
+            };
+            let h = roll_hits(rng, 1, dv, &who, &mut rolls, &mut details);
             if u.kind == UnitType::Submarine {
                 d_sub += h;
             } else {
@@ -216,6 +278,7 @@ fn main_fire(state: &mut GameState, b: &mut Battle, rng: &mut Rng, ev: &mut Vec<
                     round: b.round,
                 },
                 rolls,
+                details,
             });
         }
     }

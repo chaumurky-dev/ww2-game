@@ -12,6 +12,7 @@ mod fuzz_tests;
 mod misc_tests;
 mod movement_tests;
 mod naval_tests;
+mod query_tests;
 mod transport_tests;
 
 pub fn loc(id: &str) -> LocationId {

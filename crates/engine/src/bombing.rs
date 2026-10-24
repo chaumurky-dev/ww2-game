@@ -1,7 +1,7 @@
 //! Strategic bombing raids and rocket attacks.
 use crate::dice::{d6, Rng};
 use crate::error::{illegal, Result, RuleError};
-use crate::event::{DiceContext, Event};
+use crate::event::{plain_die, DiceContext, Event};
 use crate::map::{LocationId, MapData};
 use crate::power::Power;
 use crate::state::{GameState, Phase};
@@ -90,6 +90,7 @@ pub fn declare(
     ev.push(Event::DiceRolled {
         power: p,
         context: DiceContext::StrategicBombing { location: loc },
+        details: rolls.iter().map(|&r| plain_die(p, 0, r)).collect(),
         rolls,
     });
     let damage = total.min(state.treasury[victim]);
@@ -183,6 +184,7 @@ pub fn fire_rocket(
     ev.push(Event::DiceRolled {
         power: p,
         context: DiceContext::Rocket { location: target },
+        details: vec![plain_die(p, 0, r)],
         rolls: vec![r],
     });
     let damage = u32::from(r).min(state.treasury[victim]);

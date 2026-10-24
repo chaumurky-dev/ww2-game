@@ -376,10 +376,23 @@ fn aa_fire(
         return;
     }
     let rolls: Vec<u8> = air.iter().map(|_| d6(rng)).collect();
+    let gun_id = state.enemy_aa_at(p, loc).map(|g| g.id);
+    let details: Vec<crate::event::DieDetail> = rolls
+        .iter()
+        .map(|&r| crate::event::DieDetail {
+            unit: gun_id,
+            unit_type: Some(UnitType::AaGun),
+            owner: gun,
+            hit_on: 1,
+            roll: r,
+            hit: r == 1,
+        })
+        .collect();
     ev.push(Event::DiceRolled {
         power: gun,
         context: DiceContext::AaFire { location: loc },
         rolls: rolls.clone(),
+        details,
     });
     let hits = rolls.iter().filter(|&&r| r == 1).count();
     if hits == 0 {

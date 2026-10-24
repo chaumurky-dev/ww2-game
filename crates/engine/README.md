@@ -30,6 +30,32 @@ let who = pending_decision(&st);                          // Decision::Phase / S
   `unload_options`, `legal_placements`, `purchase_options`, `rocket_targets`, `bombing_targets`,
   `battles_pending`, `retreat_destinations`, `battle_odds` (Monte-Carlo with the real combat code),
   `income`, `production_level`.
+* Additive query/event helpers (all pure, read-only):
+  * `Event::DiceRolled` has `details: Vec<DieDetail{unit, unit_type, owner, hit_on, roll, hit}>`, parallel to
+    `rolls`, for combat, first strike, bombardment, AA, research, strategic bombing and rocket dice. Research
+    dice have `unit: None, hit_on: 6`; tech-selection, bombing-damage and rocket dice have `unit: None,
+    hit_on: 0, hit: false` (damage/selection, no hit concept). AA dice name the gun. Old stored events
+    without `details` deserialize to an empty vector (`#[serde(default)]`).
+  * `query::reachable_group(state, &[UnitId]) -> Vec<Reach>`: destinations plus one path legal for the whole
+    group, moving at the slowest unit's speed. Units must share owner (the active power), start square and
+    domain (all land, all air or all sea); a mixed land/air group, duplicates or a foreign unit give `[]`.
+    `landing` is true only if every unit is an aircraft that can land there.
+  * `query::current_battle_odds(state, trials, seed) -> Option<BattleOdds>`: Monte-Carlo of the rest of the
+    battle in `state.battle` (pending casualties resolved cheapest-first, the attacker presses every round),
+    from the exact current units and step, via the real combat code. `None` without a battle.
+    `battle_odds(state, loc, ..)` remains for battles that have not started.
+  * `query::legal_placements_for(state, unit_type, count) -> Vec<Placement{location, from_complex,
+    capacity_left}>`: every legal `Place` for `count` units of a purchased type. Honours per-complex capacity
+    (`capacity_left` is the supplying complex's remaining allowance, `u32::MAX` = unlimited original complex),
+    one AA gun per territory, the four-new-complex cap (new complexes: `from_complex: None`,
+    `capacity_left` = new complexes still allowed) and, for ships, one entry per adjacent supplying complex
+    (pass it as `Action::Place.from`). `legal_placements` (single unit, locations only) is unchanged.
+  * `query::movable_units(state, power) -> Vec<UnitId>`: units of the active power with moves left and at least
+    one reachable destination in the current movement phase (empty in other phases or for other powers).
+  * `query::landing_status(state, unit) -> LandingStatus`: `Safe` (not an aircraft, or on a legal landing spot
+    or carrier), `NeedsLanding{options}` (landing spots within the remaining moves, avoiding untouched
+    neutrals and hostile sea) or `Stranded` (none in range: lost at the end of non-combat). Works in both
+    move phases; serialized as `{"type": "safe" | "needs_landing" | "stranded"}`.
 * `random_policy::RandomPolicy`: a random legal-move player (fuzzing, bot fallback).
 * `MapData::get()`: static map: lookups by id/name, `neighbours`, `is_sea`, `ipc`, `original_owner`,
   `capital_of`, `canals`. `LocationId` is a small integer internally and its string id in JSON.

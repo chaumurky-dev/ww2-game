@@ -57,6 +57,35 @@ pub enum DiceContext {
     },
 }
 
+/// One die of a [`Event::DiceRolled`], in the same order as `rolls`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DieDetail {
+    /// Unit that rolled (None for research, bombing damage and rockets).
+    pub unit: Option<UnitId>,
+    /// Type of that unit.
+    pub unit_type: Option<UnitType>,
+    /// Owner of the die.
+    pub owner: Power,
+    /// Hits on this value or lower (6 for research, 0 for damage / selection rolls).
+    pub hit_on: u8,
+    /// The face rolled.
+    pub roll: u8,
+    /// Whether the die counted as a hit.
+    pub hit: bool,
+}
+
+/// A die with no unit behind it; `hit_on` 0 means a damage or selection roll that never "hits".
+pub(crate) fn plain_die(owner: Power, hit_on: u8, roll: u8) -> DieDetail {
+    DieDetail {
+        unit: None,
+        unit_type: None,
+        owner,
+        hit_on,
+        roll,
+        hit: hit_on > 0 && roll <= hit_on,
+    }
+}
+
 /// How a battle ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -99,6 +128,9 @@ pub enum Event {
         context: DiceContext,
         /// Values 1..=6.
         rolls: Vec<u8>,
+        /// Per-die detail, parallel to `rolls` (empty in old stored events).
+        #[serde(default)]
+        details: Vec<DieDetail>,
     },
     /// Research purchased.
     ResearchBought {
