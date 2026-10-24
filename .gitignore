@@ -1,0 +1,13 @@
+/target
+**/target
+/dist
+/crates/web/dist
+.env
+.env.local
+*.log
+.DS_Store
+/infra/terraform/.terraform
+/infra/terraform/*.tfstate*
+/infra/terraform/.terraform.lock.hcl
+/assets/raw/*.tmp
+node_modules
