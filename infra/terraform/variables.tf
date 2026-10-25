@@ -16,9 +16,15 @@ variable "domain_name" {
 }
 
 variable "route53_zone_id" {
-  description = "Route53 hosted zone ID for domain_name. Leave empty to create DNS records manually."
+  description = "Existing Route53 hosted zone ID for domain_name (ignored if create_route53_zone). Leave empty to create DNS records manually."
   type        = string
   default     = ""
+}
+
+variable "create_route53_zone" {
+  description = "Create a Route53 hosted zone whose apex is domain_name (delegate it from the parent zone via NS records). When true, route53_zone_id is ignored."
+  type        = bool
+  default     = false
 }
 
 variable "github_repo" {
@@ -37,14 +43,20 @@ variable "vpc_cidr" {
   default = "10.20.0.0/16"
 }
 
+variable "use_fargate_spot" {
+  description = "Run the service on FARGATE_SPOT (cheaper, may be interrupted) instead of on-demand FARGATE."
+  type        = bool
+  default     = true
+}
+
 variable "task_cpu" {
   type    = number
-  default = 512
+  default = 256
 }
 
 variable "task_memory" {
   type    = number
-  default = 1024
+  default = 512
 }
 
 variable "desired_count" {
@@ -91,5 +103,22 @@ variable "container_image" {
 
 variable "log_retention_days" {
   type    = number
-  default = 30
+  default = 7
+}
+
+variable "db_backup_retention_days" {
+  description = "RDS automated backup retention. 1 is the cheap default; use 7+ for production."
+  type        = number
+  default     = 1
+}
+
+variable "db_deletion_protection" {
+  type    = bool
+  default = false
+}
+
+variable "db_skip_final_snapshot" {
+  description = "Skip the final snapshot on destroy. Set false (with db_deletion_protection = true) to harden."
+  type        = bool
+  default     = true
 }

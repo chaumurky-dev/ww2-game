@@ -1,6 +1,10 @@
 env         = "prod"
 region      = "us-east-1"
-domain_name = "wartide.example.com"
-# Leave empty to manage DNS yourself (see docs/DEPLOY.md)
-route53_zone_id = "Z0123456789ABC"
-github_repo     = "owner/ww2-game"
+domain_name = "ww2.chaumurky.net"
+
+# Create a hosted zone with apex = domain_name; delegate it with NS records at the parent (GoDaddy).
+create_route53_zone = true
+route53_zone_id     = "" # only used when create_route53_zone = false
+
+github_repo                 = "chaumurky-dev/ww2-game"
+create_github_oidc_provider = false # the account already has it

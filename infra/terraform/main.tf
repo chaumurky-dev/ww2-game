@@ -5,10 +5,21 @@ data "aws_availability_zones" "available" {
 data "aws_caller_identity" "current" {}
 
 locals {
-  name          = "wartide-${var.env}"
-  azs           = slice(data.aws_availability_zones.available.names, 0, 2)
-  use_r53       = var.route53_zone_id != ""
-  initial_image = var.container_image != "" ? var.container_image : "${aws_ecr_repository.app.repository_url}:latest"
+  name    = "wartide-${var.env}"
+  azs     = slice(data.aws_availability_zones.available.names, 0, 2)
+  use_r53 = var.create_route53_zone || var.route53_zone_id != ""
+  # When create_route53_zone is true the zone apex IS var.domain_name (delegated from the parent at the registrar).
+  route53_zone_id = var.create_route53_zone ? aws_route53_zone.main[0].zone_id : var.route53_zone_id
+  initial_image   = var.container_image != "" ? var.container_image : "${aws_ecr_repository.app.repository_url}:latest"
+}
+
+# -------------------------------------------------------------- Route53
+# Optional hosted zone whose apex is the app hostname (e.g. ww2.chaumurky.net). The parent zone
+# stays at the registrar; add the NS records from output route53_name_servers there.
+resource "aws_route53_zone" "main" {
+  count   = var.create_route53_zone ? 1 : 0
+  name    = var.domain_name
+  comment = "Wartide ${var.env}"
 }
 
 # ---------------------------------------------------------------- Network
@@ -144,8 +155,8 @@ resource "aws_ecr_lifecycle_policy" "app" {
   policy = jsonencode({
     rules = [{
       rulePriority = 1
-      description  = "Keep last 20 images"
-      selection    = { tagStatus = "any", countType = "imageCountMoreThan", countNumber = 20 }
+      description  = "Keep last 5 images"
+      selection    = { tagStatus = "any", countType = "imageCountMoreThan", countNumber = 5 }
       action       = { type = "expire" }
     }]
   })
@@ -163,26 +174,29 @@ resource "aws_db_subnet_group" "main" {
 }
 
 resource "aws_db_instance" "main" {
-  identifier                 = local.name
-  engine                     = "postgres"
-  engine_version             = "16"
-  instance_class             = var.db_instance_class
-  allocated_storage          = var.db_allocated_storage
-  storage_type               = "gp3"
-  storage_encrypted          = true
-  db_name                    = "wartide"
-  username                   = "wartide"
-  password                   = random_password.db.result
-  db_subnet_group_name       = aws_db_subnet_group.main.name
-  vpc_security_group_ids     = [aws_security_group.rds.id]
-  publicly_accessible        = false
-  multi_az                   = var.db_multi_az
-  backup_retention_period    = 7
-  deletion_protection        = var.env == "prod"
-  skip_final_snapshot        = var.env != "prod"
-  final_snapshot_identifier  = var.env == "prod" ? "${local.name}-final" : null
-  auto_minor_version_upgrade = true
-  apply_immediately          = true
+  identifier             = local.name
+  engine                 = "postgres"
+  engine_version         = "16"
+  instance_class         = var.db_instance_class
+  allocated_storage      = var.db_allocated_storage
+  storage_type           = "gp3"
+  storage_encrypted      = true
+  db_name                = "wartide"
+  username               = "wartide"
+  password               = random_password.db.result
+  db_subnet_group_name   = aws_db_subnet_group.main.name
+  vpc_security_group_ids = [aws_security_group.rds.id]
+  publicly_accessible    = false
+  multi_az               = var.db_multi_az
+  # Cheap/dev posture by default; see the variables db_* and docs/DEPLOY.md to harden.
+  backup_retention_period      = var.db_backup_retention_days
+  deletion_protection          = var.db_deletion_protection
+  skip_final_snapshot          = var.db_skip_final_snapshot
+  final_snapshot_identifier    = var.db_skip_final_snapshot ? null : "${local.name}-final"
+  performance_insights_enabled = false
+  monitoring_interval          = 0 # no enhanced monitoring
+  auto_minor_version_upgrade   = true
+  apply_immediately            = true
 }
 
 # ---------------------------------------------------------------- Secrets
@@ -242,7 +256,7 @@ resource "aws_ses_domain_dkim" "main" {
 
 resource "aws_route53_record" "ses_verification" {
   count   = local.use_r53 ? 1 : 0
-  zone_id = var.route53_zone_id
+  zone_id = local.route53_zone_id
   name    = "_amazonses.${var.domain_name}"
   type    = "TXT"
   ttl     = 600
@@ -251,7 +265,7 @@ resource "aws_route53_record" "ses_verification" {
 
 resource "aws_route53_record" "ses_dkim" {
   count   = local.use_r53 ? 3 : 0
-  zone_id = var.route53_zone_id
+  zone_id = local.route53_zone_id
   name    = "${aws_ses_domain_dkim.main.dkim_tokens[count.index]}._domainkey.${var.domain_name}"
   type    = "CNAME"
   ttl     = 600
@@ -289,13 +303,13 @@ resource "aws_acm_certificate" "main" {
 resource "aws_route53_record" "cert_validation" {
   for_each = local.use_r53 ? {
     for dvo in aws_acm_certificate.main.domain_validation_options : dvo.domain_name => {
-      name   = dvo.resource_record_name
+      name   = trimsuffix(dvo.resource_record_name, ".")
       record = dvo.resource_record_value
       type   = dvo.resource_record_type
     }
   } : {}
 
-  zone_id         = var.route53_zone_id
+  zone_id         = local.route53_zone_id
   name            = each.value.name
   type            = each.value.type
   ttl             = 60
@@ -313,6 +327,7 @@ resource "aws_acm_certificate_validation" "main" {
 }
 
 # -------------------------------------------------------------------- ALB
+# No access logs (extra S3 cost) by design.
 resource "aws_lb" "main" {
   name               = local.name
   load_balancer_type = "application"
@@ -368,7 +383,7 @@ resource "aws_lb_listener" "https" {
 
 resource "aws_route53_record" "app" {
   count   = local.use_r53 ? 1 : 0
-  zone_id = var.route53_zone_id
+  zone_id = local.route53_zone_id
   name    = var.domain_name
   type    = "A"
   alias {
@@ -390,6 +405,11 @@ resource "aws_ecs_cluster" "main" {
     name  = "containerInsights"
     value = "disabled"
   }
+}
+
+resource "aws_ecs_cluster_capacity_providers" "main" {
+  cluster_name       = aws_ecs_cluster.main.name
+  capacity_providers = ["FARGATE", "FARGATE_SPOT"]
 }
 
 data "aws_iam_policy_document" "ecs_assume" {
@@ -489,7 +509,13 @@ resource "aws_ecs_service" "app" {
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.app.arn
   desired_count   = var.desired_count
-  launch_type     = "FARGATE"
+
+  # FARGATE_SPOT is ~70% cheaper but tasks can be interrupted (2 min warning) and replaced;
+  # with one task that means a short outage and dropped WebSockets. Set use_fargate_spot=false for on-demand.
+  capacity_provider_strategy {
+    capacity_provider = var.use_fargate_spot ? "FARGATE_SPOT" : "FARGATE"
+    weight            = 1
+  }
 
   health_check_grace_period_seconds  = 60
   deployment_minimum_healthy_percent = 100
@@ -512,7 +538,7 @@ resource "aws_ecs_service" "app" {
     container_port   = 8080
   }
 
-  depends_on = [aws_lb_listener.https]
+  depends_on = [aws_lb_listener.https, aws_ecs_cluster_capacity_providers.main]
 
   lifecycle {
     ignore_changes = [task_definition, desired_count]
