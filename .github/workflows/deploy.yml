@@ -67,6 +67,11 @@ jobs:
           task-definition: task-definition.json
           container-name: app
           image: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.SHA }}
+          # Runtime settings owned by the deploy (Terraform ignores container_definitions after
+          # creation, so env changes must come through here). 1 = the ALB is the one trusted proxy
+          # whose appended X-Forwarded-For entry keys the per-IP rate limits.
+          environment-variables: |
+            TRUSTED_PROXY_HOPS=1
 
       - uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
