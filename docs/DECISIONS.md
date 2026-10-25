@@ -50,3 +50,12 @@
   "in the zone" is read as "adjacent island that is friendly and not enemy-occupied"); otherwise it is lost.
   Mainland coasts do not count. Research and purchase quantities use saturating arithmetic so absurd counts
   are rejected as insufficient funds instead of overflowing.
+- 2026-10-25 (product): "Players" when creating a private game means *human* players, never seats. One
+  human plays a whole side (Axis or Allies, their choice) against the computer, and each enemy power
+  gets its own bot seat and persona so the other side has several voices; nobody is offered "all five
+  powers" because that is not a game. Two to five humans get the classic splits (Axis vs Allies;
+  Axis / USSR / UK+USA; Germany / Japan / USSR / UK+USA; one each) with the non-host seats open for
+  friends. Any other arrangement (e.g. two friends as the Allies against bot Axis, or one human as the
+  USSR with bot allies) is reached through the "Custom" split, which frees the seat count and the
+  power split. `preset_layout(1)` therefore equals `preset_layout(2)`, and `solo_seats(side)` builds
+  the one-human layout.
