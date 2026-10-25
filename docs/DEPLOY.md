@@ -131,9 +131,10 @@ Account 243963726301, us-east-1, executed 2026-10-24.
 | 8 | `gh secret set AWS_DEPLOY_ROLE_ARN` and `gh variable set AWS_REGION, ECR_REPOSITORY, ECS_CLUSTER, ECS_SERVICE, ECS_TASK_FAMILY` from `terraform output` (equivalent to `scripts/aws-bootstrap.sh github infra/terraform`) | Repo chaumurky-dev/ww2-game configured |
 | 9 | First service start raced the secret versions (ECS read `DATABASE_URL` before its AWSCURRENT value existed; deployment circuit-breaker failed). Fixed in `main.tf` with `depends_on` on the secret versions; rolled out by running the Deploy workflow manually (`gh workflow run deploy.yml`) | See CI/CD flow |
 | 10 | Deploy workflow failed `sts:AssumeRoleWithWebIdentity`: the GitHub org has the OIDC *immutable subject* setting, so tokens carry `repo:chaumurky-dev@305633583/ww2-game@1432703929:ref:refs/heads/main` (found with `gh api repos/chaumurky-dev/ww2-game/actions/oidc/customization/sub`). Added `github_oidc_subjects` to `variables.tf`/`terraform.tfvars`; `terraform apply` (1 in-place change to `aws_iam_role.deploy`) run by the account owner | Deploy workflow run 40190793941 succeeded: image pushed, task definition `wartide-prod:2`, service `app` steady at 1/1, `https://ww2.chaumurky.net/healthz` → 200, SPA and `/api/*` served over HTTPS |
+| 11 | 2026-10-25: SES production access requested from the CLI: `aws sesv2 put-account-details --mail-type TRANSACTIONAL --website-url https://ww2.chaumurky.net --production-access-enabled --use-case-description ...` (transactional only: verification, password reset, turn notifications; < 100/day) | `aws sesv2 get-account` shows `Details.ReviewDetails.Status = PENDING`; AWS normally answers within 24 h by email to the account root address. Until approved: sandbox, 200 mails/day, recipients must be verified identities |
 
 Pending:
-1. SES production-access request in the console (until then mail only reaches verified addresses).
+1. SES production-access review (step 11). Check with `AWS_PROFILE=wartide aws sesv2 get-account --region us-east-1 --query Details.ReviewDetails`. If AWS asks follow-up questions they arrive by email at the account root address.
 
 Note: the record above predates the script's `operator-role` and `profile` subcommands; they reproduce steps 1-2.
 
