@@ -1603,6 +1603,15 @@ async fn full_stack_game_against_bots() {
         .all(|e| e["events"].is_array() && e["actor"].is_number()));
 }
 
+trait HostPower {
+    fn is_host_power(&self) -> bool;
+}
+impl HostPower for wartide_engine::Power {
+    fn is_host_power(&self) -> bool {
+        matches!(self.id(), "uk" | "usa")
+    }
+}
+
 #[tokio::test]
 async fn three_player_custom_layout_runs_to_round_two() {
     let Some(c) = setup().await else { return };
@@ -1630,37 +1639,56 @@ async fn three_player_custom_layout_runs_to_round_two() {
     let gid = game["id"].as_str().unwrap().to_string();
     let guid: Uuid = gid.parse().unwrap();
 
-    // the host controls UK and then USA; bots drive USSR and Germany+Japan
+    // The host controls UK and then USA; bots drive USSR and Germany+Japan. The host ends its
+    // own phases immediately, but it is also "pending" whenever a bot's attack needs a defender
+    // decision (casualties, sub withdrawal), so answer those with the random policy instead of
+    // posting an end_phase that the engine rightly rejects while a battle is in progress.
+    use wartide_engine::{random_policy::RandomPolicy, Decision, GameState};
+    let mut policy = RandomPolicy::new(11);
     let mut acted = std::collections::BTreeSet::new();
     let mut round = 0;
-    for _ in 0..400 {
-        let (_, sum, _) = call(
+    for _ in 0..600 {
+        let (st, sv, _) = call(
             &c.app,
             Method::GET,
-            &format!("/api/games/{gid}"),
+            &format!("/api/games/{gid}/state"),
             Some(&a.cookie),
             None,
         )
         .await;
-        round = sum["round"].as_i64().unwrap();
+        assert_eq!(st, StatusCode::OK, "{sv}");
+        let gs: GameState = serde_json::from_value(sv["state"].clone()).expect("engine state");
+        round = gs.round as i64;
         if round >= 2 {
             break;
         }
-        match sum["pending_power"].as_str() {
-            Some(p @ ("uk" | "usa")) => {
-                let (st, env, _) = call(
-                    &c.app,
-                    Method::POST,
-                    &format!("/api/games/{gid}/actions"),
-                    Some(&a.cookie),
-                    Some(json!({"action": {"type": "end_phase"}})),
-                )
-                .await;
-                assert_eq!(st, StatusCode::OK, "{env}");
-                acted.insert(p.to_string());
+        let (power, action) = match wartide_engine::pending_decision(&gs) {
+            Decision::Phase { power, .. } if power.is_host_power() => {
+                (power, json!({"type": "end_phase"}))
             }
-            _ => tokio::time::sleep(std::time::Duration::from_millis(30)).await,
-        }
+            Decision::SelectCasualties { power, .. }
+            | Decision::RetreatOrPress { power, .. }
+            | Decision::SubWithdrawal { power, .. }
+                if power.is_host_power() =>
+            {
+                let (_, action) = policy.next_action(&gs).expect("action");
+                (power, serde_json::to_value(action).unwrap())
+            }
+            _ => {
+                tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+                continue;
+            }
+        };
+        let (st, env, _) = call(
+            &c.app,
+            Method::POST,
+            &format!("/api/games/{gid}/actions"),
+            Some(&a.cookie),
+            Some(json!({"action": action})),
+        )
+        .await;
+        assert_eq!(st, StatusCode::OK, "{env}");
+        acted.insert(power.id().to_string());
     }
     assert!(round >= 2, "stalled in round {round}");
     assert!(acted.contains("uk") && acted.contains("usa"), "{acted:?}");
