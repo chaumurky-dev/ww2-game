@@ -15,7 +15,10 @@ pub fn TopBar(#[prop(into)] deadline_ms: Signal<Option<f64>>) -> impl IntoView {
             <h3 style="margin:0">{move || format!("Round {}", ctx.state.with(|s| s.round))}</h3>
             {move || view! { <PowerBadge power=ui_power(ctx.state.with(|s| s.current_power)) /> }}
             {move || deadline_ms.get().map(|d| view! {
-                <span class="deadline"><span class="muted">"Deadline "</span><Countdown deadline_ms=d /></span>
+                <span class="deadline" title="Time left to act">
+                    <span class="muted">{format!("Deadline: {} ", crate::tz::deadline_text(d))}</span>
+                    "(" <Countdown deadline_ms=d />")"
+                </span>
             })}
             <div class="stepper">
                 {move || {

@@ -134,6 +134,7 @@ fn GameInfo(
                 view! { <div class="winner-banner" class:axis=s.winner == Some(Team::Axis) class:allies=s.winner == Some(Team::Allies)>{text}</div> }
             }))}
             {move || sig.with(pending_note).map(|n| view! { <div class="pending-note">{n}</div> })}
+            {move || sig.with(waiting_banner).map(|n| view! { <div class="pending-note">{n}</div> })}
             <div class="seats">
                 {move || sig.with(|s| s.seats.iter().map(|seat| {
                     let me = Some(seat.seat) == s.my_seat;

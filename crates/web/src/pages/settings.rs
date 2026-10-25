@@ -33,7 +33,11 @@ pub fn Settings() -> impl IntoView {
                     display.set(p.display_name);
                     bio.set(p.bio.unwrap_or_default());
                     country.set(p.country.unwrap_or_default());
-                    timezone.set(p.timezone.unwrap_or_default());
+                    timezone.set(
+                        p.timezone
+                            .or_else(crate::tz::browser_timezone)
+                            .unwrap_or_default(),
+                    );
                 }
                 Err(e) => toasts.api_error(&e),
             }
@@ -118,7 +122,7 @@ pub fn Settings() -> impl IntoView {
                     <textarea rows="3" prop:value=move || bio.get() on:input:target=move |ev| bio.set(ev.target().value())></textarea>
                 </label>
                 <TextField label="Country" value=country />
-                <TextField label="Time zone" value=timezone placeholder="Europe/Berlin" />
+                <crate::tz::TimezoneSelect value=timezone />
                 <Check label="Email me when it is my turn" value=notify />
                 <Check label="Email me when a matchmaking game is found" value=match_mail />
                 <button type="submit" disabled=move || !loaded.get() on:click=save>"Save"</button>

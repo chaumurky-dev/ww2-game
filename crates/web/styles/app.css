@@ -323,3 +323,7 @@ td { vertical-align: top; } .games-table td:nth-child(2) { white-space: nowrap; 
 @keyframes locflash { 0% { filter: brightness(1.8) drop-shadow(0 0 8px #fff); } 100% { filter: none; } }
 @media (max-width: 800px) { button.small { min-height: 1.9rem; } }
 @media (max-width: 800px) { .games-table th:nth-child(2), .games-table td:nth-child(2), .games-table th:nth-child(5), .games-table td:nth-child(5) { display: none; } .games-table .pill { white-space: normal; } }
+.power-picks { display: flex; flex-wrap: wrap; gap: .3rem .8rem; }
+.power-pick { display: inline-flex; flex-direction: row; align-items: center; gap: .3rem; }
+.power-pick select { width: auto; }
+.seat-label { display: flex; align-items: center; flex-wrap: wrap; gap: .2rem; }

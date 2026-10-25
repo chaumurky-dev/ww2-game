@@ -7,6 +7,7 @@ pub mod model;
 pub mod pages;
 pub mod realtime;
 pub mod state;
+pub mod tz;
 
 use components::guard::Protected;
 use components::nav::NavBar;
@@ -51,6 +52,7 @@ pub fn App() -> impl IntoView {
                 </Routes>
             </main>
             <ToastHost />
+            <tz::TimezonePrompt />
         </Router>
     }
 }

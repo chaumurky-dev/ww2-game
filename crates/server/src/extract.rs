@@ -22,6 +22,7 @@ pub struct CurrentUser {
     pub avatar: Option<String>,
     pub email_verified: bool,
     pub is_admin: bool,
+    pub timezone: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -34,6 +35,7 @@ impl CurrentUser {
             avatar: self.avatar.clone(),
             email_verified: self.email_verified,
             is_admin: self.is_admin,
+            timezone: self.timezone.clone(),
             created_at: self.created_at,
         }
     }
@@ -68,7 +70,7 @@ pub async fn user_from_token(
 ) -> Result<Option<CurrentUser>, AppError> {
     let hash = hash_token(&state.config.session_secret, token);
     let u = sqlx::query_as::<_, CurrentUser>(
-        "SELECT u.id, u.email, u.username, u.display_name, u.avatar, u.email_verified, u.is_admin, u.created_at
+        "SELECT u.id, u.email, u.username, u.display_name, u.avatar, u.email_verified, u.is_admin, u.timezone, u.created_at
          FROM sessions s JOIN users u ON u.id = s.user_id
          WHERE s.token_hash = $1 AND s.expires_at > now() AND u.deleted_at IS NULL",
     )

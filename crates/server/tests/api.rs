@@ -1782,4 +1782,6 @@ async fn seat_layout_validation_and_open_seats() {
         .await;
         assert_eq!(st == StatusCode::OK, ok, "{tz}");
     }
+    let (_, me, _) = call(&c.app, Method::GET, "/api/me", Some(&a.cookie), None).await;
+    assert_eq!(me["timezone"], "Etc/GMT+5");
 }

@@ -132,6 +132,7 @@ pub fn mode_label(m: GameMode) -> &'static str {
     match m {
         GameMode::TwoPlayer => "2-player",
         GameMode::FivePlayer => "5-player",
+        GameMode::Custom => "custom",
     }
 }
 
@@ -245,4 +246,53 @@ pub fn waiting_on_bot(g: &GameSummary) -> bool {
     waiting_for(g)
         .and_then(|p| g.seats.iter().find(|s| s.powers.contains(&p)))
         .is_some_and(|s| s.is_bot)
+}
+
+/// "Germany + Japan" for a seat's powers.
+pub fn powers_text(powers: &[Power]) -> String {
+    powers
+        .iter()
+        .map(|p| p.name())
+        .collect::<Vec<_>>()
+        .join(" + ")
+}
+
+/// Seat name followed by its powers when it controls several ("Alice (UK + USA)").
+pub fn seat_label_with_powers(s: &SeatAssignment) -> String {
+    if s.powers.len() > 1 {
+        format!("{} ({})", seat_label(s), powers_text(&s.powers))
+    } else {
+        seat_label(s)
+    }
+}
+
+/// Banner for games that wait for somebody else: open seats in the lobby ("Waiting for a friend
+/// to join as Germany + Japan"), or the other human whose powers are up ("Waiting for Alice
+/// (USSR + UK)"). None when it is the caller's move or a bot plays.
+pub fn waiting_banner(g: &GameSummary) -> Option<String> {
+    match g.status {
+        GameStatus::Lobby => {
+            let open: Vec<String> = g
+                .seats
+                .iter()
+                .filter(|s| s.user.is_none() && !s.is_bot)
+                .map(|s| powers_text(&s.powers))
+                .collect();
+            (!open.is_empty())
+                .then(|| format!("Waiting for a friend to join as {}", open.join(" / ")))
+        }
+        GameStatus::InProgress => {
+            let p = waiting_for(g)?;
+            let seat = g.seats.iter().find(|s| s.powers.contains(&p))?;
+            if seat.is_bot || Some(seat.seat) == g.my_seat {
+                return None;
+            }
+            Some(format!(
+                "Waiting for {} ({})",
+                seat_label(seat),
+                powers_text(&seat.powers)
+            ))
+        }
+        _ => None,
+    }
 }

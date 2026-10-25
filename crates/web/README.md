@@ -92,3 +92,16 @@ Visual checks: `trunk serve`, then drive headless Chrome over CDP; screenshots a
 - Engine/protocol: `GameStateView` and actions/events are still untyped JSON; the replay depends on `GameState.settings.seed`
   being the game seed and on the seed derivation staying stable (duplicated in `game/replay.rs`).
 - Spectators get 403 on team/power chat by design; the UI only offers the all-chat to them.
+
+## Private game seats and time zones
+- `pages/create_game.rs`: player count 1-5, a "classic split" preset per count (`wartide_protocol::game::preset_layout`:
+  2 = Axis/Allies, 3 = Axis/USSR/UK+USA, 4 = Germany/Japan/USSR/UK+USA, 5 = one each) or "Custom" via a per-power
+  "seat N" dropdown row (editing it switches to Custom), then per seat Me / Open / Bot (+ persona). Exactly one seat is
+  "Me" and every seat needs a power (the Create button is disabled with a hint otherwise). The request uses
+  `CreatePrivateGameRequest.seats`; the mode is derived like on the server (`GameMode::derive`, custom = unrated).
+- Seats show their powers as badges (game info, lobby "With" column); `model::waiting_banner` says "Waiting for a friend
+  to join as Germany + Japan" in the lobby and "Waiting for Alice (USSR + UK)" in a running game.
+- `src/tz.rs`: zone list from `Intl.supportedValuesOf('timeZone')` via `js_sys::Reflect` (short static fallback), default
+  `Intl.DateTimeFormat().resolvedOptions().timeZone`; `TimezoneSelect` (Settings) and `TimezonePrompt` (one-time dialog
+  after login while `SessionUser.timezone` is unset); `deadline_text` renders "Tue 14:05 your time" in the game top bar
+  and the lobby table.

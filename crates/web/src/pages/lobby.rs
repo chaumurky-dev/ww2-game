@@ -34,7 +34,7 @@ fn game_row(g: GameSummary, watch: bool) -> impl IntoView {
         .seats
         .iter()
         .filter(|s| Some(s.seat) != g.my_seat)
-        .map(seat_label)
+        .map(seat_label_with_powers)
         .collect::<Vec<_>>()
         .join(", ");
     view! {
@@ -51,7 +51,10 @@ fn game_row(g: GameSummary, watch: bool) -> impl IntoView {
             <td class="muted">{with}</td>
             <td>
                 {match (status, deadline) {
-                    (GameStatus::InProgress, Some(d)) => view! { <Countdown deadline_ms=d /> }.into_any(),
+                    (GameStatus::InProgress, Some(d)) => view! {
+                        <Countdown deadline_ms=d />
+                        <div class="muted small-text">{crate::tz::deadline_text(d)}</div>
+                    }.into_any(),
                     (GameStatus::Finished, _) => view! { <span class="muted">{winner.map(|t| format!("{} won", team_name(t))).unwrap_or_else(|| "Finished".into())}</span> }.into_any(),
                     (GameStatus::InProgress, None) => view! { <span class="muted">"Bot turn"</span> }.into_any(),
                     (s, _) => view! { <span class="muted">{status_label(s)}</span> }.into_any(),

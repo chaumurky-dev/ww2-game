@@ -40,7 +40,7 @@ Config (env / `.env`): `PORT` (8080), `DATABASE_URL`, `BASE_URL`, `SMTP_HOST/POR
 | DELETE `/me` | A (rate limited) | - | 204, cookie cleared. Soft delete: email/username become `deleted-<id>`, display name "Deleted user", profile/sessions/queue scrubbed; games, seats and chat stay intact; the user disappears from profiles and leaderboards |
 | GET `/bots/personas` | - | - | `[BotPersona {id, name, style, verbosity, blurb}]` (fixed catalog of 6) |
 | GET `/users/{username}` | - | - | `PublicProfile` (public ladders only; `stats[].current_win_streak/best_win_streak`; `recent_games`: last 10 active/finished public or group games, group games redacted to name/mode/status/result) |
-| PATCH `/me/profile` | A | `UpdateProfileRequest` | `PublicProfile` |
+| PATCH `/me/profile` | A | `UpdateProfileRequest` | `PublicProfile`; `timezone` must match `^[A-Za-z_]+(/[A-Za-z0-9_+-]+)*$` (IANA name, max 64) else 400; `""` clears it. `SessionUser.timezone` (from `/me`) is `null` until set, which makes the web client ask once |
 | GET / PATCH `/me/settings` | A | `UpdateSettingsRequest` | `UserSettings {email_turn_notifications, email_match_found}` |
 | GET `/leaderboard?mode=two_player\|five_player` | - | - | `[LeaderboardEntry]` (public ladder) |
 | POST `/groups` | A | `CreateGroupRequest` | 201 `Group` |
@@ -53,7 +53,7 @@ Config (env / `.env`): `PORT` (8080), `DATABASE_URL`, `BASE_URL`, `SMTP_HOST/POR
 | PUT `/groups/{id}/members/{user_id}/role` | A owner | `SetMemberRoleRequest` | 204 |
 | DELETE `/groups/{id}/members/{user_id}` | A owner/admin | - | 204 |
 | GET `/groups/{id}/leaderboard?mode=` | A member | - | `[LeaderboardEntry]` (ladder `group:{id}:2p/5p`) |
-| POST `/games` | V (rate limited) | `CreatePrivateGameRequest {mode, name?, bot_seats, bot_personas?, human_seats?, settings, group_id?}` | `GameSummary` (auto-starts if no other human seats). `name` 1-60 chars, default `Private game #A1B2`. `bot_personas` is indexed by seat; `null`/missing = default for that seat; only allowed for seats in `bot_seats`; ids from `/bots/personas` (else 400 `invalid_persona`) |
+| POST `/games` | V (rate limited) | `CreatePrivateGameRequest {seats?, mode, name?, bot_seats, bot_personas?, human_seats?, settings, group_id?}` (see Seat model below) | `GameSummary` (auto-starts if no other human seats). `name` 1-60 chars, default `Private game #A1B2`. `bot_personas` is indexed by seat; `null`/missing = default for that seat; only allowed for seats in `bot_seats`; ids from `/bots/personas` (else 400 `invalid_persona`) |
 | POST `/games/join` | V | `JoinByInviteRequest` | `GameSummary` (starts when full) |
 | GET `/games?status=active\|finished` | A | - | `[GameSummary]` (mine) |
 | GET `/games/public?status=active\|finished&page=` | A | - | `Paginated<GameSummary>` (matchmade games, 20 per page, newest first) for the watch list |
@@ -107,6 +107,23 @@ pre-game ratings), and the resulting rating/deviation/volatility are averaged. T
 other; bots are never rated. A resigned player (also one replaced after three missed turns in a row) is always
 rated as a loss at game end, whatever the outcome; if every human has resigned the game ends at once and the
 other team wins. Abandon = no result.
+
+## Seat model (private games)
+`CreatePrivateGameRequest.seats: [SeatSpec {powers, kind: host|open|bot, persona?}]` (1-5 seats, in seat order). The five
+powers must be partitioned exactly once (each power in exactly one seat, no empty seat), exactly one seat is `host`
+(the creator), `persona` only on `bot` seats (default by seat index). Zero `open` seats = the game starts at once;
+otherwise friends join by invite code, each taking the next free `open` seat with all its powers (`seat` order), and the
+host may start early (empty seats become bots). When `seats` is present it supersedes `mode`, `human_seats`,
+`bot_seats` and `bot_personas`; those legacy fields still work and are mapped onto seats (`two_player`: seat 0 = Axis,
+seat 1 = Allies; `five_player`: one power per seat; the first non-bot seat is the host, other human seats are open).
+The stored `games.mode` is derived (`GameMode::derive`): `two_player` for exactly two seats split by team,
+`five_player` for five single-power seats, otherwise `custom` (migration 0004 widens the CHECK). Presets for the
+dialog live in `wartide_protocol::game::preset_layout`. **Rating**: only `two_player`/`five_player` layouts can be
+rated (group ladders); `custom` layouts are never rated, also not in a group. Public matchmaking is unchanged
+(2p/5p only; `custom` is rejected).
+Multi-power seats: `seat_for_power` keys off `game_seats.powers`; the bot driver plays every power of a bot seat (one
+`wartide_ai::Bot` per game+power, same persona); a human seat gets a WS `your_turn` for each of its powers, but the
+turn e-mail only when the acting seat changes.
 
 ## Games, turns, timeouts
 - Seats: 2p = seat 0 Axis (Germany, Japan), seat 1 Allies (USSR, UK, USA); 5p = one power per seat.

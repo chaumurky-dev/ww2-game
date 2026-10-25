@@ -41,6 +41,9 @@ pub struct SessionUser {
     pub email_verified: bool,
     #[serde(default)]
     pub is_admin: bool,
+    /// IANA zone name chosen by the user (`None` until set).
+    #[serde(default)]
+    pub timezone: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 

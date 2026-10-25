@@ -115,7 +115,7 @@ pub async fn register(state: &AppState, req: RegisterRequest) -> AppResult<Sessi
     let id = Uuid::new_v4();
     let res = sqlx::query_as::<_, CurrentUser>(
         "INSERT INTO users (id, email, username, display_name, password_hash) VALUES ($1,$2,$3,$3,$4)
-         RETURNING id, email, username, display_name, avatar, email_verified, is_admin, created_at",
+         RETURNING id, email, username, display_name, avatar, email_verified, is_admin, timezone, created_at",
     )
     .bind(id)
     .bind(&email)
@@ -191,7 +191,7 @@ pub async fn login(state: &AppState, req: LoginRequest) -> AppResult<(String, Se
         .execute(&state.db)
         .await?;
     let user = sqlx::query_as::<_, CurrentUser>(
-        "SELECT id, email, username, display_name, avatar, email_verified, is_admin, created_at FROM users WHERE id=$1",
+        "SELECT id, email, username, display_name, avatar, email_verified, is_admin, timezone, created_at FROM users WHERE id=$1",
     )
     .bind(id)
     .fetch_one(&state.db)

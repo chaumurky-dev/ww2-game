@@ -76,6 +76,7 @@ fn mode_str(m: GameMode) -> &'static str {
     match m {
         GameMode::TwoPlayer => "two_player",
         GameMode::FivePlayer => "five_player",
+        GameMode::Custom => "custom",
     }
 }
 
