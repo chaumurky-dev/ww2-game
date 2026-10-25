@@ -31,7 +31,8 @@ server:
     cargo run -p wartide-server
 
 web:
-    cd crates/web && trunk serve --proxy-backend=http://localhost:8080/api --proxy-backend=ws://localhost:8080/ws --proxy-ws
+    # proxies for /api and /ws are configured in crates/web/Trunk.toml
+    cd crates/web && trunk serve
 
 dev: db-up
     #!/usr/bin/env bash
