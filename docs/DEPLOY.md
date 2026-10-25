@@ -125,14 +125,14 @@ Account 243963726301, us-east-1, executed 2026-10-24.
 | 2 | `aws configure set profile.wartide.{role_arn,source_profile=default,region=us-east-1,output=json}` | Profile `wartide` |
 | 3 | `AWS_PROFILE=wartide scripts/aws-bootstrap.sh` | Bucket `wartide-terraform-state-243963726301` (private, versioned, AES256) |
 | 4 | `backend.hcl` and `terraform.tfvars` copied from the examples (gitignored, identical values); `terraform init -backend-config=backend.hcl`; `terraform apply -target=aws_route53_zone.main -target=aws_ecr_repository.app` | Zone Z04051681E70DEAOWJVLL: ns-1190.awsdns-20.org, ns-1878.awsdns-42.co.uk, ns-199.awsdns-24.com, ns-534.awsdns-02.net. ECR 243963726301.dkr.ecr.us-east-1.amazonaws.com/wartide-prod |
-| 5 | First image built on the developer Mac (`colima ssh -- docker buildx build --platform linux/amd64 ... --push`) | Pushed as `:latest` and `:<git sha>` |
+| 5 | First image built on the developer Mac from a clean `git worktree` of origin/main with `AWS_PROFILE=wartide scripts/push-image.sh` (commit f6f123f) | Pushed as `:latest` and `:f6f123f`. All later images come from the Deploy workflow only |
+| 6 | 2026-10-25: NS records for host `ww2` added in the DreamHost DNS panel for chaumurky.net (GoDaddy is only the registrar) | `dig @ns1.dreamhost.com ww2.chaumurky.net NS` returns the four AWS name servers as a referral |
+| 7 | `terraform plan -out=tfplan` (56 to add, 0 change, 0 destroy; reviewed) then `terraform apply tfplan` | ALB `wartide-prod-1146239875.us-east-1.elb.amazonaws.com`, cluster/service `wartide-prod`/`app`, task family `wartide-prod`, deploy role `wartide-prod-github-deploy`, log group `/ecs/wartide-prod` |
+| 8 | `gh secret set AWS_DEPLOY_ROLE_ARN` and `gh variable set AWS_REGION, ECR_REPOSITORY, ECS_CLUSTER, ECS_SERVICE, ECS_TASK_FAMILY` from `terraform output` (equivalent to `scripts/aws-bootstrap.sh github infra/terraform`) | Repo chaumurky-dev/ww2-game configured |
+| 9 | First service start raced the secret versions (ECS read `DATABASE_URL` before its AWSCURRENT value existed; deployment circuit-breaker failed). Fixed in `main.tf` with `depends_on` on the secret versions; rolled out by running the Deploy workflow manually (`gh workflow run deploy.yml`) | See CI/CD flow |
 
-Pending, in order:
-1. DreamHost DNS panel for chaumurky.net: NS records for host `ww2` (the four name servers above); verify with `dig NS ww2.chaumurky.net +short`.
-2. Full `terraform apply`.
-3. `scripts/aws-bootstrap.sh github infra/terraform` (AWS_DEPLOY_ROLE_ARN secret; AWS_REGION, ECR_REPOSITORY, ECS_CLUSTER, ECS_SERVICE, ECS_TASK_FAMILY variables).
-4. Run the Deploy workflow.
-5. SES production-access request in the console.
+Pending:
+1. SES production-access request in the console (until then mail only reaches verified addresses).
 
 Note: the record above predates the script's `operator-role` and `profile` subcommands; they reproduce steps 1-2.
 
