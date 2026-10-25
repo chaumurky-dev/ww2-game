@@ -32,6 +32,17 @@ variable "github_repo" {
   type        = string
 }
 
+variable "github_oidc_subjects" {
+  description = <<-EOT
+    OIDC subject claims allowed to assume the deploy role. Empty = "repo:<github_repo>:ref:refs/heads/main".
+    Organizations with GitHub's "immutable subject" setting issue subjects like
+    "repo:<owner>@<owner_id>/<repo>@<repo_id>:ref:refs/heads/main"; look it up with
+    `gh api repos/<owner>/<repo>/actions/oidc/customization/sub` (sub_claim_prefix).
+  EOT
+  type        = list(string)
+  default     = []
+}
+
 variable "create_github_oidc_provider" {
   description = "Create the account-wide GitHub OIDC provider. Set false if it already exists."
   type        = bool
