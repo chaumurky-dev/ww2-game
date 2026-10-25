@@ -106,6 +106,11 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
 
     services::matchmaking::spawn(state.clone());
     services::timeouts::spawn(state.clone());
+    match services::bots::resume_all(&state).await {
+        Ok(n) if n > 0 => tracing::info!(games = n, "resumed drivers for games in progress"),
+        Ok(_) => {}
+        Err(e) => tracing::error!(error = ?e, "could not resume game drivers"),
+    }
 
     let app = build_router(state);
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await?;

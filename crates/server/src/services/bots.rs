@@ -128,6 +128,19 @@ const BOT_ATTEMPTS: u32 = 3;
 /// Rejected random-policy actions before falling back to `EndPhase` / `Concede`.
 const RANDOM_ATTEMPTS: u32 = 20;
 
+/// Start a driver for every game in progress. Called once at startup so games interrupted by a
+/// restart (a bot mid-turn, or a defender decision awaiting automatic resolution) resume at once
+/// instead of waiting for a deadline to expire. Cheap: a pass with nothing to do returns quickly.
+pub async fn resume_all(state: &AppState) -> AppResult<usize> {
+    let ids: Vec<(Uuid,)> = sqlx::query_as("SELECT id FROM games WHERE status='in_progress'")
+        .fetch_all(&state.db)
+        .await?;
+    for (id,) in &ids {
+        spawn_driver(state, *id, None);
+    }
+    Ok(ids.len())
+}
+
 /// Make sure a task is playing every bot-controlled decision of `game`. Cheap and idempotent: if a
 /// task is already running it is asked to look again when it finishes. `takeover` additionally
 /// makes the task play that (human, timed-out) power until the engine moves on to another power.
