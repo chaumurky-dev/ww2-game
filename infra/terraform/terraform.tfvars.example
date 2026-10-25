@@ -2,7 +2,7 @@ env         = "prod"
 region      = "us-east-1"
 domain_name = "ww2.chaumurky.net"
 
-# Create a hosted zone with apex = domain_name; delegate it with NS records at the parent (GoDaddy).
+# Create a hosted zone with apex = domain_name; delegate it with NS records at the parent zone (hosted at DreamHost for chaumurky.net).
 create_route53_zone = true
 route53_zone_id     = "" # only used when create_route53_zone = false
 

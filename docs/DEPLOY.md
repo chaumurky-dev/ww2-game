@@ -66,12 +66,12 @@ and add a NAT or VPC endpoints if you want stricter isolation.
 - Everything after bootstrap goes through GitHub Actions (images are built and pushed only by
   `.github/workflows/deploy.yml`; infra changes via Terraform with the `wartide` profile).
 - The only manual, non-scripted steps: (a) creating the admin-level principal that runs the bootstrap,
-  (b) the GoDaddy NS delegation, (c) the SES production-access request.
+  (b) the NS delegation of `ww2` at the parent zone (hosted at DreamHost; GoDaddy is only the registrar), (c) the SES production-access request.
 - Terraform runs as role `wartide-terraform` (least privilege, `infra/iam/wartide-terraform-policy.json`), never as admin.
 
 ## 2. Bootstrap runbook
 
-Target: `ww2.chaumurky.net` (parent zone at GoDaddy), us-east-1. Needs Terraform >= 1.10, AWS CLI, `gh`, Docker.
+Target: `ww2.chaumurky.net` (registrar GoDaddy; parent zone DNS hosted at DreamHost, see `dig NS chaumurky.net`), us-east-1. Needs Terraform >= 1.10, AWS CLI, `gh`, Docker.
 All AWS steps are in `scripts/aws-bootstrap.sh` (idempotent; prints every mutating command; `--yes` skips prompts;
 `scripts/aws-bootstrap.sh all [src-profile] [region]` runs the sequence with pauses).
 
@@ -91,7 +91,7 @@ terraform init -backend-config=backend.hcl
 terraform apply -target=aws_route53_zone.main -target=aws_ecr_repository.app
 terraform output route53_name_servers
 
-# e. MANUAL at GoDaddy (chaumurky.net): four NS records, host `ww2`, one per name server. Wait for:
+# e. MANUAL at DreamHost (DNS host of chaumurky.net): four NS records, host `ww2`, one per name server. Wait for:
 dig NS ww2.chaumurky.net +short
 
 # f. First image (so ECS has one before the first full apply); later images come only from CI
@@ -128,7 +128,7 @@ Account 243963726301, us-east-1, executed 2026-10-24.
 | 5 | First image built on the developer Mac (`colima ssh -- docker buildx build --platform linux/amd64 ... --push`) | Pushed as `:latest` and `:<git sha>` |
 
 Pending, in order:
-1. GoDaddy: NS records for host `ww2` (the four name servers above); verify with `dig NS ww2.chaumurky.net +short`.
+1. DreamHost DNS panel for chaumurky.net: NS records for host `ww2` (the four name servers above); verify with `dig NS ww2.chaumurky.net +short`.
 2. Full `terraform apply`.
 3. `scripts/aws-bootstrap.sh github infra/terraform` (AWS_DEPLOY_ROLE_ARN secret; AWS_REGION, ECR_REPOSITORY, ECS_CLUSTER, ECS_SERVICE, ECS_TASK_FAMILY variables).
 4. Run the Deploy workflow.

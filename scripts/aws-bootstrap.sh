@@ -6,7 +6,7 @@
 #   profile        write the `wartide` CLI profile that assumes that role
 #   state-bucket   [wartide profile] create the private, versioned, encrypted Terraform state bucket
 #   github         set GitHub secret/variables from `terraform output`
-#   all            operator-role, profile, state-bucket, then guided Terraform/GoDaddy/github steps
+#   all            operator-role, profile, state-bucket, then guided Terraform/DNS-delegation/github steps
 #
 # Every mutating command is printed (prefixed with "+") before it runs.
 # Environment:
@@ -183,7 +183,7 @@ cmd_all() {
   run terraform -chdir="$TF_DIR" init -backend-config=backend.hcl
   run terraform -chdir="$TF_DIR" apply -target=aws_route53_zone.main -target=aws_ecr_repository.app
   terraform -chdir="$TF_DIR" output route53_name_servers
-  confirm "MANUAL: at GoDaddy (chaumurky.net) add NS records for host 'ww2', one per name server above. Verify: dig NS ww2.chaumurky.net +short"
+  confirm "MANUAL: in the DNS host of chaumurky.net (DreamHost; GoDaddy is only the registrar) add NS records for host 'ww2', one per name server above. Verify: dig NS ww2.chaumurky.net +short"
   confirm "MANUAL: push a first image to ECR (docs/DEPLOY.md, 'First image'), so the ECS service has something to run."
 
   echo "== 5/6 full apply"
