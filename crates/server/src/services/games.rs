@@ -220,9 +220,10 @@ pub fn redact_for_profile(g: &mut GameSummary) {
     g.my_seat = None;
 }
 
-/// Public games and finished games may be read by any logged-in user (spectating).
+/// Public games may be read by any logged-in user (spectating). Finished group games are also
+/// readable by group members (see [`reader_access`]); finished private games only by their players.
 pub fn is_spectatable(g: &GameRow) -> bool {
-    g.kind == "public" || g.status == "finished"
+    g.kind == "public"
 }
 
 /// What a user may read of a game.
@@ -230,6 +231,19 @@ pub fn is_spectatable(g: &GameRow) -> bool {
 pub enum Access {
     Player(SeatRow),
     Spectator,
+}
+
+async fn is_group_member(state: &AppState, group: Option<Uuid>, user: Uuid) -> AppResult<bool> {
+    let Some(group) = group else {
+        return Ok(false);
+    };
+    let row: Option<(i32,)> =
+        sqlx::query_as("SELECT 1 FROM group_members WHERE group_id=$1 AND user_id=$2")
+            .bind(group)
+            .bind(user)
+            .fetch_optional(&state.db)
+            .await?;
+    Ok(row.is_some())
 }
 
 /// Load the game and decide whether `user` may read it: seated players always, anyone else only
@@ -244,6 +258,9 @@ pub async fn reader_access(
     match seats.into_iter().find(|s| s.user_id == Some(user)) {
         Some(mine) => Ok((g, Access::Player(mine))),
         None if is_spectatable(&g) => Ok((g, Access::Spectator)),
+        None if g.status == "finished" && is_group_member(state, g.group_id, user).await? => {
+            Ok((g, Access::Spectator))
+        }
         None => Err(AppError::forbidden("you are not a player in this game")),
     }
 }
@@ -808,6 +825,15 @@ pub async fn actions_since(
         .collect())
 }
 
+/// Everything in the engine state is public except the per-game dice seed, which would let a
+/// client precompute every roll. Only the served copy is scrubbed; the stored state is untouched.
+pub fn scrub_state(mut st: Value) -> Value {
+    if let Some(seed) = st.get_mut("settings").and_then(|s| s.get_mut("seed")) {
+        *seed = Value::from(0u64);
+    }
+    st
+}
+
 pub async fn state_view(state: &AppState, user: Uuid, id: Uuid) -> AppResult<GameStateResponse> {
     reader_access(state, id, user).await?;
     let (seq, st): (i64, Value) =
@@ -816,8 +842,10 @@ pub async fn state_view(state: &AppState, user: Uuid, id: Uuid) -> AppResult<Gam
             .fetch_optional(&state.db)
             .await?
             .ok_or_else(|| AppError::conflict("not_started", "game has not started"))?;
-    // All information is public in this game: the stored engine state is returned as is.
-    Ok(GameStateResponse { seq, state: st })
+    Ok(GameStateResponse {
+        seq,
+        state: scrub_state(st),
+    })
 }
 
 /// Who is submitting an action.

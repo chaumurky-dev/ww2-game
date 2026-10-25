@@ -14,7 +14,9 @@ cargo test -p wartide-server  # DB tests run only when DATABASE_URL is set (othe
 Config (env / `.env`): `PORT` (8080), `DATABASE_URL`, `BASE_URL`, `SMTP_HOST/PORT/USER/PASS/FROM`
 (no `SMTP_HOST` = emails are only logged), `SMTP_TLS` (`starttls` default, `tls`, or `none` for Mailpit), `SESSION_SECRET`, `WEB_DIST_DIR` (`crates/web/dist`),
 `DEFAULT_TURN_TIMEOUT_SECS`, `COOKIE_SECURE` (default true), `RATE_LIMIT` (default true),
-`BOT_ACTION_DELAY_MS` (default 0; pause after every computer-player action so bot turns are watchable).
+`BOT_ACTION_DELAY_MS` (default 0; pause after every computer-player action so bot turns are watchable),
+`ALLOWED_ORIGINS` (comma-separated extra browser origins allowed on `/ws` besides `BASE_URL`, e.g. the trunk dev port), `TRUSTED_PROXY_HOPS` (default 0: rate limits key on the TCP peer address; `n` takes the n-th entry from the right of `X-Forwarded-For`, use 1 behind the ALB. Leftmost entries are attacker-controlled and ignored).
+When `COOKIE_SECURE` is true (the default) `SESSION_SECRET` is mandatory and startup fails without it.
 
 ## Conventions
 - Errors are `ApiError {code, message}` JSON with a matching status. Codes: `unauthorized` (401),

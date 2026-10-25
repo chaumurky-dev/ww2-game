@@ -75,6 +75,15 @@ pub async fn create(
     if name.len() < 3 || name.chars().count() > 48 {
         return Err(AppError::bad("group name must be 3-48 characters"));
     }
+    if req
+        .description
+        .as_deref()
+        .is_some_and(|d| d.trim().chars().count() > 500)
+    {
+        return Err(AppError::bad(
+            "group description too long (max 500 characters)",
+        ));
+    }
     let base = slugify(&name);
     let id = Uuid::new_v4();
     let mut slug = base.clone();

@@ -102,10 +102,14 @@ pub async fn change_password(
     Ok(StatusCode::NO_CONTENT)
 }
 
-pub async fn delete_me(State(s): State<AppState>, AuthUser(u): AuthUser) -> AppResult<Response> {
+pub async fn delete_me(
+    State(s): State<AppState>,
+    AuthUser(u): AuthUser,
+    Json(req): Json<DeleteAccountRequest>,
+) -> AppResult<Response> {
     s.limiter
         .check(&format!("del:{}", u.id), 3, Duration::from_secs(3600))?;
-    svc::delete_account(&s, &u).await?;
+    svc::delete_account(&s, &u, &req.password).await?;
     let mut res = StatusCode::NO_CONTENT.into_response();
     res.headers_mut()
         .insert(header::SET_COOKIE, session_cookie(&s, "", 0));

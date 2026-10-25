@@ -121,6 +121,18 @@ pub async fn sweep(state: &AppState) -> AppResult<usize> {
     Ok(n)
 }
 
+/// Delete expired sessions and e-mail tokens. Returns the number of rows removed.
+pub async fn purge_expired(state: &AppState) -> AppResult<u64> {
+    let mut n = 0;
+    for q in [
+        "DELETE FROM sessions WHERE expires_at < now()",
+        "DELETE FROM email_tokens WHERE expires_at < now()",
+    ] {
+        n += sqlx::query(q).execute(&state.db).await?.rows_affected();
+    }
+    Ok(n)
+}
+
 pub fn spawn(state: AppState) {
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(Duration::from_secs(60));
@@ -128,6 +140,9 @@ pub fn spawn(state: AppState) {
             tick.tick().await;
             if let Err(e) = sweep(&state).await {
                 tracing::error!(error = ?e, "timeout sweep failed");
+            }
+            if let Err(e) = purge_expired(&state).await {
+                tracing::error!(error = ?e, "token purge failed");
             }
         }
     });
