@@ -538,7 +538,16 @@ resource "aws_ecs_service" "app" {
     container_port   = 8080
   }
 
-  depends_on = [aws_lb_listener.https, aws_ecs_cluster_capacity_providers.main]
+  # Secret *versions* must exist before the first task starts, or ECS fails with
+  # "can't find the specified secret value for staging label: AWSCURRENT" (seen on first bootstrap).
+  depends_on = [
+    aws_lb_listener.https,
+    aws_ecs_cluster_capacity_providers.main,
+    aws_secretsmanager_secret_version.database_url,
+    aws_secretsmanager_secret_version.session_secret,
+    aws_secretsmanager_secret_version.smtp_user,
+    aws_secretsmanager_secret_version.smtp_pass,
+  ]
 
   lifecycle {
     ignore_changes = [task_definition, desired_count]
