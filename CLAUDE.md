@@ -27,6 +27,8 @@ territory names are fine. Call production points "IPC" (generic acronym) — fin
 - All randomness in the engine comes from an injected seeded RNG (`rand_chacha`) so games
   are replayable from the action log.
 - Commit small and often with imperative messages. Don't commit secrets; use `.env`.
+- `main` is branch-protected: work on a topic branch, `gh pr create --fill`, then
+  `gh pr merge --squash --auto` (merges once CI passes). Never try to push to `main` directly.
 - Local run: `just dev` (see justfile). Local DB: `postgres://wartide:wartide@localhost:5432/wartide`.
 - Delegate implementation to cheaper models where possible; the orchestrator reviews.
 

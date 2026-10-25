@@ -132,6 +132,7 @@ Account 243963726301, us-east-1, executed 2026-10-24.
 | 9 | First service start raced the secret versions (ECS read `DATABASE_URL` before its AWSCURRENT value existed; deployment circuit-breaker failed). Fixed in `main.tf` with `depends_on` on the secret versions; rolled out by running the Deploy workflow manually (`gh workflow run deploy.yml`) | See CI/CD flow |
 | 10 | Deploy workflow failed `sts:AssumeRoleWithWebIdentity`: the GitHub org has the OIDC *immutable subject* setting, so tokens carry `repo:chaumurky-dev@305633583/ww2-game@1432703929:ref:refs/heads/main` (found with `gh api repos/chaumurky-dev/ww2-game/actions/oidc/customization/sub`). Added `github_oidc_subjects` to `variables.tf`/`terraform.tfvars`; `terraform apply` (1 in-place change to `aws_iam_role.deploy`) run by the account owner | Deploy workflow run 40190793941 succeeded: image pushed, task definition `wartide-prod:2`, service `app` steady at 1/1, `https://ww2.chaumurky.net/healthz` → 200, SPA and `/api/*` served over HTTPS |
 | 11 | 2026-10-25: SES production access requested from the CLI: `aws sesv2 put-account-details --mail-type TRANSACTIONAL --website-url https://ww2.chaumurky.net --production-access-enabled --use-case-description ...` (transactional only: verification, password reset, turn notifications; < 100/day) | `aws sesv2 get-account` shows `Details.ReviewDetails.Status = PENDING`; AWS normally answers within 24 h by email to the account root address. Until approved: sandbox, 200 mails/day, recipients must be verified identities |
+| 12 | 2026-10-25: branch protection on `main` via `gh api -X PUT repos/chaumurky-dev/ww2-game/branches/main/protection` (required status checks `lint`, `test`, `web-build`, strict/up-to-date, enforce for admins, no force-push or deletion, no review requirement); repo settings `allow_auto_merge`, `delete_branch_on_merge` | Direct pushes to `main` are rejected; all changes land through PRs that CI has validated |
 
 Pending:
 1. SES production-access review (step 11). Check with `AWS_PROFILE=wartide aws sesv2 get-account --region us-east-1 --query Details.ReviewDetails`. If AWS asks follow-up questions they arrive by email at the account root address.
@@ -157,6 +158,17 @@ Note: the record above predates the script's `operator-role` and `profile` subco
   them manually if wanted.
 
 ## 5. CI/CD flow
+
+`main` is protected (bootstrap step 12): a change gets there only through a pull request whose CI checks
+(`lint`, `test`, `web-build`) passed on an up-to-date branch. Day-to-day flow, hands-off for the reviewer:
+
+```sh
+git switch -c <topic> && git commit ... && git push -u origin <topic>
+gh pr create --fill && gh pr merge --squash --auto   # merges itself when CI is green; branch auto-deletes
+```
+
+A docs-only PR still runs CI (the checks are required, so there is no paths filter). Merging to `main` runs
+CI again on the merge commit and, when green, the Deploy workflow.
 
 - `ci.yml` (push/PR): rustfmt, clippy (native + wasm32 for web), `cargo test --workspace` against a Postgres
   service container, trunk release build.
