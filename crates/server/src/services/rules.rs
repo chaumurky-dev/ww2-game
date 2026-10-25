@@ -18,6 +18,8 @@ pub struct Pending {
     pub power: Option<Power>,
     /// Winner once the game is over.
     pub game_over: Option<Option<Team>>,
+    /// The decision is a casualty/withdrawal choice for a defender (not the power whose turn it is).
+    pub defender: bool,
 }
 
 pub fn power_from_engine(p: engine::Power) -> Power {
@@ -97,17 +99,22 @@ pub fn parse_state(v: &Value) -> AppResult<engine::GameState> {
 
 pub fn pending_of(state: &engine::GameState) -> Pending {
     use engine::Decision::*;
-    match engine::pending_decision(state) {
-        Phase { power, .. }
-        | SelectCasualties { power, .. }
-        | RetreatOrPress { power, .. }
-        | SubWithdrawal { power, .. } => Pending {
+    let decision = engine::pending_decision(state);
+    match decision {
+        Phase { power, .. } | RetreatOrPress { power, .. } => Pending {
             power: Some(power_from_engine(power)),
             game_over: None,
+            defender: false,
+        },
+        SelectCasualties { power, .. } | SubWithdrawal { power, .. } => Pending {
+            power: Some(power_from_engine(power)),
+            game_over: None,
+            defender: power != state.current_power,
         },
         GameOver { winner } => Pending {
             power: None,
             game_over: Some(winner.map(team_from_engine)),
+            defender: false,
         },
     }
 }

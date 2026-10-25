@@ -177,9 +177,13 @@ pub fn ReplayGame(game_id: GameId, map: SharedMap, top: ViewFn, bottom: ViewFn) 
                 ctx.reset_state(after);
                 ctx.dice.set(vec![]);
                 ctx.log.set(vec![]);
+                ctx.battles.set_value(Default::default());
                 let from_step = to.saturating_sub(12);
                 for i in from_step + 1..=to {
-                    let lines = format_events(r.events_at(i), r.round_at(i));
+                    let lines = ctx
+                        .battles
+                        .try_update_value(|a| format_events(r.events_at(i), r.round_at(i), a))
+                        .unwrap_or_default();
                     ctx.log.update(|v| push_lines(v, lines));
                 }
             }

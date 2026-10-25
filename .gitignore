@@ -11,3 +11,6 @@
 /infra/terraform/.terraform.lock.hcl
 /assets/raw/*.tmp
 node_modules
+
+# Claude Code agent worktrees
+.claude/worktrees/

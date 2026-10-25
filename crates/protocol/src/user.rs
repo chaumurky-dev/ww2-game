@@ -4,6 +4,9 @@ use uuid::Uuid;
 
 use crate::game::GameSummary;
 
+/// Defender preferences the server applies automatically (re-exported from the engine).
+pub use wartide_engine::casualty_policy::{CasualtyPolicy, SubWithdrawalPolicy};
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LadderStats {
     pub ladder: String,
@@ -50,6 +53,12 @@ pub struct UserSettings {
     pub email_turn_notifications: bool,
     #[serde(default = "default_true")]
     pub email_match_found: bool,
+    /// How the server picks your casualties when you defend.
+    #[serde(default)]
+    pub casualty_policy: CasualtyPolicy,
+    /// Whether the server pulls your submarines out of a battle when you defend.
+    #[serde(default)]
+    pub sub_withdrawal: SubWithdrawalPolicy,
 }
 
 fn default_true() -> bool {
@@ -61,6 +70,8 @@ impl Default for UserSettings {
         Self {
             email_turn_notifications: true,
             email_match_found: true,
+            casualty_policy: CasualtyPolicy::default(),
+            sub_withdrawal: SubWithdrawalPolicy::default(),
         }
     }
 }
@@ -71,4 +82,35 @@ pub struct UpdateSettingsRequest {
     pub email_turn_notifications: Option<bool>,
     #[serde(default)]
     pub email_match_found: Option<bool>,
+    #[serde(default)]
+    pub casualty_policy: Option<CasualtyPolicy>,
+    #[serde(default)]
+    pub sub_withdrawal: Option<SubWithdrawalPolicy>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn settings_roundtrip_and_old_json_defaults() {
+        let s = UserSettings {
+            email_turn_notifications: false,
+            email_match_found: true,
+            casualty_policy: CasualtyPolicy::ProtectAircraft,
+            sub_withdrawal: SubWithdrawalPolicy::Always,
+        };
+        let back: UserSettings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert_eq!(back, s);
+        let old: UserSettings =
+            serde_json::from_str(r#"{"email_turn_notifications":true}"#).unwrap();
+        assert_eq!(old.casualty_policy, CasualtyPolicy::CheapestFirst);
+        assert_eq!(old.sub_withdrawal, SubWithdrawalPolicy::WhenOutgunned);
+        let req: UpdateSettingsRequest =
+            serde_json::from_str(r#"{"casualty_policy":"keep_counterattack"}"#).unwrap();
+        assert_eq!(req.casualty_policy, Some(CasualtyPolicy::KeepCounterattack));
+        assert!(
+            serde_json::from_str::<UpdateSettingsRequest>(r#"{"casualty_policy":"x"}"#).is_err()
+        );
+    }
 }

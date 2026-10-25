@@ -5,7 +5,9 @@ use crate::state::{AuthState, Toasts};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::hooks::use_navigate;
-use wartide_protocol::user::{UpdateProfileRequest, UpdateSettingsRequest};
+use wartide_protocol::user::{
+    CasualtyPolicy, SubWithdrawalPolicy, UpdateProfileRequest, UpdateSettingsRequest,
+};
 
 #[component]
 pub fn Settings() -> impl IntoView {
@@ -17,6 +19,8 @@ pub fn Settings() -> impl IntoView {
     let timezone = RwSignal::new(String::new());
     let notify = RwSignal::new(true);
     let match_mail = RwSignal::new(true);
+    let casualty = RwSignal::new(CasualtyPolicy::default());
+    let sub_wd = RwSignal::new(SubWithdrawalPolicy::default());
     let cur_pw = RwSignal::new(String::new());
     let new_pw = RwSignal::new(String::new());
     let new_pw2 = RwSignal::new(String::new());
@@ -46,6 +50,8 @@ pub fn Settings() -> impl IntoView {
             Ok(s) => {
                 notify.set(s.email_turn_notifications);
                 match_mail.set(s.email_match_found);
+                casualty.set(s.casualty_policy);
+                sub_wd.set(s.sub_withdrawal);
             }
             Err(e) => toasts.api_error(&e),
         }
@@ -65,6 +71,8 @@ pub fn Settings() -> impl IntoView {
             let s = api::update_settings(&UpdateSettingsRequest {
                 email_turn_notifications: Some(notify.get_untracked()),
                 email_match_found: Some(match_mail.get_untracked()),
+                casualty_policy: Some(casualty.get_untracked()),
+                sub_withdrawal: Some(sub_wd.get_untracked()),
             })
             .await;
             match (api::update_profile(&req).await, s) {
@@ -125,6 +133,32 @@ pub fn Settings() -> impl IntoView {
                 <crate::tz::TimezoneSelect value=timezone />
                 <Check label="Email me when it is my turn" value=notify />
                 <Check label="Email me when a matchmaking game is found" value=match_mail />
+                <h2>"Battles"</h2>
+                <p class="muted small-text">"When you defend, nobody waits for you: the server picks your casualties and decides your submarine withdrawals using these preferences."</p>
+                <label>"Casualties when defending"
+                    <select aria-label="Casualty policy" on:change:target=move |ev| {
+                        if let Some(p) = CasualtyPolicy::ALL.iter().find(|p| p.id() == ev.target().value()) {
+                            casualty.set(*p);
+                        }
+                    }>
+                        {CasualtyPolicy::ALL.iter().map(|&p| view! {
+                            <option value=p.id() selected=move || casualty.get() == p>{p.label()}</option>
+                        }).collect_view()}
+                    </select>
+                </label>
+                <p class="muted small-text">{move || casualty.get().describe()}</p>
+                <label>"Submarines when defending"
+                    <select aria-label="Submarine withdrawal" on:change:target=move |ev| {
+                        if let Some(p) = SubWithdrawalPolicy::ALL.iter().find(|p| p.id() == ev.target().value()) {
+                            sub_wd.set(*p);
+                        }
+                    }>
+                        {SubWithdrawalPolicy::ALL.iter().map(|&p| view! {
+                            <option value=p.id() selected=move || sub_wd.get() == p>{p.label()}</option>
+                        }).collect_view()}
+                    </select>
+                </label>
+                <p class="muted small-text">{move || sub_wd.get().describe()}</p>
                 <button type="submit" disabled=move || !loaded.get() on:click=save>"Save"</button>
             </form>
             <div class="col">

@@ -36,8 +36,11 @@ pub async fn get_settings(
 pub async fn update_settings(
     State(s): State<AppState>,
     AuthUser(u): AuthUser,
-    Json(req): Json<UpdateSettingsRequest>,
+    Json(body): Json<serde_json::Value>,
 ) -> AppResult<Json<UserSettings>> {
+    // Parsed by hand so an unknown policy id is a 400 (axum's own rejection would be a 422).
+    let req: UpdateSettingsRequest = serde_json::from_value(body)
+        .map_err(|e| crate::error::AppError::bad(format!("invalid settings: {e}")))?;
     Ok(Json(users::update_settings(&s, u.id, req).await?))
 }
 

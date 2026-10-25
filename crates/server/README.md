@@ -41,7 +41,7 @@ Config (env / `.env`): `PORT` (8080), `DATABASE_URL`, `BASE_URL`, `SMTP_HOST/POR
 | GET `/bots/personas` | - | - | `[BotPersona {id, name, style, verbosity, blurb}]` (fixed catalog of 6) |
 | GET `/users/{username}` | - | - | `PublicProfile` (public ladders only; `stats[].current_win_streak/best_win_streak`; `recent_games`: last 10 active/finished public or group games, group games redacted to name/mode/status/result) |
 | PATCH `/me/profile` | A | `UpdateProfileRequest` | `PublicProfile`; `timezone` must match `^[A-Za-z_]+(/[A-Za-z0-9_+-]+)*$` (IANA name, max 64) else 400; `""` clears it. `SessionUser.timezone` (from `/me`) is `null` until set, which makes the web client ask once |
-| GET / PATCH `/me/settings` | A | `UpdateSettingsRequest` | `UserSettings {email_turn_notifications, email_match_found}` |
+| GET / PATCH `/me/settings` | A | `UpdateSettingsRequest` | `UserSettings {email_turn_notifications, email_match_found, casualty_policy, sub_withdrawal}`; `casualty_policy` in `cheapest_first\|keep_best_defenders\|protect_aircraft\|keep_counterattack`, `sub_withdrawal` in `never\|when_outgunned\|always` (unknown value: 400). The server applies them to resolve the user's *defender* decisions automatically, so defenders are never asked |
 | GET `/leaderboard?mode=two_player\|five_player` | - | - | `[LeaderboardEntry]` (public ladder) |
 | POST `/groups` | A | `CreateGroupRequest` | 201 `Group` |
 | GET `/groups` | A | - | `[Group]` (mine) |

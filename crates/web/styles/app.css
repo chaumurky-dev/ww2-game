@@ -241,6 +241,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .actionlog .log { max-height: 10rem; }
 .actionlog .log.expanded { max-height: 60vh; }
 .logline { padding-left: .35rem; }
+.loglevel .tab { padding: .1rem .5rem; font-size: .75rem; user-select: none; }
 .econ { gap: .25rem; }
 .econ-pill { font-size: .72rem; border-width: 2px; }
 .econ-pill .techs { color: var(--accent); font-weight: 700; }

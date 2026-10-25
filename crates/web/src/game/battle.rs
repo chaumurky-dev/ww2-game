@@ -127,6 +127,18 @@ fn CasualtyPicker(hits: u32, sub_hits: u32, eligible: Vec<UnitId>) -> impl IntoV
 
 fn controls(ctx: GameCtx, st: &GameState, b: &Battle) -> AnyView {
     let d = pending_decision(st);
+    // Online, defenders never answer: the server applies their saved battle preferences.
+    if ctx.auto_defense && !ctx.controls(st.current_power) {
+        if let Decision::SelectCasualties { power, .. } | Decision::SubWithdrawal { power, .. } = d
+        {
+            if ctx.controls(power) {
+                return view! {
+                    <div class="decision muted">"Your casualties are chosen automatically (Settings \u{2192} Battles)."</div>
+                }
+                .into_any();
+            }
+        }
+    }
     match d {
         Decision::SelectCasualties {
             power,
