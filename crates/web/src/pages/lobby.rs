@@ -71,7 +71,7 @@ fn games_table_w(v: Vec<GameSummary>, empty: &'static str, watch: bool) -> AnyVi
         return view! { <Empty text=empty /> }.into_any();
     }
     view! {
-        <div style="overflow-x:auto"><table>
+        <div style="overflow-x:auto"><table class="games-table">
             <thead><tr><th>"Game"</th><th>"Mode"</th><th>"Round"</th><th>"To act"</th><th>"With"</th><th>"Deadline"</th><th></th></tr></thead>
             <tbody>{v.into_iter().map(|g| game_row(g, watch)).collect_view()}</tbody>
         </table></div>

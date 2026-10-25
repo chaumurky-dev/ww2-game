@@ -13,22 +13,25 @@ cargo check -p wartide-web --target wasm32-unknown-unknown
 cargo clippy -p wartide-web --target wasm32-unknown-unknown -- -D warnings
 ```
 
-Note: with Homebrew's `rust` shadowing rustup, put `~/.rustup/toolchains/stable-*/bin` first on `PATH`
-so the wasm target is found. If `rust-lld` aborts with a missing `libLLVM.dylib`, set
-`DYLD_FALLBACK_LIBRARY_PATH=$HOME/.rustup/toolchains/stable-x86_64-apple-darwin/lib` for the build.
+On this Mac run `source scripts/env.sh` first (rustup before Homebrew's cargo, which has no wasm target).
+
+Local full stack: `docker compose up -d postgres mailpit`, then
+`COOKIE_SECURE=false RATE_LIMIT=false BOT_ACTION_DELAY_MS=0 BASE_URL=http://localhost:8081 cargo run -p wartide-server`
+and `trunk serve` here (proxies `/api` and `/ws` to :8080; mails land in Mailpit at :8025 and their links point at :8081).
 
 ## Layout
 
 - `src/lib.rs` - `App`, router (`/`, `/verify`, `/forgot`, `/reset`, `/lobby`, `/game/:id`,
-  `/profile/:username`, `/groups`, `/groups/:slug`, `/leaderboard`, `/settings`). Protected routes
+  `/profile/:username`, `/groups`, `/groups/:slug`, `/leaderboard`, `/settings`, `/help`, `/sandbox`). Protected routes
   (lobby, game, groups, settings) are wrapped in `components/guard.rs::Protected`, which redirects to `/`
   once `GET /api/me` says "unauthenticated". `MapCtx` holds the lazily loaded map.
 - `src/api.rs` - the only place that talks to the REST backend (gloo-net, `credentials: include`, errors parsed
   into `wartide_protocol::ApiError`; callers show them with `Toasts::api_error`). Covers every endpoint in
   `crates/server/README.md`. `USE_MOCK_GAME_STATE` is the single escape hatch (see below).
 - `src/realtime.rs` - `/ws` client: reconnects with back-off while logged in, resubscribes to games, bumps
-  `lobby_tick` / `game_tick` signals (lobby list + game summary refetch), pushes chat into `chat_in`, shows
-  "Your turn" / "Match found" toasts with links.
+  `lobby_tick` / `game_tick` (coalesced to one refresh per 200 ms so fast bots do not flood the API), pushes chat
+  into `chat_in`, shows "Your turn" / "Match found" toasts (a short toast when you already look at that game,
+  a 12 s link toast otherwise; link toasts to the current page are dropped on navigation).
 - `src/state.rs` - `AuthState` (user from `/api/me`) and `Toasts`.
 - `src/model.rs` - UI helpers over protocol types (`PowerExt`, `UnitKind`, `Phase`, game title/seat helpers).
 - `src/map.rs` - loads `/assets/map_geometry.json` (`{"view_box","projection","locations":{id:{kind,path,label,
@@ -41,14 +44,23 @@ so the wasm target is found. If `rust-lld` aborts with a missing `libLLVM.dylib`
   log, dice, send backend), `screen` (`GameScreen`: top bar + board + side panel), `topbar`, `panels/*`
   (research, purchase, movement + transport load/unload, combat list with bombing/rockets, mobilize), `battle`
   (battle board + casualty / retreat / sub-withdrawal controls), `dice` (per-die hit numbers reconstructed from
-  the battle roster, animated `Die`), `log` + `logfmt_battle` (event -> text, 200 lines kept), `sandbox`, `live`.
+  the battle roster, animated `Die`), `log` + `logfmt_battle` (event -> text, 200 lines kept), `sandbox`, `live`, `replay`.
 - `/sandbox` - offline mode: `wartide_engine::apply` runs in the browser and you control all five powers
   (`/sandbox?as=ussr,uk` restricts the viewer so other powers show the "waiting" banner). It also installs
   `window.wartideSubmit(actionJson)` / `window.wartideState()` for scripted testing. `api::USE_MOCK_GAME_STATE`
   (default false) makes `/game/:id` use the same sandbox state instead of the server.
 - `src/game/live.rs` - server mode: `GET /games/{id}/state` -> `GameState`, `POST /games/{id}/actions` with a
-  serialized `Action` (errors show as toasts, UI selection is kept), refetch state + `actions?since=` on every
-  `GameUpdated` and animate the new events.
+  serialized `Action` (errors show as toasts, UI selection is kept; clicks are ignored while a request is in flight),
+  refetch state + `actions?since=` on every `GameUpdated` and animate the new events (dice, log, a 1.6 s flash on
+  the touched locations). Spectators (no seat) get the same screen with every panel read-only.
+- `src/game/replay.rs` - finished games: loads the final state (its `settings.seed` is the game seed) and the whole
+  action log, re-applies it with `wartide_engine::apply` using the server's per-action seed
+  (`FNV1a("wartide/action", seed, seq)` + splitmix64, duplicated here), checks that the replayed end state equals the
+  stored one, and drives the board with a slider / play button. Checkpoints every 25 actions keep scrubbing cheap.
+- Game screen layout: top bar, board, side panel (`sec-actions` = game info + phase panel, `sec-log`, `sec-chat`).
+  Below 800 px the side panel is a bottom sheet with tabs Board / Actions / Chat / Log (`data-mtab` on `.game`; a dot on
+  Actions means it is your move). Keyboard: Esc clears the selection, Enter presses the first `button.primary` of the
+  phase panel (not while typing). The tab title shows "(!)" while a decision is pending.
 - `src/components/board.rs` - `Board` (SVG, pan/zoom, zoom-dependent labels, unit stacks), `MapPreview`, and the
   `BoardModel` view-model. `decor` is drawn as inert grey land; sea zones alternate two blues by a hash of the id.
 - `src/components/` - nav, toasts, modal, countdown, power badge, unit icon (sprite `<use>`), chat drawer, form fields.
@@ -59,21 +71,24 @@ so the wasm target is found. If `rust-lld` aborts with a missing `libLLVM.dylib`
   truth stays in the engine / `assets/` dirs: do not edit the copies.
 - `assets/brand/` - logo, wordmark, board texture (from `assets/processed/`), `assets/favicon.png`.
 
-## Live vs mocked
+## What talks to the server
 
-Live against the server: register / login / logout / verify / forgot / reset, profile and settings, leaderboards,
-groups, game lobby (create, join, start, resign, abandon), chat, matchmaking, WebSocket notifications, and (once
-the server serves `/games/{id}/state` + engine actions) the whole game screen.
+Everything: auth, profile and settings (incl. change password, delete account, e-mail toggles), leaderboards, groups,
+lobby (My games + public "Watch" list with pagination), create dialog (name, per-seat bot persona with blurb from
+`GET /bots/personas`, all `GameSettings` options), game screen (play, spectate, replay), chat, matchmaking, WebSocket.
+`/sandbox` stays available offline (`wartide_engine::apply` in the browser, all five powers); `api::USE_MOCK_GAME_STATE`
+makes `/game/:id` use it too.
 
-Works offline in `/sandbox` (and covered by native tests: board model, log formatting, dice thresholds, a
-random-policy fuzz of the pure helpers): every phase panel, battles, transports, bombing, placement, income.
+Native tests (`cargo test -p wartide-web`): board model, log formatting, dice thresholds, replay vs. direct play, event
+locations, a random-policy fuzz of the pure helpers.
 
-Visual checks: `trunk serve`, then drive headless Chrome over CDP against `/sandbox` (screenshots in
-`docs/screenshots/sandbox-*.png`).
+Visual checks: `trunk serve`, then drive headless Chrome over CDP; screenshots are in `docs/screenshots/`
+(`sandbox-*.png` offline, `live-*.png` against the real server, `mobile-*.png` at 390 px).
 
-## Protocol gaps (TODO(protocol))
+## Known gaps / notes for other crates
 
-- `GameSummary` has no name/title (UI shows "Private game ab12"); `CreatePrivateGameRequest` has no name or bot persona.
-- No change-password endpoint for logged-in users (settings links to the reset-by-email flow).
-- Profiles have no recent-games list; no "my seat" power colours in chat messages.
-- `GameStateView`/actions/events are untyped JSON.
+- Server: `your_turn` carries no hint whether the toast is for a defender decision (casualties) or a normal turn, so the
+  toast text is generic. `GameSummary.winner` has no reason (economic / military); the in-game panel reads it from the state.
+- Engine/protocol: `GameStateView` and actions/events are still untyped JSON; the replay depends on `GameState.settings.seed`
+  being the game seed and on the seed derivation staying stable (duplicated in `game/replay.rs`).
+- Spectators get 403 on team/power chat by design; the UI only offers the all-chat to them.

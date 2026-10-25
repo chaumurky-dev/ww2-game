@@ -318,7 +318,8 @@ button.danger { background: var(--bad); }
 .seat-cfg select { flex: 1 1 8rem; min-width: 0; width: auto; }
 .seat-label { flex: 0 0 11rem; }
 @media (max-width: 800px) { .seat-cfg > .row { flex-wrap: wrap; } .seat-label { flex-basis: 100%; } }
-td { vertical-align: top; } td:nth-child(2) { white-space: nowrap; }
+td { vertical-align: top; } .games-table td:nth-child(2) { white-space: nowrap; }
 .loc.flash { animation: locflash 1.6s ease-out; }
 @keyframes locflash { 0% { filter: brightness(1.8) drop-shadow(0 0 8px #fff); } 100% { filter: none; } }
 @media (max-width: 800px) { button.small { min-height: 1.9rem; } }
+@media (max-width: 800px) { .games-table th:nth-child(2), .games-table td:nth-child(2), .games-table th:nth-child(5), .games-table td:nth-child(5) { display: none; } .games-table .pill { white-space: normal; } }
