@@ -20,6 +20,13 @@ pub struct Config {
     pub rate_limit: bool,
     /// Pause after every computer-player action (`BOT_ACTION_DELAY_MS`, default 0).
     pub bot_action_delay_ms: u64,
+    /// Number of trusted reverse proxies in front of the server (`TRUSTED_PROXY_HOPS`, default 0).
+    /// 0 = use the TCP peer address; n = take the n-th entry from the right of `X-Forwarded-For`.
+    pub trusted_proxy_hops: u8,
+    /// Extra browser origins allowed to open the WebSocket besides `BASE_URL`'s
+    /// (`ALLOWED_ORIGINS`, comma-separated). Needed when a dev server such as trunk serves the
+    /// client from another port and proxies `/ws`.
+    pub allowed_origins: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,10 +51,26 @@ fn opt(key: &str) -> Option<String> {
     env::var(key).ok().filter(|v| !v.trim().is_empty())
 }
 
+/// Production (`COOKIE_SECURE` on) must configure `SESSION_SECRET`; development falls back.
+fn resolve_session_secret(secret: Option<String>, cookie_secure: bool) -> anyhow::Result<String> {
+    match secret {
+        Some(s) => Ok(s),
+        None if cookie_secure => {
+            anyhow::bail!("SESSION_SECRET must be set when COOKIE_SECURE is true (production)")
+        }
+        None => {
+            tracing::warn!("SESSION_SECRET not set; using an insecure development default");
+            Ok("dev-insecure-session-secret".into())
+        }
+    }
+}
+
 impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
         let database_url =
             opt("DATABASE_URL").ok_or_else(|| anyhow::anyhow!("DATABASE_URL must be set"))?;
+        let cookie_secure = opt("COOKIE_SECURE").map(|v| v != "false").unwrap_or(true);
+        let session_secret = resolve_session_secret(opt("SESSION_SECRET"), cookie_secure)?;
         Ok(Self {
             port: opt("PORT").map(|p| p.parse()).transpose()?.unwrap_or(8080),
             database_url,
@@ -64,21 +87,30 @@ impl Config {
             smtp_user: opt("SMTP_USER"),
             smtp_pass: opt("SMTP_PASS"),
             smtp_from: opt("SMTP_FROM").unwrap_or_else(|| "Wartide <noreply@localhost>".into()),
-            session_secret: opt("SESSION_SECRET").unwrap_or_else(|| {
-                tracing::warn!("SESSION_SECRET not set; using an insecure development default");
-                "dev-insecure-session-secret".into()
-            }),
+            session_secret,
             web_dist_dir: opt("WEB_DIST_DIR").unwrap_or_else(|| "crates/web/dist".into()),
             default_turn_timeout_secs: opt("DEFAULT_TURN_TIMEOUT_SECS")
                 .map(|p| p.parse())
                 .transpose()?
                 .unwrap_or(172_800),
-            cookie_secure: opt("COOKIE_SECURE").map(|v| v != "false").unwrap_or(true),
+            cookie_secure,
             rate_limit: opt("RATE_LIMIT").map(|v| v != "false").unwrap_or(true),
             bot_action_delay_ms: opt("BOT_ACTION_DELAY_MS")
                 .map(|p| p.parse())
                 .transpose()?
                 .unwrap_or(0),
+            trusted_proxy_hops: opt("TRUSTED_PROXY_HOPS")
+                .map(|p| p.parse())
+                .transpose()?
+                .unwrap_or(0),
+            allowed_origins: opt("ALLOWED_ORIGINS")
+                .map(|v| {
+                    v.split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect()
+                })
+                .unwrap_or_default(),
         })
     }
 
@@ -100,6 +132,8 @@ impl Config {
             cookie_secure: false,
             rate_limit: false,
             bot_action_delay_ms: 0,
+            trusted_proxy_hops: 1,
+            allowed_origins: Vec::new(),
         }
     }
 }
@@ -114,5 +148,17 @@ mod smtp_tls_tests {
         assert_eq!(SmtpTls::parse(" STARTTLS ").unwrap(), SmtpTls::StartTls);
         assert_eq!(SmtpTls::parse("tls").unwrap(), SmtpTls::Tls);
         assert!(SmtpTls::parse("ssl3").is_err());
+    }
+}
+
+#[cfg(test)]
+mod secret_tests {
+    use super::resolve_session_secret;
+
+    #[test]
+    fn secret_required_in_production() {
+        assert!(resolve_session_secret(None, true).is_err());
+        assert_eq!(resolve_session_secret(Some("s".into()), true).unwrap(), "s");
+        assert!(resolve_session_secret(None, false).is_ok());
     }
 }

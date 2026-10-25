@@ -25,6 +25,7 @@ use sqlx::PgPool;
 use tower_http::compression::CompressionLayer;
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
 use tower_http::services::{ServeDir, ServeFile};
+use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
 
 pub use config::Config;
@@ -68,12 +69,21 @@ pub fn build_router(state: AppState) -> Router {
     let index = Path::new(&dist).join("index.html");
     // Unknown non-API paths serve the SPA shell so client-side routes work.
     let spa = ServeDir::new(&dist).fallback(ServeFile::new(index.clone()));
-    let hardening = security::Hardening::new(index);
+    let hardening = security::Hardening::new(index, state.config.cookie_secure);
 
     Router::new()
         .route("/healthz", get(healthz))
         .route("/ws", get(ws::handler))
-        .nest("/api", routes::api_router(&state))
+        .nest(
+            "/api",
+            routes::api_router(&state)
+                // 30 s per API request; at most 1024 requests in flight
+                .layer(TimeoutLayer::with_status_code(
+                    axum::http::StatusCode::REQUEST_TIMEOUT,
+                    std::time::Duration::from_secs(30),
+                ))
+                .layer(tower::limit::ConcurrencyLimitLayer::new(1024)),
+        )
         .fallback_service(spa)
         .with_state(state)
         .layer(DefaultBodyLimit::max(security::BODY_LIMIT))

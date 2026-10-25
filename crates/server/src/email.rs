@@ -24,6 +24,17 @@ pub struct Mailer {
     outbox: Option<Arc<Mutex<Vec<Email>>>>,
 }
 
+/// `bako@example.com` -> `b***@example.com`, for logs.
+pub fn mask_email(addr: &str) -> String {
+    match addr.rsplit_once('@') {
+        Some((local, domain)) => {
+            let first: String = local.chars().take(1).collect();
+            format!("{first}***@{domain}")
+        }
+        None => "***".into(),
+    }
+}
+
 impl Mailer {
     pub fn from_config(cfg: &Config) -> anyhow::Result<Self> {
         let transport = match &cfg.smtp_host {
@@ -90,7 +101,7 @@ impl Mailer {
             o.lock().unwrap().push(email.clone());
         }
         let Some(transport) = self.transport.clone() else {
-            tracing::info!(to = %email.to, subject = %email.subject, "email (not sent, no SMTP configured)");
+            tracing::info!(to = %mask_email(&email.to), subject = %email.subject, "email (not sent, no SMTP configured)");
             return;
         };
         let from = self.from.clone();
@@ -112,11 +123,26 @@ impl Mailer {
             };
             match build() {
                 Ok(msg) => match transport.send(msg).await {
-                    Ok(_) => tracing::info!(to = %email.to, subject = %email.subject, "email sent"),
-                    Err(e) => tracing::error!(error = ?e, to = %email.to, "failed to send email"),
+                    Ok(_) => {
+                        tracing::info!(to = %mask_email(&email.to), subject = %email.subject, "email sent")
+                    }
+                    Err(e) => {
+                        tracing::error!(error = ?e, to = %mask_email(&email.to), "failed to send email")
+                    }
                 },
                 Err(e) => tracing::error!(error = ?e, "failed to build email"),
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mask_email;
+
+    #[test]
+    fn masks_local_part() {
+        assert_eq!(mask_email("bako@example.com"), "b***@example.com");
+        assert_eq!(mask_email("nonsense"), "***");
     }
 }

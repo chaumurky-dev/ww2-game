@@ -50,7 +50,7 @@ pub fn build_csp(index_html: Option<&str>) -> String {
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
         "font-src 'self' https://fonts.gstatic.com data:",
         "img-src 'self' data:",
-        "connect-src 'self' ws: wss:",
+        "connect-src 'self'",
         "object-src 'none'",
         "base-uri 'self'",
         "form-action 'self'",
@@ -62,13 +62,16 @@ pub fn build_csp(index_html: Option<&str>) -> String {
 /// Computes the CSP from the served `index.html`, re-reading it when the file changes.
 pub struct Hardening {
     index: PathBuf,
+    /// Send `Strict-Transport-Security` (production: HTTPS only).
+    hsts: bool,
     cache: Mutex<Option<(Option<SystemTime>, HeaderValue)>>,
 }
 
 impl Hardening {
-    pub fn new(index: PathBuf) -> Arc<Self> {
+    pub fn new(index: PathBuf, hsts: bool) -> Arc<Self> {
         Arc::new(Self {
             index,
+            hsts,
             cache: Mutex::new(None),
         })
     }
@@ -99,11 +102,21 @@ pub async fn harden(State(h): State<Arc<Hardening>>, req: Request, next: Next) -
         header::X_CONTENT_TYPE_OPTIONS,
         HeaderValue::from_static("nosniff"),
     );
+    if h.hsts {
+        headers.insert(
+            header::STRICT_TRANSPORT_SECURITY,
+            HeaderValue::from_static("max-age=63072000; includeSubDomains"),
+        );
+    }
     if path == "/api" || path.starts_with("/api/") {
         headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     } else if path != "/ws" {
         headers.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
         headers.insert(header::CONTENT_SECURITY_POLICY, h.csp());
+        headers.insert(
+            HeaderName::from_static("cross-origin-opener-policy"),
+            HeaderValue::from_static("same-origin"),
+        );
         headers.insert(
             header::REFERRER_POLICY,
             HeaderValue::from_static("strict-origin-when-cross-origin"),
@@ -135,7 +148,7 @@ mod tests {
         assert!(c.contains("https://fonts.googleapis.com"));
         assert!(c.contains("https://fonts.gstatic.com"));
         assert!(c.contains("img-src 'self' data:"));
-        assert!(c.contains("connect-src 'self' ws: wss:"));
+        assert!(c.contains("connect-src 'self'") && !c.contains("ws:"));
         assert!(c.contains("frame-ancestors 'none'"));
         assert!(!c.contains("unsafe-eval'") || c.contains("wasm-unsafe-eval"));
     }
