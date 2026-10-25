@@ -10,6 +10,7 @@ locals {
   use_r53 = var.create_route53_zone || var.route53_zone_id != ""
   # When create_route53_zone is true the zone apex IS var.domain_name (delegated from the parent at the registrar).
   route53_zone_id = var.create_route53_zone ? aws_route53_zone.main[0].zone_id : var.route53_zone_id
+  boundary_arn    = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/wartide-boundary"
   initial_image   = var.container_image != "" ? var.container_image : "${aws_ecr_repository.app.repository_url}:latest"
 }
 
@@ -82,61 +83,118 @@ resource "aws_route_table_association" "private" {
 }
 
 # --------------------------------------------------------- Security groups
+# All rules are standalone resources (no inline rules) so the ALB <-> task <-> RDS references
+# do not form a dependency cycle. Descriptions are set so the groups are created fresh
+# (create_before_destroy) with only the rules below; the default allow-all egress is removed.
 resource "aws_security_group" "alb" {
   name_prefix = "${local.name}-alb-"
+  description = "Wartide ALB: HTTP/HTTPS from the internet, egress to tasks only"
   vpc_id      = aws_vpc.main.id
   lifecycle { create_before_destroy = true }
-
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
 }
 
 resource "aws_security_group" "ecs" {
   name_prefix = "${local.name}-ecs-"
+  description = "Wartide tasks: ingress from the ALB, restricted egress"
   vpc_id      = aws_vpc.main.id
   lifecycle { create_before_destroy = true }
-
-  ingress {
-    from_port       = 8080
-    to_port         = 8080
-    protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
-  }
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
 }
 
 resource "aws_security_group" "rds" {
   name_prefix = "${local.name}-rds-"
+  description = "Wartide RDS: Postgres from tasks only, no egress"
   vpc_id      = aws_vpc.main.id
   lifecycle { create_before_destroy = true }
+}
 
-  ingress {
-    from_port       = 5432
-    to_port         = 5432
-    protocol        = "tcp"
-    security_groups = [aws_security_group.ecs.id]
-  }
+resource "aws_vpc_security_group_ingress_rule" "alb_http" {
+  security_group_id = aws_security_group.alb.id
+  description       = "HTTP (redirects to HTTPS)"
+  ip_protocol       = "tcp"
+  from_port         = 80
+  to_port           = 80
+  cidr_ipv4         = "0.0.0.0/0"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "alb_https" {
+  security_group_id = aws_security_group.alb.id
+  description       = "HTTPS"
+  ip_protocol       = "tcp"
+  from_port         = 443
+  to_port           = 443
+  cidr_ipv4         = "0.0.0.0/0"
+}
+
+resource "aws_vpc_security_group_egress_rule" "alb_to_ecs" {
+  security_group_id            = aws_security_group.alb.id
+  description                  = "To tasks"
+  ip_protocol                  = "tcp"
+  from_port                    = 8080
+  to_port                      = 8080
+  referenced_security_group_id = aws_security_group.ecs.id
+}
+
+resource "aws_vpc_security_group_ingress_rule" "ecs_from_alb" {
+  security_group_id            = aws_security_group.ecs.id
+  description                  = "From the ALB"
+  ip_protocol                  = "tcp"
+  from_port                    = 8080
+  to_port                      = 8080
+  referenced_security_group_id = aws_security_group.alb.id
+}
+
+resource "aws_vpc_security_group_egress_rule" "ecs_https" {
+  security_group_id = aws_security_group.ecs.id
+  description       = "HTTPS: ECR, Secrets Manager, CloudWatch Logs, STS"
+  ip_protocol       = "tcp"
+  from_port         = 443
+  to_port           = 443
+  cidr_ipv4         = "0.0.0.0/0"
+}
+
+resource "aws_vpc_security_group_egress_rule" "ecs_smtp" {
+  security_group_id = aws_security_group.ecs.id
+  description       = "SES SMTP submission (STARTTLS)"
+  ip_protocol       = "tcp"
+  from_port         = 587
+  to_port           = 587
+  cidr_ipv4         = "0.0.0.0/0"
+}
+
+resource "aws_vpc_security_group_egress_rule" "ecs_to_rds" {
+  security_group_id            = aws_security_group.ecs.id
+  description                  = "Postgres"
+  ip_protocol                  = "tcp"
+  from_port                    = 5432
+  to_port                      = 5432
+  referenced_security_group_id = aws_security_group.rds.id
+}
+
+resource "aws_vpc_security_group_egress_rule" "ecs_dns_udp" {
+  security_group_id = aws_security_group.ecs.id
+  description       = "VPC DNS resolver (udp)"
+  ip_protocol       = "udp"
+  from_port         = 53
+  to_port           = 53
+  cidr_ipv4         = var.vpc_cidr
+}
+
+resource "aws_vpc_security_group_egress_rule" "ecs_dns_tcp" {
+  security_group_id = aws_security_group.ecs.id
+  description       = "VPC DNS resolver (tcp)"
+  ip_protocol       = "tcp"
+  from_port         = 53
+  to_port           = 53
+  cidr_ipv4         = var.vpc_cidr
+}
+
+resource "aws_vpc_security_group_ingress_rule" "rds_from_ecs" {
+  security_group_id            = aws_security_group.rds.id
+  description                  = "Postgres from tasks"
+  ip_protocol                  = "tcp"
+  from_port                    = 5432
+  to_port                      = 5432
+  referenced_security_group_id = aws_security_group.ecs.id
 }
 
 # -------------------------------------------------------------------- ECR
@@ -188,7 +246,7 @@ resource "aws_db_instance" "main" {
   vpc_security_group_ids = [aws_security_group.rds.id]
   publicly_accessible    = false
   multi_az               = var.db_multi_az
-  # Cheap/dev posture by default; see the variables db_* and docs/DEPLOY.md to harden.
+  # Hardened defaults (deletion protection, final snapshot, 7 day backups); see the db_* variables.
   backup_retention_period      = var.db_backup_retention_days
   deletion_protection          = var.db_deletion_protection
   skip_final_snapshot          = var.db_skip_final_snapshot
@@ -197,6 +255,13 @@ resource "aws_db_instance" "main" {
   monitoring_interval          = 0 # no enhanced monitoring
   auto_minor_version_upgrade   = true
   apply_immediately            = true
+  copy_tags_to_snapshot        = true
+
+  # Guard against accidental data loss. To destroy on purpose: remove this block, set
+  # db_deletion_protection = false, apply, then destroy (docs/DEPLOY.md).
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # ---------------------------------------------------------------- Secrets
@@ -273,7 +338,8 @@ resource "aws_route53_record" "ses_dkim" {
 }
 
 resource "aws_iam_user" "ses_smtp" {
-  name = "${local.name}-ses-smtp"
+  name                 = "${local.name}-ses-smtp"
+  permissions_boundary = local.boundary_arn
 }
 
 resource "aws_iam_user_policy" "ses_smtp" {
@@ -283,8 +349,11 @@ resource "aws_iam_user_policy" "ses_smtp" {
     Version = "2012-10-17"
     Statement = [{
       Effect   = "Allow"
-      Action   = ["ses:SendRawEmail"]
-      Resource = "*"
+      Action   = ["ses:SendRawEmail", "ses:SendEmail"]
+      Resource = [aws_ses_domain_identity.main.arn]
+      Condition = {
+        StringLike = { "ses:FromAddress" = "*@${var.domain_name}" }
+      }
     }]
   })
 }
@@ -327,13 +396,95 @@ resource "aws_acm_certificate_validation" "main" {
 }
 
 # -------------------------------------------------------------------- ALB
-# No access logs (extra S3 cost) by design.
 resource "aws_lb" "main" {
-  name               = local.name
-  load_balancer_type = "application"
-  subnets            = aws_subnet.public[*].id
-  security_groups    = [aws_security_group.alb.id]
-  idle_timeout       = 120 # WebSocket friendliness
+  name                       = local.name
+  load_balancer_type         = "application"
+  subnets                    = aws_subnet.public[*].id
+  security_groups            = [aws_security_group.alb.id]
+  idle_timeout               = 120 # WebSocket friendliness
+  drop_invalid_header_fields = true
+  # Destroy needs this set to false first (docs/DEPLOY.md).
+  enable_deletion_protection = true
+
+  access_logs {
+    bucket  = aws_s3_bucket.alb_logs.id
+    enabled = true
+  }
+
+  depends_on = [aws_s3_bucket_policy.alb_logs]
+}
+
+# ALB access logs: private, SSE-S3 (the only encryption ELB log delivery supports), 30 day expiry.
+# us-east-1 is a "legacy" ELB region, so delivery is by the regional ELB account principal.
+data "aws_elb_service_account" "main" {}
+
+resource "aws_s3_bucket" "alb_logs" {
+  bucket        = "${local.name}-alb-logs-${data.aws_caller_identity.current.account_id}"
+  force_destroy = true # logs are disposable
+}
+
+resource "aws_s3_bucket_ownership_controls" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+  rule { object_ownership = "BucketOwnerEnforced" }
+}
+
+resource "aws_s3_bucket_public_access_block" "alb_logs" {
+  bucket                  = aws_s3_bucket.alb_logs.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+  rule {
+    apply_server_side_encryption_by_default { sse_algorithm = "AES256" }
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+  rule {
+    id     = "expire-30d"
+    status = "Enabled"
+    filter {}
+    expiration { days = 30 }
+    abort_incomplete_multipart_upload { days_after_initiation = 1 }
+  }
+}
+
+data "aws_iam_policy_document" "alb_logs" {
+  statement {
+    sid       = "ElbLogDelivery"
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.alb_logs.arn}/AWSLogs/${data.aws_caller_identity.current.account_id}/*"]
+    principals {
+      type        = "AWS"
+      identifiers = [data.aws_elb_service_account.main.arn]
+    }
+  }
+  statement {
+    sid       = "DenyInsecureTransport"
+    effect    = "Deny"
+    actions   = ["s3:*"]
+    resources = [aws_s3_bucket.alb_logs.arn, "${aws_s3_bucket.alb_logs.arn}/*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "alb_logs" {
+  bucket     = aws_s3_bucket.alb_logs.id
+  policy     = data.aws_iam_policy_document.alb_logs.json
+  depends_on = [aws_s3_bucket_public_access_block.alb_logs]
 }
 
 resource "aws_lb_target_group" "app" {
@@ -423,8 +574,9 @@ data "aws_iam_policy_document" "ecs_assume" {
 }
 
 resource "aws_iam_role" "task_execution" {
-  name               = "${local.name}-task-exec"
-  assume_role_policy = data.aws_iam_policy_document.ecs_assume.json
+  name                 = "${local.name}-task-exec"
+  assume_role_policy   = data.aws_iam_policy_document.ecs_assume.json
+  permissions_boundary = local.boundary_arn
 }
 
 resource "aws_iam_role_policy_attachment" "task_execution" {
@@ -451,8 +603,9 @@ resource "aws_iam_role_policy" "task_execution_secrets" {
 }
 
 resource "aws_iam_role" "task" {
-  name               = "${local.name}-task"
-  assume_role_policy = data.aws_iam_policy_document.ecs_assume.json
+  name                 = "${local.name}-task"
+  assume_role_policy   = data.aws_iam_policy_document.ecs_assume.json
+  permissions_boundary = local.boundary_arn
 }
 
 resource "aws_ecs_task_definition" "app" {
@@ -611,7 +764,7 @@ data "aws_iam_policy_document" "deploy_assume" {
       values   = ["sts.amazonaws.com"]
     }
     condition {
-      test     = "StringLike"
+      test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
       values   = coalescelist(var.github_oidc_subjects, ["repo:${var.github_repo}:ref:refs/heads/main"])
     }
@@ -619,8 +772,9 @@ data "aws_iam_policy_document" "deploy_assume" {
 }
 
 resource "aws_iam_role" "deploy" {
-  name               = "${local.name}-github-deploy"
-  assume_role_policy = data.aws_iam_policy_document.deploy_assume.json
+  name                 = "${local.name}-github-deploy"
+  assume_role_policy   = data.aws_iam_policy_document.deploy_assume.json
+  permissions_boundary = local.boundary_arn
 }
 
 data "aws_iam_policy_document" "deploy" {
