@@ -147,6 +147,10 @@ Note: the record above predates the script's `operator-role` and `profile` subco
 - Rotate the SES SMTP key: `terraform taint aws_iam_access_key.ses_smtp`,
   `terraform apply`, force a new ECS deployment as above.
 - Scale: `task_cpu`, `task_memory`, `desired_count`, `use_fargate_spot` in `terraform.tfvars`, then apply.
+- Mail not arriving: `aws logs tail /ecs/wartide-prod --since 1h | grep email` shows the SMTP error; `aws sesv2 get-account`
+  shows sandbox/production and quota; `aws sesv2 list-suppressed-destinations` lists bounced addresses. SES on 587 needs
+  `SMTP_TLS=starttls` (the server default; `none` is only for Mailpit). Test without a real inbox by registering
+  `success@simulator.amazonses.com`.
 - Posture: Fargate Spot (about 70% cheaper; reclaim means a brief outage and dropped WebSockets), 0.25 vCPU / 512 MB,
   no NAT, no ALB logs, log retention 7 days, ECR keeps 5 images. RDS `db.t4g.micro`, gp3 20 GB, single AZ,
   1 day of backups.

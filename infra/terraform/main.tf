@@ -480,6 +480,7 @@ resource "aws_ecs_task_definition" "app" {
       { name = "WEB_DIST_DIR", value = "/app/dist" },
       { name = "SMTP_HOST", value = "email-smtp.${var.region}.amazonaws.com" },
       { name = "SMTP_PORT", value = "587" },
+      { name = "SMTP_TLS", value = "starttls" },
       { name = "SMTP_FROM", value = "Wartide <${var.ses_from_local_part}@${var.domain_name}>" },
     ]
     secrets = [
