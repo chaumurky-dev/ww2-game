@@ -7,6 +7,9 @@ pub struct Config {
     pub base_url: String,
     pub smtp_host: Option<String>,
     pub smtp_port: u16,
+    /// How the SMTP connection is secured (`SMTP_TLS`): `starttls` (default; what SES and most
+    /// relays require on port 587), `tls` (implicit TLS, port 465) or `none` (plaintext, Mailpit).
+    pub smtp_tls: SmtpTls,
     pub smtp_user: Option<String>,
     pub smtp_pass: Option<String>,
     pub smtp_from: String,
@@ -17,6 +20,24 @@ pub struct Config {
     pub rate_limit: bool,
     /// Pause after every computer-player action (`BOT_ACTION_DELAY_MS`, default 0).
     pub bot_action_delay_ms: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SmtpTls {
+    None,
+    StartTls,
+    Tls,
+}
+
+impl SmtpTls {
+    fn parse(s: &str) -> anyhow::Result<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "none" | "plain" => Ok(SmtpTls::None),
+            "starttls" => Ok(SmtpTls::StartTls),
+            "tls" | "implicit" | "wrapper" => Ok(SmtpTls::Tls),
+            other => anyhow::bail!("SMTP_TLS must be none, starttls or tls (got {other:?})"),
+        }
+    }
 }
 
 fn opt(key: &str) -> Option<String> {
@@ -36,6 +57,10 @@ impl Config {
                 .map(|p| p.parse())
                 .transpose()?
                 .unwrap_or(1025),
+            smtp_tls: opt("SMTP_TLS")
+                .map(|v| SmtpTls::parse(&v))
+                .transpose()?
+                .unwrap_or(SmtpTls::StartTls),
             smtp_user: opt("SMTP_USER"),
             smtp_pass: opt("SMTP_PASS"),
             smtp_from: opt("SMTP_FROM").unwrap_or_else(|| "Wartide <noreply@localhost>".into()),
@@ -65,6 +90,7 @@ impl Config {
             base_url: "http://localhost:8080".into(),
             smtp_host: None,
             smtp_port: 1025,
+            smtp_tls: SmtpTls::None,
             smtp_user: None,
             smtp_pass: None,
             smtp_from: "Wartide <noreply@localhost>".into(),
@@ -75,5 +101,18 @@ impl Config {
             rate_limit: false,
             bot_action_delay_ms: 0,
         }
+    }
+}
+
+#[cfg(test)]
+mod smtp_tls_tests {
+    use super::SmtpTls;
+
+    #[test]
+    fn parses_modes_and_rejects_garbage() {
+        assert_eq!(SmtpTls::parse("none").unwrap(), SmtpTls::None);
+        assert_eq!(SmtpTls::parse(" STARTTLS ").unwrap(), SmtpTls::StartTls);
+        assert_eq!(SmtpTls::parse("tls").unwrap(), SmtpTls::Tls);
+        assert!(SmtpTls::parse("ssl3").is_err());
     }
 }

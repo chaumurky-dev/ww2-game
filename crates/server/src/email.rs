@@ -4,7 +4,7 @@ use lettre::message::{Mailbox, MultiPart};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 
-use crate::config::Config;
+use crate::config::{Config, SmtpTls};
 
 #[derive(Debug, Clone)]
 pub struct Email {
@@ -15,7 +15,7 @@ pub struct Email {
     pub html: Option<String>,
 }
 
-/// Sends mail over SMTP (Mailpit locally, SES in prod). With no `SMTP_HOST` it only logs.
+/// Sends mail over SMTP (Mailpit locally, SES in prod; see `SMTP_TLS`). With no `SMTP_HOST` it only logs.
 /// An in-memory outbox can be enabled for tests.
 #[derive(Clone)]
 pub struct Mailer {
@@ -28,8 +28,16 @@ impl Mailer {
     pub fn from_config(cfg: &Config) -> anyhow::Result<Self> {
         let transport = match &cfg.smtp_host {
             Some(host) => {
-                let mut b = AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(host)
-                    .port(cfg.smtp_port);
+                let mut b = match cfg.smtp_tls {
+                    // Plaintext: only for a local catcher such as Mailpit.
+                    SmtpTls::None => AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(host),
+                    // Opportunistic upgrade after EHLO; SES on 587 rejects AUTH without it.
+                    SmtpTls::StartTls => {
+                        AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(host)?
+                    }
+                    SmtpTls::Tls => AsyncSmtpTransport::<Tokio1Executor>::relay(host)?,
+                }
+                .port(cfg.smtp_port);
                 if let (Some(u), Some(p)) = (&cfg.smtp_user, &cfg.smtp_pass) {
                     b = b.credentials(Credentials::new(u.clone(), p.clone()));
                 }
@@ -103,11 +111,10 @@ impl Mailer {
                 })
             };
             match build() {
-                Ok(msg) => {
-                    if let Err(e) = transport.send(msg).await {
-                        tracing::error!(error = ?e, to = %email.to, "failed to send email");
-                    }
-                }
+                Ok(msg) => match transport.send(msg).await {
+                    Ok(_) => tracing::info!(to = %email.to, subject = %email.subject, "email sent"),
+                    Err(e) => tracing::error!(error = ?e, to = %email.to, "failed to send email"),
+                },
                 Err(e) => tracing::error!(error = ?e, "failed to build email"),
             }
         });
