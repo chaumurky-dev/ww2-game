@@ -9,8 +9,8 @@ use leptos_router::hooks::use_navigate;
 use uuid::Uuid;
 use wartide_protocol::bots::BotPersona;
 use wartide_protocol::game::{
-    check_partition, preset_layout, CreatePrivateGameRequest, GameMode, GameSettings, SeatKind,
-    SeatSpec,
+    check_partition, preset_layout, solo_seats, CreatePrivateGameRequest, GameMode, GameSettings,
+    SeatKind, SeatSpec, Team,
 };
 
 const PRESETS: [(u32, &str); 6] = [
@@ -56,13 +56,14 @@ fn assign_from_layout(layout: &[Vec<Power>]) -> [usize; 5] {
     a
 }
 
-fn layout_of(assign: &[usize; 5], players: usize) -> Vec<Vec<Power>> {
-    (0..players).map(|i| seat_powers(assign, i)).collect()
+fn layout_of(assign: &[usize; 5], seat_count: usize) -> Vec<Vec<Power>> {
+    (0..seat_count).map(|i| seat_powers(assign, i)).collect()
 }
 
+/// The classic split for `n` human players; one human plays a whole side against the computer.
 fn preset_blurb(n: usize) -> &'static str {
     match n {
-        1 => "you play all five powers",
+        1 => "you vs the computer",
         2 => "Axis vs Allies",
         3 => "Axis / USSR / UK + USA",
         4 => "Germany / Japan / USSR / UK + USA",
@@ -148,13 +149,18 @@ fn threshold(on: RwSignal<bool>, val: RwSignal<String>, default: u32) -> Option<
 pub fn CreateGameForm(open: RwSignal<bool>) -> impl IntoView {
     let toasts = Toasts::expect();
     let navigate = use_navigate();
-    let players = RwSignal::new(5usize);
+    // Number of *human* players (1-5). With one human the host plays a whole side and every enemy
+    // power is a computer player; otherwise the classic split for that many people, with the other
+    // seats open for friends. "Custom" frees the seat count and the power split entirely.
+    let humans = RwSignal::new(1usize);
+    let side = RwSignal::new(Team::Allies);
+    let seat_count = RwSignal::new(2usize);
     let custom = RwSignal::new(false);
-    let assign = RwSignal::new(assign_from_layout(&preset_layout(5)));
+    let assign = RwSignal::new(assign_from_layout(&preset_layout(2)));
     let name = RwSignal::new(String::new());
     let seats: Vec<Seat> = (0..5)
         .map(|i| Seat {
-            kind: RwSignal::new(if i == 0 { "me" } else { "bot" }.to_string()),
+            kind: RwSignal::new(if i == 0 { "me" } else { "open" }.to_string()),
             persona: RwSignal::new(String::new()),
         })
         .collect();
@@ -175,13 +181,13 @@ pub fn CreateGameForm(open: RwSignal<bool>) -> impl IntoView {
         LocalResource::new(|| async { api::bot_personas().await.unwrap_or_default() });
     let personas = Signal::derive(move || personas_res.get().unwrap_or_default());
 
-    let layout = Memo::new(move |_| layout_of(&assign.get(), players.get()));
+    let layout = Memo::new(move |_| layout_of(&assign.get(), seat_count.get()));
     let mode = Memo::new(move |_| GameMode::derive(&layout.get()));
     // Why the current configuration cannot be created (None = fine).
     let problem = {
         let seats = seats.clone();
         Memo::new(move |_| {
-            let n = players.get();
+            let n = seat_count.get();
             if let Err(e) = check_partition(&layout.get()) {
                 return Some(e.to_string());
             }
@@ -189,13 +195,50 @@ pub fn CreateGameForm(open: RwSignal<bool>) -> impl IntoView {
             (me != 1).then(|| "Exactly one seat must be yours.".to_string())
         })
     };
-    let set_players = {
+    // Apply the classic preset for the current number of humans (and side, for one human).
+    let apply_preset = {
+        let seats = seats.clone();
+        move || {
+            custom.set(false);
+            let specs: Vec<SeatSpec> = if humans.get_untracked() == 1 {
+                solo_seats(side.get_untracked())
+            } else {
+                preset_layout(humans.get_untracked())
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, powers)| SeatSpec {
+                        powers,
+                        kind: if i == 0 {
+                            SeatKind::Host
+                        } else {
+                            SeatKind::Open
+                        },
+                        persona: None,
+                    })
+                    .collect()
+            };
+            let layout: Vec<Vec<Power>> = specs.iter().map(|s| s.powers.clone()).collect();
+            seat_count.set(specs.len());
+            assign.set(assign_from_layout(&layout));
+            for (seat, spec) in seats.iter().zip(&specs) {
+                seat.kind.set(
+                    match spec.kind {
+                        SeatKind::Host => "me",
+                        SeatKind::Open => "open",
+                        SeatKind::Bot => "bot",
+                    }
+                    .into(),
+                );
+            }
+        }
+    };
+    apply_preset();
+    // Custom split: change the number of seats, keeping exactly one "me" among the visible ones.
+    let set_seat_count = {
         let seats = seats.clone();
         move |n: usize| {
-            players.set(n);
-            custom.set(false);
-            assign.set(assign_from_layout(&preset_layout(n)));
-            // keep exactly one "me" among the visible seats
+            seat_count.set(n);
+            custom.set(true);
             if !(0..n).any(|i| seats[i].kind.get_untracked() == "me") {
                 seats[0].kind.set("me".into());
             }
@@ -216,7 +259,7 @@ pub fn CreateGameForm(open: RwSignal<bool>) -> impl IntoView {
     };
     let seats_c = seats.clone();
     let submit = move |_| {
-        let n = players.get_untracked();
+        let n = seat_count.get_untracked();
         let specs: Vec<SeatSpec> = layout
             .get_untracked()
             .into_iter()
@@ -278,7 +321,7 @@ pub fn CreateGameForm(open: RwSignal<bool>) -> impl IntoView {
     let seat_rows = {
         let seats = seats.clone();
         move || {
-            (0..players.get())
+            (0..seat_count.get())
                 .map(|i| {
                     let powers = Signal::derive(move || seat_powers(&assign.get(), i));
                     view! { <SeatRow index=i powers seat=seats[i] personas on_kind /> }
@@ -298,7 +341,7 @@ pub fn CreateGameForm(open: RwSignal<bool>) -> impl IntoView {
                             assign.update(|a| a[k] = seat);
                             custom.set(true);
                         }>
-                            {move || (0..players.get()).map(|i| view! {
+                            {move || (0..seat_count.get()).map(|i| view! {
                                 <option value=i.to_string() selected=move || assign.with(|a| a[k] == i)>{format!("seat {}", i + 1)}</option>
                             }).collect_view()}
                         </select>
@@ -307,32 +350,69 @@ pub fn CreateGameForm(open: RwSignal<bool>) -> impl IntoView {
             })
             .collect_view()
     };
+    // The <Show> below takes its own handle: its children closure captures by move.
+    let apply_preset_side = apply_preset.clone();
     view! {
         <form class="col create-form" on:submit=|ev| ev.prevent_default()>
             <TextField label="Game name (optional, up to 60 characters)" value=name placeholder="Friday night showdown" />
-            <label>"Players"
-                <select aria-label="Players" on:change:target=move |ev| set_players(ev.target().value().parse().unwrap_or(5))>
+            <label>"Human players"
+                <select aria-label="Human players" on:change:target={
+                    let apply_preset = apply_preset.clone();
+                    move |ev| {
+                        humans.set(ev.target().value().parse().unwrap_or(1));
+                        apply_preset();
+                    }
+                }>
                     {(1..=5usize).map(|n| view! {
-                        <option value=n.to_string() selected=move || players.get() == n>
+                        <option value=n.to_string() selected=move || humans.get() == n>
                             {format!("{n} player{} - {}", if n == 1 { "" } else { "s" }, preset_blurb(n))}
                         </option>
                     }).collect_view()}
                 </select>
             </label>
+            <Show when=move || humans.get() == 1>
+                <label>"Your side"
+                    <select aria-label="Your side" on:change:target={
+                        let apply_preset = apply_preset_side.clone();
+                        move |ev| {
+                            side.set(if ev.target().value() == "axis" { Team::Axis } else { Team::Allies });
+                            apply_preset();
+                        }
+                    }>
+                        <option value="allies" selected=move || side.get() == Team::Allies>"Allies - Soviet Union, United Kingdom, United States"</option>
+                        <option value="axis" selected=move || side.get() == Team::Axis>"Axis - Germany, Japan"</option>
+                    </select>
+                </label>
+                <p class="muted small-text">"Each enemy power is played by its own computer general; pick their personas below."</p>
+            </Show>
             <label>"Split of the five powers"
-                <select aria-label="Split" on:change:target=move |ev| {
-                    if ev.target().value() == "classic" {
-                        assign.set(assign_from_layout(&preset_layout(players.get_untracked())));
-                        custom.set(false);
-                    } else {
-                        custom.set(true);
+                <select aria-label="Split" on:change:target={
+                    let apply_preset = apply_preset.clone();
+                    move |ev| {
+                        if ev.target().value() == "classic" {
+                            apply_preset();
+                        } else {
+                            custom.set(true);
+                        }
                     }
                 }>
-                    <option value="classic" selected=move || !custom.get()>{move || format!("Classic: {}", preset_blurb(players.get()))}</option>
-                    <option value="custom" selected=move || custom.get()>"Custom"</option>
+                    <option value="classic" selected=move || !custom.get()>{move || format!("Classic: {}", preset_blurb(humans.get()))}</option>
+                    <option value="custom" selected=move || custom.get()>"Custom - any number of seats, any split, friends or bots in each"</option>
                 </select>
             </label>
-            <div class="power-picks">{power_pickers}</div>
+            <Show when=move || custom.get()>
+                <label>"Seats"
+                    <select aria-label="Seats" on:change:target={
+                        let set_seat_count = set_seat_count.clone();
+                        move |ev| set_seat_count(ev.target().value().parse().unwrap_or(2))
+                    }>
+                        {(1..=5usize).map(|n| view! {
+                            <option value=n.to_string() selected=move || seat_count.get() == n>{format!("{n} seat{}", if n == 1 { "" } else { "s" })}</option>
+                        }).collect_view()}
+                    </select>
+                </label>
+                <div class="power-picks">{power_pickers}</div>
+            </Show>
             <h3>"Seats"</h3>
             {seat_rows}
             <Show when=move || problem.get().is_some()>

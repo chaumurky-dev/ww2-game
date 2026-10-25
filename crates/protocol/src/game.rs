@@ -158,16 +158,52 @@ pub fn check_partition(layout: &[Vec<Power>]) -> Result<(), &'static str> {
     Ok(())
 }
 
-/// The classic suggested split for `players` seats (1-5), in seat (turn) order.
-pub fn preset_layout(players: usize) -> Vec<Vec<Power>> {
+/// The classic split of the five powers among `humans` human players (1-5), in seat (turn) order.
+/// One human plays a whole side (see [`solo_seats`]), so 1 and 2 share the Axis-vs-Allies split.
+pub fn preset_layout(humans: usize) -> Vec<Vec<Power>> {
     use Power::*;
-    match players {
-        1 => vec![vec![Ussr, Germany, Uk, Japan, Usa]],
-        2 => vec![vec![Germany, Japan], vec![Ussr, Uk, Usa]],
+    match humans {
+        0..=2 => vec![vec![Germany, Japan], vec![Ussr, Uk, Usa]],
         3 => vec![vec![Germany, Japan], vec![Ussr], vec![Uk, Usa]],
         4 => vec![vec![Germany], vec![Japan], vec![Ussr], vec![Uk, Usa]],
         _ => Power::ALL.iter().map(|p| vec![*p]).collect(),
     }
+}
+
+/// Seats for a one-human game: the host plays every power of `side`, and each enemy power gets its
+/// own computer player (so the opposing side has several personas talking). Seats are in turn
+/// order of their first power. Personas are left to the server defaults.
+pub fn solo_seats(side: Team) -> Vec<SeatSpec> {
+    let mine: Vec<Power> = Power::ALL
+        .into_iter()
+        .filter(|p| p.team() == side)
+        .collect();
+    let mut seats: Vec<SeatSpec> = Power::ALL
+        .into_iter()
+        .filter(|p| p.team() != side)
+        .map(|p| SeatSpec {
+            powers: vec![p],
+            kind: SeatKind::Bot,
+            persona: None,
+        })
+        .collect();
+    let host = SeatSpec {
+        powers: mine,
+        kind: SeatKind::Host,
+        persona: None,
+    };
+    let first = |s: &SeatSpec| {
+        Power::ALL
+            .iter()
+            .position(|p| *p == s.powers[0])
+            .unwrap_or(0)
+    };
+    let at = seats
+        .iter()
+        .position(|s| first(s) > first(&host))
+        .unwrap_or(seats.len());
+    seats.insert(at, host);
+    seats
 }
 
 /// Per-game options. Mirrors `wartide_engine::GameSettings` (plus the turn timeout); every field
@@ -417,9 +453,29 @@ mod tests {
     fn mode_derivation_and_presets() {
         for n in 1..=5 {
             let l = preset_layout(n);
-            assert_eq!(l.len(), n);
+            assert_eq!(l.len(), n.max(2), "{n} humans");
             assert!(check_partition(&l).is_ok());
         }
+        for side in [Team::Axis, Team::Allies] {
+            let seats = solo_seats(side);
+            let layout: Vec<Vec<Power>> = seats.iter().map(|s| s.powers.clone()).collect();
+            assert!(check_partition(&layout).is_ok());
+            assert_eq!(seats.iter().filter(|s| s.kind == SeatKind::Host).count(), 1);
+            let host = seats.iter().find(|s| s.kind == SeatKind::Host).unwrap();
+            assert!(host.powers.iter().all(|p| p.team() == side));
+            assert!(seats
+                .iter()
+                .filter(|s| s.kind == SeatKind::Bot)
+                .all(|s| s.powers.len() == 1));
+            // seats are in turn order of their first power
+            let firsts: Vec<usize> = layout
+                .iter()
+                .map(|ps| Power::ALL.iter().position(|p| p == &ps[0]).unwrap())
+                .collect();
+            assert!(firsts.windows(2).all(|w| w[0] < w[1]), "{firsts:?}");
+        }
+        assert_eq!(solo_seats(Team::Allies).len(), 3);
+        assert_eq!(solo_seats(Team::Axis).len(), 4);
         assert_eq!(GameMode::derive(&preset_layout(2)), GameMode::TwoPlayer);
         assert_eq!(GameMode::derive(&preset_layout(3)), GameMode::Custom);
         assert_eq!(GameMode::derive(&preset_layout(5)), GameMode::FivePlayer);
