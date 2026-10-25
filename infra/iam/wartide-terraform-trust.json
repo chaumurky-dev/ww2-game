@@ -1,0 +1,11 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AdminPrincipalOnly",
+      "Effect": "Allow",
+      "Principal": { "AWS": "__ADMIN_PRINCIPAL_ARN__" },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}

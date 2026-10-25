@@ -1,20 +1,20 @@
 # IAM for operating Wartide
 
-`wartide-terraform-policy.json` is the least-privilege policy for the `wartide-terraform` role that the
-`wartide` AWS CLI profile assumes to run Terraform. It allows: regional (us-east-1) management of the
-infrastructure services Terraform uses, Route53 zone/record changes, Secrets Manager only for
-`wartide-*` secrets, IAM only for `wartide-*` roles/users/policies plus the service-linked roles AWS
-creates on first use, and the Terraform state bucket. It explicitly denies changing the
-`wartide-terraform` role itself and attaching `AdministratorAccess` to anything.
+- `wartide-terraform-policy.json`: least-privilege policy for the `wartide-terraform` role that the `wartide`
+  AWS CLI profile assumes to run Terraform. Allows regional (us-east-1) management of the services Terraform uses,
+  Route53, Secrets Manager only for `wartide-*` secrets, IAM only for `wartide-*` roles/users/policies plus
+  service-linked roles, and the state bucket. Explicitly denies changing the `wartide-terraform` role itself and
+  attaching `AdministratorAccess` to anything.
+- `wartide-terraform-trust.json`: trust policy template; `__ADMIN_PRINCIPAL_ARN__` is substituted by the script
+  (only that principal may assume the role).
 
-Apply or update it (as an admin, not via the role):
+Create or update everything with the script (run as an admin profile, not via the role; idempotent, prints each
+AWS command, publishes a new policy version only when the JSON changed and keeps at most 4 versions):
+
 ```sh
-aws iam create-policy --policy-name wartide-terraform \
-  --policy-document file://infra/iam/wartide-terraform-policy.json        # first time
-aws iam create-policy-version --policy-arn arn:aws:iam::243963726301:policy/wartide-terraform \
-  --policy-document file://infra/iam/wartide-terraform-policy.json --set-as-default   # updates
-aws iam attach-role-policy --role-name wartide-terraform --policy-arn arn:aws:iam::243963726301:policy/wartide-terraform
-aws iam detach-role-policy --role-name wartide-terraform --policy-arn arn:aws:iam::aws:policy/AdministratorAccess
+AWS_PROFILE=default ADMIN_PRINCIPAL_ARN=arn:aws:iam::<acct>:user/<admin> scripts/aws-bootstrap.sh operator-role
+scripts/aws-bootstrap.sh profile default us-east-1     # writes the `wartide` CLI profile
 ```
-The GitHub Actions deploy role (`wartide-prod-deploy`, created by Terraform) is separately scoped to
-ECR push and ECS deploy for this one service.
+
+See `docs/DEPLOY.md` for the full runbook. The GitHub Actions deploy role (`wartide-prod-deploy`, created by
+Terraform) is separately scoped to ECR push and ECS deploy for this one service.
