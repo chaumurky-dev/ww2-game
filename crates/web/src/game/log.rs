@@ -8,14 +8,45 @@ use wartide_engine::event::DiceContext;
 use wartide_engine::units::UnitRef;
 use wartide_engine::{Event, LocationId, Power};
 
-/// Maximum number of lines kept.
-pub const MAX_LINES: usize = 200;
+pub use super::logfmt_battle::BattleAcc;
+
+/// Maximum number of lines kept per [`LogLevel`] (summary and detail are capped separately,
+/// so a long detailed stream never evicts the summary).
+pub const MAX_LINES_PER_LEVEL: usize = 300;
+
+/// How much a log line matters: `Summary` lines are shown in both views, `Detail` only in the
+/// detailed view.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LogLevel {
+    Summary,
+    Detail,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct LogLine {
     pub round: u32,
     pub power: Option<UiPower>,
     pub text: String,
+    pub level: LogLevel,
+}
+
+/// Default classification of an event (synthesized battle lines are always `Summary`).
+fn level_of(e: &Event) -> LogLevel {
+    match e {
+        Event::DiceRolled { .. }
+        | Event::HitsScored { .. }
+        | Event::BattleRound { .. }
+        | Event::CasualtiesRemoved { .. }
+        | Event::Bombardment { .. }
+        | Event::SubsWithdrew { .. }
+        | Event::UnitsMoved { .. }
+        | Event::UnitsLoaded { .. }
+        | Event::UnitsUnloaded { .. }
+        | Event::AircraftLanded { .. }
+        | Event::AaFire { .. }
+        | Event::ResearchBought { .. } => LogLevel::Detail,
+        _ => LogLevel::Summary,
+    }
 }
 
 pub(super) fn refs(v: &[UnitRef]) -> String {
@@ -52,12 +83,19 @@ fn l(x: LocationId) -> &'static str {
 }
 
 /// Format a batch of events; `round` is the round in force before the batch.
-pub fn format_events(events: &[Event], mut round: u32) -> Vec<LogLine> {
+///
+/// `acc` is owned by the caller and must be passed to every call for the same game stream:
+/// a battle's events may be split across several batches (one per action), and the acc carries
+/// the in-flight battle (participants, aggregated losses) between them so the synthesized
+/// "attacks" / "outcome" summary lines are right. Use a fresh `BattleAcc` after a state reset.
+pub fn format_events(events: &[Event], mut round: u32, acc: &mut BattleAcc) -> Vec<LogLine> {
     let mut out: Vec<LogLine> = vec![];
     let mut i = 0;
     while i < events.len() {
         let mut who: Option<Power> = None;
         let mut text: Option<String> = None;
+        let mut level = level_of(&events[i]);
+        acc.observe(&events[i]);
         match &events[i] {
             Event::TurnStarted { round: r, power } => {
                 round = *r;
@@ -200,6 +238,10 @@ pub fn format_events(events: &[Event], mut round: u32) -> Vec<LogLine> {
                 liberated,
             } => {
                 who = Some(*power);
+                // The battle outcome line already says "takes"/"liberates"; keep this as detail.
+                if acc.in_battle(*location) {
+                    level = LogLevel::Detail;
+                }
                 let src = from
                     .map(|f| format!(" from {}", f.name()))
                     .unwrap_or_default();
@@ -228,14 +270,26 @@ pub fn format_events(events: &[Event], mut round: u32) -> Vec<LogLine> {
                 let n: Vec<&str> = locations.iter().map(|x| l(*x)).collect();
                 text = Some(format!("{} regains {}", power.name(), n.join(", ")));
             }
-            e @ (Event::BattleStarted { .. }
-            | Event::BattleRound { .. }
+            Event::BattleStarted { .. } | Event::BattleEnded { .. } => {
+                // Detailed view keeps the original verbose line; summary gets the synthesized one.
+                battle_arm(&events[i], &mut who, &mut text);
+                if let Some(t) = text.take() {
+                    out.push(LogLine {
+                        round,
+                        power: who.map(ui_power),
+                        text: t,
+                        level: LogLevel::Detail,
+                    });
+                }
+                text = acc.summary_line(&events[i]);
+                level = LogLevel::Summary;
+            }
+            e @ (Event::BattleRound { .. }
             | Event::HitsScored { .. }
             | Event::CasualtiesRemoved { .. }
             | Event::Bombardment { .. }
             | Event::Retreated { .. }
             | Event::SubsWithdrew { .. }
-            | Event::BattleEnded { .. }
             | Event::AssaultCancelled { .. }
             | Event::StrategicBombing { .. }
             | Event::RocketFired { .. }) => battle_arm(e, &mut who, &mut text),
@@ -287,6 +341,7 @@ pub fn format_events(events: &[Event], mut round: u32) -> Vec<LogLine> {
                 round,
                 power: who.map(ui_power),
                 text,
+                level,
             });
         }
         i += 1;
@@ -294,29 +349,73 @@ pub fn format_events(events: &[Event], mut round: u32) -> Vec<LogLine> {
     out
 }
 
-/// Append lines, keeping only the most recent [`MAX_LINES`].
+/// Append lines, keeping the most recent [`MAX_LINES_PER_LEVEL`] of each level (order preserved).
 pub fn push_lines(v: &mut Vec<LogLine>, new: Vec<LogLine>) {
     v.extend(new);
-    if v.len() > MAX_LINES {
-        let cut = v.len() - MAX_LINES;
-        v.drain(..cut);
+    for lvl in [LogLevel::Summary, LogLevel::Detail] {
+        let n = v.iter().filter(|x| x.level == lvl).count();
+        if n > MAX_LINES_PER_LEVEL {
+            let mut skip = n - MAX_LINES_PER_LEVEL;
+            v.retain(|x| {
+                if x.level == lvl && skip > 0 {
+                    skip -= 1;
+                    false
+                } else {
+                    true
+                }
+            });
+        }
     }
+}
+
+const LEVEL_KEY: &str = "wt_log_level";
+
+fn load_level() -> LogLevel {
+    match crate::state::store_get(LEVEL_KEY).as_deref() {
+        Some("detail") => LogLevel::Detail,
+        _ => LogLevel::Summary,
+    }
+}
+
+/// Lines visible at `level` (the summary view hides detail lines).
+pub fn visible(lines: &[LogLine], level: LogLevel) -> Vec<&LogLine> {
+    lines
+        .iter()
+        .filter(|l| level == LogLevel::Detail || l.level == LogLevel::Summary)
+        .collect()
 }
 
 #[component]
 pub fn ActionLog(entries: RwSignal<Vec<LogLine>>) -> impl IntoView {
     let open = RwSignal::new(false);
+    let level = RwSignal::new(load_level());
+    let pick = move |l: LogLevel| {
+        level.set(l);
+        let v = if l == LogLevel::Detail {
+            "detail"
+        } else {
+            "summary"
+        };
+        crate::state::store_set(LEVEL_KEY, Some(v));
+    };
     view! {
         <div class="actionlog">
             <div class="row">
                 <h3 class="grow" style="margin:0">"Log"</h3>
+                <div class="tabs loglevel">
+                    <span class="tab" class:on=move || level.get() == LogLevel::Summary
+                        on:click=move |_| pick(LogLevel::Summary)>"Summary"</span>
+                    <span class="tab" class:on=move || level.get() == LogLevel::Detail
+                        on:click=move |_| pick(LogLevel::Detail)>"Detailed"</span>
+                </div>
                 <button class="secondary small" on:click=move |_| open.update(|o| *o = !*o)>
                     {move || if open.get() { "Collapse" } else { "Expand" }}
                 </button>
             </div>
             <div class="log" class:expanded=move || open.get()>
                 {move || {
-                    let v = entries.get();
+                    let all = entries.get();
+                    let v: Vec<LogLine> = visible(&all, level.get()).into_iter().cloned().collect();
                     if v.is_empty() {
                         return view! { <div class="muted">"Nothing has happened yet."</div> }.into_any();
                     }

@@ -13,6 +13,7 @@ fn ui_helpers_survive_random_games() {
     for game_seed in 0..3u64 {
         let mut st = GameState::new(GameSettings::default());
         let mut pol = RandomPolicy::new(game_seed + 100);
+        let mut acc = super::log::BattleAcc::default();
         for n in 0..1200u64 {
             let before = st.clone();
             let Some((p, a)) = pol.next_action(&st) else {
@@ -21,7 +22,7 @@ fn ui_helpers_survive_random_games() {
             let Ok(ev) = apply(&mut st, p, &a, game_seed * 10_000 + n) else {
                 continue;
             };
-            let _ = format_events(&ev, before.round);
+            let _ = format_events(&ev, before.round, &mut acc);
             let _ = dice_shows(&before, &st, &ev, 0);
             let _ = board_model(&st, &Overlay::default());
             match pending_decision(&st) {
