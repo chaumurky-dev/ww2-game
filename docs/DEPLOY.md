@@ -27,8 +27,8 @@ just app-down                     # stop the app, leave Postgres/Mailpit running
 
 The compose `app` service sets `COOKIE_SECURE=false` (the server defaults to secure cookies, which browsers
 drop over plain http), `SMTP_HOST=mailpit` and `DATABASE_URL` pointing at the `postgres` service.
-The image is multi-stage: `rust:1-bookworm` builds the server and the SPA (trunk, with apt `binaryen` for
-wasm-opt); the runtime stage is `debian:bookworm-slim`, runs as uid 10001 (non-root) and serves the SPA from
+The image is multi-stage: `rust:1-bookworm` builds the server and the SPA (trunk downloads the wasm-opt release
+pinned in `crates/web/Trunk.toml`; never use the distro `binaryen` package, see that file); the runtime stage is `debian:bookworm-slim`, runs as uid 10001 (non-root) and serves the SPA from
 `/app/dist`. Image: about 118 MB of layers
 (debian-slim 85 MB, ca-certificates 10 MB, server binary 18 MB, SPA 6 MB; `docker images` may show a larger
 number on colima because of the containerd image store). Cold build about 12 min on an x86_64 colima VM, about

@@ -62,8 +62,7 @@ jobs:
           curl -fsSL "https://github.com/trunk-rs/trunk/releases/download/v${TRUNK_VERSION}/trunk-x86_64-unknown-linux-gnu.tar.gz" \
             | sudo tar -xz -C /usr/local/bin trunk
           trunk --version
-      - name: Install binaryen (wasm-opt)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends binaryen
+      # wasm-opt is downloaded by trunk at the version pinned in crates/web/Trunk.toml
       - run: cd crates/web && trunk build --release
       - uses: actions/upload-artifact@v4
         with:
