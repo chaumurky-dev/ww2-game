@@ -12,7 +12,7 @@ cargo test -p wartide-server  # DB tests run only when DATABASE_URL is set (othe
 ```
 
 Config (env / `.env`): `PORT` (8080), `DATABASE_URL`, `BASE_URL`, `SMTP_HOST/PORT/USER/PASS/FROM`
-(no `SMTP_HOST` = emails are only logged), `SESSION_SECRET`, `WEB_DIST_DIR` (`crates/web/dist`),
+(no `SMTP_HOST` = emails are only logged), `SMTP_TLS` (`starttls` default, `tls`, or `none` for Mailpit), `SESSION_SECRET`, `WEB_DIST_DIR` (`crates/web/dist`),
 `DEFAULT_TURN_TIMEOUT_SECS`, `COOKIE_SECURE` (default true), `RATE_LIMIT` (default true),
 `BOT_ACTION_DELAY_MS` (default 0; pause after every computer-player action so bot turns are watchable).
 
