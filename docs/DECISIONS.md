@@ -59,3 +59,15 @@
   USSR with bot allies) is reached through the "Custom" split, which frees the seat count and the
   power split. `preset_layout(1)` therefore equals `preset_layout(2)`, and `solo_seats(side)` builds
   the one-human layout.
+- 2026-10-25 (product): While one player takes their turn, nobody else has anything to do. Whenever the
+  engine asks a *defending* power to choose casualties or to withdraw submarines, the server answers for
+  a human seat at once (`Actor::Auto`, driven by `bots::run_pass`) from two per-user settings, and the
+  defender gets no deadline and no "your turn" mail for it. Bot seats and timeout takeovers keep their
+  own code path. `casualty_policy` (default `cheapest_first`) orders who dies, ties broken by unit id:
+  `cheapest_first` = lowest IPC cost, then lowest defence; `keep_best_defenders` = lowest defence, then
+  lowest cost (bombers and transports before infantry, fighters last); `protect_aircraft` = cheapest
+  first with every aircraft after every non-aircraft; `keep_counterattack` = infantry first, then other
+  units by cost, armor and aircraft last. Submarine hits are always assigned to non-aircraft first, as
+  the rules require. `sub_withdrawal` (default `when_outgunned`): `never` stays, `always` withdraws to
+  the first legal zone, `when_outgunned` uses the AI's odds heuristic. The ruleset has no two-hit
+  battleship, so there is no free "first hit" to prefer. Attackers still choose their own casualties.

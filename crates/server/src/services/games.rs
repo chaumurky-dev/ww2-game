@@ -827,6 +827,9 @@ pub enum Actor {
     Human(i32),
     /// The server plays the pending power (computer player or timeout takeover).
     Bot,
+    /// The server resolves a defender decision for a human seat from that player's battle
+    /// preferences (no seat ownership check; never starts a clock or notifies).
+    Auto,
 }
 
 /// Result of one applied action.
@@ -961,11 +964,17 @@ pub async fn apply_locked(
     if let (Some(next), true) = (after.power, after.power != before.power) {
         let next_seat = seat_for_power(&seats, next);
         let bot = next_seat.is_some_and(|s| s.is_bot);
-        let settings: GameSettings =
-            serde_json::from_value(game.settings.clone()).unwrap_or_default();
-        set_deadline(&mut tx, id, settings.turn_timeout_secs, bot).await?;
-        notify = !bot;
-        notify_email = notify && next_seat.map(|s| s.seat) != Some(power_seat.seat);
+        // A human's defender decision is resolved by the driver within moments: no clock and no
+        // "your turn" mail. Handing control back after one keeps the turn owner's running clock.
+        let human_defender_next = after.defender && !bot;
+        let human_defender_done = before.defender && !power_seat.is_bot;
+        if !human_defender_next && !human_defender_done {
+            let settings: GameSettings =
+                serde_json::from_value(game.settings.clone()).unwrap_or_default();
+            set_deadline(&mut tx, id, settings.turn_timeout_secs, bot).await?;
+            notify = !bot;
+            notify_email = notify && next_seat.map(|s| s.seat) != Some(power_seat.seat);
+        }
     }
     tx.commit().await?;
 

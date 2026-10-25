@@ -51,6 +51,12 @@ impl TurnTimeoutHandler for DefaultTimeoutHandler {
             };
             if seat.is_bot {
                 None // bot turn that is simply due
+            } else if g.pending_power != g.current_power {
+                // A defender decision the driver resolves automatically (never asked of the human;
+                // only reachable after a restart). No penalty: just restart the driver. The turn
+                // owner's clock is left as it is, so their own timeout is judged on the next sweep.
+                tracing::info!(game = %id, power = power.as_str(), "resuming automatic defender decision");
+                None
             } else {
                 tracing::info!(game = %id, power = power.as_str(), "turn timed out");
                 let missed: i32 = sqlx::query_scalar(

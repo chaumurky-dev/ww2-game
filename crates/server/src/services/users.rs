@@ -204,15 +204,23 @@ pub fn valid_timezone(tz: &str) -> bool {
 }
 
 pub async fn get_settings(state: &AppState, user_id: Uuid) -> AppResult<UserSettings> {
-    let (n, m): (bool, bool) =
-        sqlx::query_as("SELECT email_turn_notifications, email_match_found FROM users WHERE id=$1")
-            .bind(user_id)
-            .fetch_one(&state.db)
-            .await?;
+    let (n, m, cp, sw): (bool, bool, String, String) = sqlx::query_as(
+        "SELECT email_turn_notifications, email_match_found, casualty_policy, sub_withdrawal FROM users WHERE id=$1",
+    )
+    .bind(user_id)
+    .fetch_one(&state.db)
+    .await?;
     Ok(UserSettings {
         email_turn_notifications: n,
         email_match_found: m,
+        casualty_policy: parse_policy(&cp),
+        sub_withdrawal: parse_policy(&sw),
     })
+}
+
+/// Stored policy id; an unrecognised value (never written by this code) falls back to the default.
+fn parse_policy<T: serde::de::DeserializeOwned + Default>(s: &str) -> T {
+    serde_json::from_value(serde_json::Value::String(s.to_string())).unwrap_or_default()
 }
 
 pub async fn update_settings(
@@ -231,6 +239,20 @@ pub async fn update_settings(
         sqlx::query("UPDATE users SET email_match_found=$2 WHERE id=$1")
             .bind(user_id)
             .bind(m)
+            .execute(&state.db)
+            .await?;
+    }
+    if let Some(p) = req.casualty_policy {
+        sqlx::query("UPDATE users SET casualty_policy=$2 WHERE id=$1")
+            .bind(user_id)
+            .bind(p.id())
+            .execute(&state.db)
+            .await?;
+    }
+    if let Some(p) = req.sub_withdrawal {
+        sqlx::query("UPDATE users SET sub_withdrawal=$2 WHERE id=$1")
+            .bind(user_id)
+            .bind(p.id())
             .execute(&state.db)
             .await?;
     }

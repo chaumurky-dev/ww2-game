@@ -79,7 +79,7 @@ pub fn Help() -> impl IntoView {
                 <h2>"Combat basics"</h2>
                 <ul>
                     <li>"Both sides roll one die per unit at the same time. Rolls at or under the unit's number are hits."</li>
-                    <li>"Each hit removes one unit of the opponent's choice. You pick your own casualties; the panel pre-selects a sensible default. Defenders get asked too, even on a bot's turn."</li>
+                    <li>"Each hit removes one unit of the opponent's choice. When you attack you pick your own casualties; the panel pre-selects a sensible default. When you defend, nobody waits for you: the server removes your casualties and decides your submarine withdrawals automatically, following the preferences under Settings \u{2192} Battles."</li>
                     <li>"Casualties are removed after both sides have rolled, so a unit that dies still fires in that round (submarine first strikes and anti-aircraft fire are the exceptions)."</li>
                     <li>"After every round the attacker may press on or retreat. Amphibious landings cannot retreat."</li>
                     <li>"When the last defender is gone and a land unit survives, the attacker takes the territory and its income."</li>

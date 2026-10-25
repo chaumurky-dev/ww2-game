@@ -1,7 +1,7 @@
 //! Shared game-screen context: engine state, UI selection, log, dice and the send backend.
 use super::conv::ui_power;
 use super::dice::{dice_shows, DiceShow};
-use super::log::{format_events, push_lines, LogLine};
+use super::log::{format_events, push_lines, BattleAcc, LogLine};
 use super::moves::{group_reach, movable_locations};
 use leptos::prelude::*;
 use wartide_engine::query::Reach;
@@ -61,8 +61,12 @@ pub struct GameCtx {
     pub sel: RwSignal<Sel>,
     pub dice: RwSignal<Vec<DiceShow>>,
     pub log: RwSignal<Vec<LogLine>>,
+    /// In-flight battle accumulator for the log (see `format_events`).
+    pub battles: StoredValue<BattleAcc>,
     pub income: RwSignal<Option<IncomeNote>>,
     pub busy: RwSignal<bool>,
+    /// Online games: the server resolves defenders' casualties and submarine withdrawals.
+    pub auto_defense: bool,
     /// Locations to flash on the board after new events (cleared after ~1.6 s).
     pub flash: RwSignal<Vec<LocationId>>,
     /// Destinations of the picked units (movement phases).
@@ -101,8 +105,10 @@ impl GameCtx {
             sel,
             dice: RwSignal::new(vec![]),
             log: RwSignal::new(vec![]),
+            battles: StoredValue::new(BattleAcc::default()),
             income: RwSignal::new(None),
             busy: RwSignal::new(false),
+            auto_defense: false,
             flash: RwSignal::new(vec![]),
             reach,
             movable,
@@ -165,7 +171,10 @@ impl GameCtx {
 
     /// Record the result of applied actions: log lines, dice, income note, new state.
     pub fn ingest(&self, before: &GameState, after: GameState, events: &[Event], animate: bool) {
-        let lines = format_events(events, before.round);
+        let lines = self
+            .battles
+            .try_update_value(|a| format_events(events, before.round, a))
+            .unwrap_or_default();
         self.log.update(|v| push_lines(v, lines));
         let base = self.counter.get_value();
         self.counter.set_value(base + events.len() as u64 + 1);

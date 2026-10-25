@@ -8,10 +8,11 @@ use wartide_engine as engine;
 use wartide_protocol::bots::{BotPersona, PersonaStyle, PersonaVerbosity};
 use wartide_protocol::chat::ChatChannel;
 use wartide_protocol::game::Power;
+use wartide_protocol::user::UserSettings;
 
 use crate::error::{AppError, AppResult};
 use crate::services::games::{self, Actor, SeatRow};
-use crate::services::{chat, rules};
+use crate::services::{chat, rules, users};
 use crate::state::{AppState, DriverSlot};
 
 type Row = (
@@ -127,6 +128,19 @@ const BOT_ATTEMPTS: u32 = 3;
 /// Rejected random-policy actions before falling back to `EndPhase` / `Concede`.
 const RANDOM_ATTEMPTS: u32 = 20;
 
+/// Start a driver for every game in progress. Called once at startup so games interrupted by a
+/// restart (a bot mid-turn, or a defender decision awaiting automatic resolution) resume at once
+/// instead of waiting for a deadline to expire. Cheap: a pass with nothing to do returns quickly.
+pub async fn resume_all(state: &AppState) -> AppResult<usize> {
+    let ids: Vec<(Uuid,)> = sqlx::query_as("SELECT id FROM games WHERE status='in_progress'")
+        .fetch_all(&state.db)
+        .await?;
+    for (id,) in &ids {
+        spawn_driver(state, *id, None);
+    }
+    Ok(ids.len())
+}
+
 /// Make sure a task is playing every bot-controlled decision of `game`. Cheap and idempotent: if a
 /// task is already running it is asked to look again when it finishes. `takeover` additionally
 /// makes the task play that (human, timed-out) power until the engine moves on to another power.
@@ -221,6 +235,34 @@ async fn run_pass(
             takeover = None;
         }
         let seats = games::load_seats(state, game).await?;
+        // Defenders never wait on a human: resolve their decisions from their battle preferences.
+        if pending.defender && !server_plays(&seats, power, takeover) {
+            let seat = games::seat_for_power(&seats, power).expect("seat for power");
+            let settings = match seat.user_id {
+                Some(uid) => users::get_settings(state, uid).await?,
+                None => Default::default(),
+            };
+            let Some(action) = defender_action(&gs, &settings, g.seed, seq) else {
+                return Ok(takeover);
+            };
+            let value = rules::to_json(&action)?;
+            let res = {
+                let _guard = state.runtime.lock(game).await;
+                games::apply_locked(state, game, Actor::Auto, value, Some(seq)).await
+            };
+            match res {
+                Ok(_) => applied += 1,
+                Err(AppError::Conflict("stale_state", _)) => {}
+                Err(AppError::BadRequest("illegal_action", msg)) => {
+                    // Should be unreachable (the policy always yields a legal selection); never
+                    // leave the game stuck behind a human who is not being asked.
+                    tracing::error!(%game, ?power, %msg, "automatic defender action rejected");
+                    return Ok(takeover);
+                }
+                Err(e) => return Err(e),
+            }
+            continue;
+        }
         if !server_plays(&seats, power, takeover) {
             return Ok(takeover);
         }
@@ -304,6 +346,50 @@ async fn run_pass(
         if delay > 0 {
             tokio::time::sleep(Duration::from_millis(delay)).await;
         }
+    }
+}
+
+/// The action that resolves the pending defender decision under the player's battle preferences.
+fn defender_action(
+    gs: &engine::GameState,
+    settings: &UserSettings,
+    game_seed: i64,
+    seq: i64,
+) -> Option<engine::Action> {
+    use engine::casualty_policy::{choose_casualties, SubWithdrawalPolicy};
+    match engine::pending_decision(gs) {
+        engine::Decision::SelectCasualties {
+            hits,
+            sub_hits,
+            eligible,
+            ..
+        } => Some(engine::Action::SelectCasualties {
+            units: choose_casualties(gs, settings.casualty_policy, hits, sub_hits, &eligible),
+        }),
+        engine::Decision::SubWithdrawal { power, subs, .. } => {
+            let stay = engine::Action::WithdrawSubs {
+                subs: vec![],
+                to: None,
+            };
+            let to = engine::battle::defender_withdraw_options(gs, power)
+                .first()
+                .copied();
+            Some(match (settings.sub_withdrawal, to) {
+                (SubWithdrawalPolicy::Never, _) | (_, None) => stay,
+                (SubWithdrawalPolicy::Always, Some(to)) => {
+                    engine::Action::WithdrawSubs { subs, to: Some(to) }
+                }
+                (SubWithdrawalPolicy::WhenOutgunned, Some(_)) => {
+                    wartide_ai::battle::sub_withdrawal(
+                        gs,
+                        power,
+                        &subs,
+                        rules::fallback_seed(game_seed, seq, 0),
+                    )
+                }
+            })
+        }
+        _ => None,
     }
 }
 

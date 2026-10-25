@@ -7,6 +7,7 @@ pub mod apply;
 pub mod battle;
 pub mod bombing;
 pub mod casualties;
+pub mod casualty_policy;
 pub mod choices;
 pub mod combat;
 pub mod decision;

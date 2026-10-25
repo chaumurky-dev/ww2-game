@@ -67,7 +67,12 @@ impl Sync {
             events.extend(parse_events(e.events));
         }
         if first {
-            let lines = format_events(&events, st.round);
+            self.ctx.battles.set_value(Default::default());
+            let lines = self
+                .ctx
+                .battles
+                .try_update_value(|a| format_events(&events, st.round, a))
+                .unwrap_or_default();
             self.ctx.log.update(|v| push_lines(v, lines));
             self.ctx.reset_state(st);
             self.loaded.set(true);
@@ -99,7 +104,8 @@ pub fn LiveGame(
                 .unwrap_or_default()
         })
     });
-    let ctx = GameCtx::new(GameState::new(GameSettings::default()), viewer);
+    let mut ctx = GameCtx::new(GameState::new(GameSettings::default()), viewer);
+    ctx.auto_defense = true;
     provide_context(ctx);
     let sync = Sync {
         ctx,
