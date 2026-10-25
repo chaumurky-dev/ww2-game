@@ -82,14 +82,91 @@ pub enum GameMode {
     TwoPlayer,
     /// One human (or bot) per power.
     FivePlayer,
+    /// Any other private seat layout (1-5 seats, powers freely partitioned). Never rated.
+    Custom,
 }
 
 impl GameMode {
+    /// Seats of the fixed layouts; `0` for `Custom` (the layout is stored per game).
     pub fn seat_count(self) -> usize {
         match self {
             GameMode::TwoPlayer => 2,
             GameMode::FivePlayer => 5,
+            GameMode::Custom => 0,
         }
+    }
+
+    /// Mode of a seat layout: `two_player` for exactly two seats split by team, `five_player`
+    /// for five single-power seats, otherwise `custom`. Only the first two are ever rated.
+    pub fn derive(layout: &[Vec<Power>]) -> GameMode {
+        let one_team = |s: &Vec<Power>| s.iter().all(|p| p.team() == s[0].team());
+        match layout.len() {
+            2 if layout.iter().all(|s| !s.is_empty() && one_team(s))
+                && layout[0][0].team() != layout[1][0].team() =>
+            {
+                GameMode::TwoPlayer
+            }
+            5 if layout.iter().all(|s| s.len() == 1) => GameMode::FivePlayer,
+            _ => GameMode::Custom,
+        }
+    }
+}
+
+/// Who plays a seat of a private game.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SeatKind {
+    /// The creator ("me"); exactly one per game.
+    Host,
+    /// A friend joins with the invite code.
+    Open,
+    /// A computer player.
+    Bot,
+}
+
+/// One seat of a private game being created.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SeatSpec {
+    /// Powers this seat controls (non-empty; the seats partition the five powers).
+    pub powers: Vec<Power>,
+    pub kind: SeatKind,
+    /// Persona id (`GET /api/bots/personas`), bot seats only; default chosen by seat otherwise.
+    #[serde(default)]
+    pub persona: Option<String>,
+}
+
+/// Why a layout is not a valid partition of the five powers into 1-5 seats.
+pub fn check_partition(layout: &[Vec<Power>]) -> Result<(), &'static str> {
+    if layout.is_empty() || layout.len() > 5 {
+        return Err("a game needs between 1 and 5 seats");
+    }
+    let mut seen = Vec::new();
+    for powers in layout {
+        if powers.is_empty() {
+            return Err("every seat needs at least one power");
+        }
+        for p in powers {
+            if seen.contains(p) {
+                return Err("a power is assigned to more than one seat");
+            }
+            seen.push(*p);
+        }
+    }
+    if seen.len() != 5 {
+        return Err("every power must be assigned to a seat");
+    }
+    Ok(())
+}
+
+/// The classic suggested split for `players` seats (1-5), in seat (turn) order.
+pub fn preset_layout(players: usize) -> Vec<Vec<Power>> {
+    use Power::*;
+    match players {
+        1 => vec![vec![Ussr, Germany, Uk, Japan, Usa]],
+        2 => vec![vec![Germany, Japan], vec![Ussr, Uk, Usa]],
+        3 => vec![vec![Germany, Japan], vec![Ussr], vec![Uk, Usa]],
+        4 => vec![vec![Germany], vec![Japan], vec![Ussr], vec![Uk, Usa]],
+        _ => Power::ALL.iter().map(|p| vec![*p]).collect(),
     }
 }
 
@@ -125,6 +202,9 @@ pub struct GameSettings {
     pub japan_super_subs: bool,
 }
 
+fn default_mode() -> GameMode {
+    GameMode::FivePlayer
+}
 fn default_timeout() -> u32 {
     172_800
 }
@@ -238,7 +318,14 @@ pub struct GameSummary {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreatePrivateGameRequest {
+    /// Legacy layout selector (`two_player`/`five_player`); ignored when `seats` is given.
+    #[serde(default = "default_mode")]
     pub mode: GameMode,
+    /// General seat model: 1-5 seats partitioning the five powers, exactly one `host`. When
+    /// present it supersedes `mode`, `human_seats`, `bot_seats` and `bot_personas`. The game's
+    /// mode is derived from the layout (see `GameMode::derive`).
+    #[serde(default)]
+    pub seats: Option<Vec<SeatSpec>>,
     /// Game title (1-60 chars). Defaults to `Private game #<short id>`.
     #[serde(default)]
     pub name: Option<String>,
@@ -324,6 +411,24 @@ mod tests {
         )
         .unwrap();
         assert_eq!(r.bot_personas, vec![None, Some("frost".to_string())]);
+    }
+
+    #[test]
+    fn mode_derivation_and_presets() {
+        for n in 1..=5 {
+            let l = preset_layout(n);
+            assert_eq!(l.len(), n);
+            assert!(check_partition(&l).is_ok());
+        }
+        assert_eq!(GameMode::derive(&preset_layout(2)), GameMode::TwoPlayer);
+        assert_eq!(GameMode::derive(&preset_layout(3)), GameMode::Custom);
+        assert_eq!(GameMode::derive(&preset_layout(5)), GameMode::FivePlayer);
+        use Power::*;
+        let mixed = vec![vec![Germany, Usa], vec![Ussr, Uk, Japan]];
+        assert_eq!(GameMode::derive(&mixed), GameMode::Custom);
+        assert!(check_partition(&[vec![Germany], vec![Germany]]).is_err());
+        assert!(check_partition(&[vec![Germany], vec![]]).is_err());
+        assert!(check_partition(&[vec![Germany, Japan]]).is_err());
     }
 
     #[test]

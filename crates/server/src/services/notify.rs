@@ -75,6 +75,7 @@ pub async fn email_match_found(
     let mode = match mode {
         GameMode::TwoPlayer => "2-player",
         GameMode::FivePlayer => "5-player",
+        GameMode::Custom => "custom",
     };
     state.mailer.send_rendered(
         &r.email,

@@ -161,6 +161,14 @@ pub async fn update_profile(
     if matches!(&display_name, Some(d) if d.is_empty()) {
         return Err(AppError::bad("display name cannot be empty"));
     }
+    let timezone = clean(req.timezone, 64)?;
+    if let Some(tz) = timezone.as_deref().filter(|t| !t.is_empty()) {
+        if !valid_timezone(tz) {
+            return Err(AppError::bad(
+                "invalid timezone (expected an IANA name like Europe/Berlin)",
+            ));
+        }
+    }
     // COALESCE: only provided fields change; an empty string clears optional fields.
     sqlx::query(
         "UPDATE users SET
@@ -176,10 +184,23 @@ pub async fn update_profile(
     .bind(clean(req.avatar, 512)?)
     .bind(clean(req.bio, 500)?)
     .bind(clean(req.country, 64)?)
-    .bind(clean(req.timezone, 64)?)
+    .bind(timezone)
     .execute(&state.db)
     .await?;
     Ok(())
+}
+
+/// IANA-style zone name: `^[A-Za-z_]+(/[A-Za-z0-9_+-]+)*$`.
+pub fn valid_timezone(tz: &str) -> bool {
+    let mut parts = tz.split('/');
+    let first = parts.next().unwrap_or("");
+    !first.is_empty()
+        && first.chars().all(|c| c.is_ascii_alphabetic() || c == '_')
+        && parts.all(|p| {
+            !p.is_empty()
+                && p.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '+' | '-'))
+        })
 }
 
 pub async fn get_settings(state: &AppState, user_id: Uuid) -> AppResult<UserSettings> {
@@ -226,5 +247,36 @@ mod tests {
         assert_eq!(streaks(&[true, true, false, true]), (1, 2));
         assert_eq!(streaks(&[false, true, true, true]), (3, 3));
         assert_eq!(streaks(&[true, false]), (0, 1));
+    }
+}
+
+#[cfg(test)]
+mod tz_tests {
+    use super::valid_timezone;
+
+    #[test]
+    fn timezone_pattern() {
+        for ok in [
+            "UTC",
+            "Europe/Berlin",
+            "America/Argentina/Buenos_Aires",
+            "Etc/GMT+5",
+            "America/Port-au-Prince",
+        ] {
+            assert!(valid_timezone(ok), "{ok}");
+        }
+        for bad in [
+            "",
+            "/UTC",
+            "Europe/",
+            "Europe//Berlin",
+            "a b",
+            "<script>",
+            "Europe/Berlin;drop",
+            "1Europe",
+            "../etc",
+        ] {
+            assert!(!valid_timezone(bad), "{bad}");
+        }
     }
 }

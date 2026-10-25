@@ -1602,3 +1602,184 @@ async fn full_stack_game_against_bots() {
         .iter()
         .all(|e| e["events"].is_array() && e["actor"].is_number()));
 }
+
+#[tokio::test]
+async fn three_player_custom_layout_runs_to_round_two() {
+    let Some(c) = setup().await else { return };
+    let a = register(&c, true).await;
+    let seats = json!([
+        {"powers": ["germany", "japan"], "kind": "bot", "persona": "frost"},
+        {"powers": ["ussr"], "kind": "bot"},
+        {"powers": ["uk", "usa"], "kind": "host"},
+    ]);
+    let (st, game, _) = call(
+        &c.app,
+        Method::POST,
+        "/api/games",
+        Some(&a.cookie),
+        Some(json!({"seats": seats})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK, "{game}");
+    assert_eq!(game["mode"], "custom");
+    assert_eq!(game["status"], "in_progress");
+    assert_eq!(game["my_seat"], 2);
+    assert_eq!(game["seats"][2]["powers"], json!(["uk", "usa"]));
+    assert_eq!(game["seats"][0]["bot_persona"], "frost");
+    assert_eq!(game["seats"][1]["is_bot"], true);
+    let gid = game["id"].as_str().unwrap().to_string();
+    let guid: Uuid = gid.parse().unwrap();
+
+    // the host controls UK and then USA; bots drive USSR and Germany+Japan
+    let mut acted = std::collections::BTreeSet::new();
+    let mut round = 0;
+    for _ in 0..400 {
+        let (_, sum, _) = call(
+            &c.app,
+            Method::GET,
+            &format!("/api/games/{gid}"),
+            Some(&a.cookie),
+            None,
+        )
+        .await;
+        round = sum["round"].as_i64().unwrap();
+        if round >= 2 {
+            break;
+        }
+        match sum["pending_power"].as_str() {
+            Some(p @ ("uk" | "usa")) => {
+                let (st, env, _) = call(
+                    &c.app,
+                    Method::POST,
+                    &format!("/api/games/{gid}/actions"),
+                    Some(&a.cookie),
+                    Some(json!({"action": {"type": "end_phase"}})),
+                )
+                .await;
+                assert_eq!(st, StatusCode::OK, "{env}");
+                acted.insert(p.to_string());
+            }
+            _ => tokio::time::sleep(std::time::Duration::from_millis(30)).await,
+        }
+    }
+    assert!(round >= 2, "stalled in round {round}");
+    assert!(acted.contains("uk") && acted.contains("usa"), "{acted:?}");
+    let (n,): (i64,) =
+        sqlx::query_as("SELECT count(DISTINCT actor_seat) FROM game_actions WHERE game_id=$1")
+            .bind(guid)
+            .fetch_one(&c.state.db)
+            .await
+            .unwrap();
+    assert_eq!(n, 3, "all three seats acted");
+    let (g_acts,): (i64,) =
+        sqlx::query_as("SELECT count(*) FROM game_actions WHERE game_id=$1 AND actor_seat=0")
+            .bind(guid)
+            .fetch_one(&c.state.db)
+            .await
+            .unwrap();
+    assert!(g_acts > 0);
+}
+
+#[tokio::test]
+async fn seat_layout_validation_and_open_seats() {
+    let Some(c) = setup().await else { return };
+    let a = register(&c, true).await;
+    let b = register(&c, true).await;
+    let post = |body: Value| {
+        let c = &c;
+        let cookie = a.cookie.clone();
+        async move {
+            call(
+                &c.app,
+                Method::POST,
+                "/api/games",
+                Some(&cookie),
+                Some(body),
+            )
+            .await
+        }
+    };
+    let host = |p: Value| json!({"powers": p, "kind": "host"});
+    let bad = [
+        // missing power
+        json!([host(json!(["germany", "japan", "uk", "usa"]))]),
+        // duplicate power
+        json!([host(json!(["germany", "japan", "uk", "usa", "ussr"])), {"powers": ["usa"], "kind": "bot"}]),
+        // empty seat
+        json!([host(json!(["germany", "japan", "uk", "usa", "ussr"])), {"powers": [], "kind": "bot"}]),
+        // no host
+        json!([{"powers": ["germany", "japan", "uk", "usa", "ussr"], "kind": "bot"}]),
+        // two hosts
+        json!([
+            host(json!(["germany", "japan"])),
+            host(json!(["uk", "usa", "ussr"]))
+        ]),
+        // persona on a non-bot seat
+        json!([{"powers": ["germany", "japan", "uk", "usa", "ussr"], "kind": "host", "persona": "frost"}]),
+        // unknown persona
+        json!([host(json!(["germany", "japan"])), {"powers": ["uk", "usa", "ussr"], "kind": "bot", "persona": "nobody"}]),
+    ];
+    for seats in bad {
+        let (st, err, _) = post(json!({"seats": seats})).await;
+        assert_eq!(st, StatusCode::BAD_REQUEST, "{seats}: {err}");
+    }
+
+    // one player controlling everything vs nobody: starts at once, mode custom
+    let (st, g, _) =
+        post(json!({"seats": [host(json!(["ussr", "germany", "uk", "japan", "usa"]))]})).await;
+    assert_eq!(st, StatusCode::OK, "{g}");
+    assert_eq!(g["status"], "in_progress");
+    assert_eq!(g["mode"], "custom");
+
+    // 2 seats split by team derive two_player; open seat waits for a friend
+    let (st, g, _) = post(json!({"seats": [
+        {"powers": ["germany", "japan"], "kind": "open"},
+        host(json!(["ussr", "uk", "usa"])),
+    ]}))
+    .await;
+    assert_eq!(st, StatusCode::OK, "{g}");
+    assert_eq!(g["mode"], "two_player");
+    assert_eq!(g["status"], "lobby");
+    assert_eq!(g["my_seat"], 1);
+    let code = g["invite_code"].as_str().unwrap().to_string();
+    let (st, joined, _) = call(
+        &c.app,
+        Method::POST,
+        "/api/games/join",
+        Some(&b.cookie),
+        Some(json!({"code": code})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK, "{joined}");
+    assert_eq!(joined["status"], "in_progress");
+    assert_eq!(joined["my_seat"], 0);
+    assert_eq!(joined["seats"][0]["powers"], json!(["germany", "japan"]));
+
+    // 5 single-power seats in a different order are still five_player
+    let (st, g, _) = post(json!({"seats": [
+        host(json!(["usa"])),
+        {"powers": ["ussr"], "kind": "bot"}, {"powers": ["germany"], "kind": "bot"},
+        {"powers": ["uk"], "kind": "bot"}, {"powers": ["japan"], "kind": "bot"},
+    ]}))
+    .await;
+    assert_eq!(st, StatusCode::OK, "{g}");
+    assert_eq!(g["mode"], "five_player");
+
+    // timezone validation
+    for (tz, ok) in [
+        ("Europe/Berlin", true),
+        ("Etc/GMT+5", true),
+        ("not a zone!", false),
+        ("../x", false),
+    ] {
+        let (st, _, _) = call(
+            &c.app,
+            Method::PATCH,
+            "/api/me/profile",
+            Some(&a.cookie),
+            Some(json!({"timezone": tz})),
+        )
+        .await;
+        assert_eq!(st == StatusCode::OK, ok, "{tz}");
+    }
+}

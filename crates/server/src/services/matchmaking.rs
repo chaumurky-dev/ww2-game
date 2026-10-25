@@ -66,6 +66,11 @@ pub fn find_matches(entries: &[QueueEntry], needed: usize, now: DateTime<Utc>) -
 }
 
 pub async fn enqueue(state: &AppState, user: Uuid, mode: GameMode) -> AppResult<()> {
+    if mode == GameMode::Custom {
+        return Err(AppError::bad(
+            "matchmaking is only for 2-player and 5-player games",
+        ));
+    }
     // already in an active public game of this mode? allow; but not twice in queue
     let ladder = ratings::ladder_for(None, mode == GameMode::TwoPlayer);
     let rating = ratings::get_rating(&state.db, user, &ladder).await?.rating;

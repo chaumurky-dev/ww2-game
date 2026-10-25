@@ -38,6 +38,8 @@ pub fn seat_layout(mode: GameMode) -> Vec<Vec<Power>> {
             vec![Power::Ussr, Power::Uk, Power::Usa],
         ],
         GameMode::FivePlayer => Power::ALL.iter().map(|p| vec![*p]).collect(),
+        // stored per game in `game_seats`; there is no fixed layout
+        GameMode::Custom => Vec::new(),
     }
 }
 
@@ -292,10 +294,10 @@ pub fn default_name(
     match kind {
         GameKind::Private => format!("Private game #{}", short_id(id)),
         GameKind::Public => {
-            let m = if mode == GameMode::TwoPlayer {
-                "2p"
-            } else {
-                "5p"
+            let m = match mode {
+                GameMode::TwoPlayer => "2p",
+                GameMode::FivePlayer => "5p",
+                GameMode::Custom => "custom",
             };
             match public_number {
                 Some(n) => format!("Ranked {m} #{n}"),
@@ -405,12 +407,34 @@ fn validate_settings(s: &GameSettings) -> AppResult<()> {
     Ok(())
 }
 
-pub async fn create_private(
-    state: &AppState,
-    host: &CurrentUser,
-    req: CreatePrivateGameRequest,
-) -> AppResult<GameSummary> {
-    validate_settings(&req.settings)?;
+/// Turn a create request into validated seat specs: either the general `seats` model or the
+/// legacy `mode/bot_seats/human_seats/bot_personas` fields mapped onto it.
+pub fn resolve_seats(req: &CreatePrivateGameRequest) -> AppResult<Vec<SeatSpec>> {
+    let mut specs = match &req.seats {
+        Some(seats) => seats.clone(),
+        None => legacy_seats(req)?,
+    };
+    let layout: Vec<Vec<Power>> = specs.iter().map(|s| s.powers.clone()).collect();
+    check_partition(&layout).map_err(AppError::bad)?;
+    if specs.iter().filter(|s| s.kind == SeatKind::Host).count() != 1 {
+        return Err(AppError::bad("exactly one seat must be the host's"));
+    }
+    for (i, s) in specs.iter_mut().enumerate() {
+        s.powers.sort();
+        match (s.kind, s.persona.as_deref()) {
+            (SeatKind::Bot, Some(p)) => s.persona = Some(bots::validate_id(p)?.to_string()),
+            (SeatKind::Bot, None) => s.persona = Some(bots::default_for_seat(i).to_string()),
+            (_, Some(_)) => return Err(AppError::bad("bot_personas given for a non-bot seat")),
+            (_, None) => {}
+        }
+    }
+    Ok(specs)
+}
+
+fn legacy_seats(req: &CreatePrivateGameRequest) -> AppResult<Vec<SeatSpec>> {
+    if req.mode == GameMode::Custom {
+        return Err(AppError::bad("custom games need an explicit seats list"));
+    }
     let layout = seat_layout(req.mode);
     let n = layout.len();
     let mut bots = req.bot_seats.clone();
@@ -419,24 +443,12 @@ pub async fn create_private(
     if bots.iter().any(|b| *b as usize >= n) {
         return Err(AppError::bad("bot seat index out of range"));
     }
-    let name = req
-        .name
-        .as_deref()
-        .map(clean_game_name)
-        .transpose()?
-        .flatten();
     if req.bot_personas.len() > n {
         return Err(AppError::bad("bot_personas has more entries than seats"));
     }
-    let mut personas: Vec<String> = (0..n)
-        .map(|i| bots::default_for_seat(i).to_string())
-        .collect();
     for (i, p) in req.bot_personas.iter().enumerate() {
-        if let Some(p) = p {
-            if !bots.contains(&(i as u8)) {
-                return Err(AppError::bad("bot_personas given for a non-bot seat"));
-            }
-            personas[i] = bots::validate_id(p)?.to_string();
+        if p.is_some() && !bots.contains(&(i as u8)) {
+            return Err(AppError::bad("bot_personas given for a non-bot seat"));
         }
     }
     let humans = n - bots.len();
@@ -450,44 +462,85 @@ pub async fn create_private(
             ));
         }
     }
+    let host_seat = (0..n as u8).find(|i| !bots.contains(i)).unwrap_or(0);
+    Ok(layout
+        .into_iter()
+        .enumerate()
+        .map(|(i, powers)| {
+            let i = i as u8;
+            let kind = if bots.contains(&i) {
+                SeatKind::Bot
+            } else if i == host_seat {
+                SeatKind::Host
+            } else {
+                SeatKind::Open
+            };
+            SeatSpec {
+                powers,
+                kind,
+                persona: req.bot_personas.get(i as usize).cloned().flatten(),
+            }
+        })
+        .collect())
+}
+
+pub async fn create_private(
+    state: &AppState,
+    host: &CurrentUser,
+    req: CreatePrivateGameRequest,
+) -> AppResult<GameSummary> {
+    validate_settings(&req.settings)?;
+    let specs = resolve_seats(&req)?;
+    let layout: Vec<Vec<Power>> = specs.iter().map(|s| s.powers.clone()).collect();
+    let mode = if req.seats.is_some() {
+        GameMode::derive(&layout)
+    } else {
+        req.mode
+    };
+    let name = req
+        .name
+        .as_deref()
+        .map(clean_game_name)
+        .transpose()?
+        .flatten();
+    let humans = specs.iter().filter(|s| s.kind != SeatKind::Bot).count();
+    // Only the classic layouts are rated; custom layouts never are, not even in a group.
     let ladder = match req.group_id {
         Some(g) => {
             if groups::role_of(state, g, host.id).await?.is_none() {
                 return Err(AppError::forbidden("you are not a member of that group"));
             }
-            Some(ratings::ladder_for(
-                Some(g),
-                req.mode == GameMode::TwoPlayer,
-            ))
+            match mode {
+                GameMode::Custom => None,
+                m => Some(ratings::ladder_for(Some(g), m == GameMode::TwoPlayer)),
+            }
         }
         None => None,
     };
     let id = Uuid::new_v4();
-    let host_seat = (0..n as u8).find(|i| !bots.contains(i)).unwrap_or(0);
     let mut tx = state.db.begin().await?;
-    let name = name.unwrap_or_else(|| default_name(GameKind::Private, req.mode, id, None));
+    let name = name.unwrap_or_else(|| default_name(GameKind::Private, mode, id, None));
     insert_game(
         &mut tx,
         id,
         &name,
         GameKind::Private,
-        req.mode,
+        mode,
         &req.settings,
         req.group_id,
         Some(host.id),
         ladder.as_deref(),
     )
     .await?;
-    for (i, powers) in layout.iter().enumerate() {
-        let i = i as u8;
-        let is_bot = bots.contains(&i);
+    for (i, spec) in specs.iter().enumerate() {
+        let is_bot = spec.kind == SeatKind::Bot;
         sqlx::query("INSERT INTO game_seats (game_id, seat, powers, user_id, is_bot, bot_persona) VALUES ($1,$2,$3,$4,$5,$6)")
             .bind(id)
             .bind(i as i32)
-            .bind(powers.iter().map(|p| p.as_str().to_string()).collect::<Vec<_>>())
-            .bind(if i == host_seat { Some(host.id) } else { None })
+            .bind(spec.powers.iter().map(|p| p.as_str().to_string()).collect::<Vec<_>>())
+            .bind((spec.kind == SeatKind::Host).then_some(host.id))
             .bind(is_bot)
-            .bind(is_bot.then(|| personas[i as usize].clone()))
+            .bind(if is_bot { spec.persona.clone() } else { None })
             .execute(&mut *tx)
             .await?;
     }
@@ -645,7 +698,7 @@ pub async fn begin_game(state: &AppState, id: Uuid) -> AppResult<()> {
     if first_is_bot {
         bots::spawn_driver(state, id, None);
     } else {
-        notify_turn(state, id).await;
+        notify_turn(state, id, true).await;
     }
     Ok(())
 }
@@ -682,7 +735,9 @@ pub async fn set_deadline(
 }
 
 /// Tell the player whose turn it is (WS + optional email). Never fails the caller.
-pub async fn notify_turn(state: &AppState, id: Uuid) {
+/// `email` is false when the same seat just moved on to another of its own powers: the player
+/// still gets a `YourTurn` for the new power but no extra mail.
+pub async fn notify_turn(state: &AppState, id: Uuid, email: bool) {
     let res: AppResult<()> = async {
         let g = load_game(state, id).await?;
         if g.status != "in_progress" {
@@ -705,7 +760,9 @@ pub async fn notify_turn(state: &AppState, id: Uuid) {
                 power: Some(power),
             },
         );
-        notify::email_your_turn(state, uid, &g.name, id, power, g.round).await?;
+        if email {
+            notify::email_your_turn(state, uid, &g.name, id, power, g.round).await?;
+        }
         Ok(())
     }
     .await;
@@ -900,13 +957,15 @@ pub async fn apply_locked(
 
     // Control passes to another power: start its clock (bot turns are due immediately).
     let mut notify = false;
+    let mut notify_email = false;
     if let (Some(next), true) = (after.power, after.power != before.power) {
         let next_seat = seat_for_power(&seats, next);
         let bot = next_seat.is_some_and(|s| s.is_bot);
         let settings: GameSettings =
             serde_json::from_value(game.settings.clone()).unwrap_or_default();
         set_deadline(&mut tx, id, settings.turn_timeout_secs, bot).await?;
-        notify = !bot && next_seat.map(|s| s.seat) != Some(power_seat.seat);
+        notify = !bot;
+        notify_email = notify && next_seat.map(|s| s.seat) != Some(power_seat.seat);
     }
     tx.commit().await?;
 
@@ -920,7 +979,7 @@ pub async fn apply_locked(
     if let Some(winner) = after.game_over {
         finish_game(state, id, winner).await?;
     } else if notify {
-        notify_turn(state, id).await;
+        notify_turn(state, id, notify_email).await;
     }
     Ok(Applied {
         envelope: GameActionEnvelope {
