@@ -27,13 +27,14 @@ pub fn api_router(state: &AppState) -> Router<AppState> {
         .route("/auth/resend-verification", post(auth::resend_verification));
     if state.config.rate_limit {
         use tower_governor::governor::GovernorConfigBuilder;
-        use tower_governor::key_extractor::SmartIpKeyExtractor;
         use tower_governor::GovernorError;
         use tower_governor::GovernorLayer;
         let conf = GovernorConfigBuilder::default()
             .per_second(2)
             .burst_size(10)
-            .key_extractor(SmartIpKeyExtractor)
+            .key_extractor(crate::ratelimit::TrustedProxyKey {
+                hops: state.config.trusted_proxy_hops,
+            })
             .finish()
             .expect("valid governor config");
         // 429s use the standard ApiError JSON body (`code: "rate_limited"`).

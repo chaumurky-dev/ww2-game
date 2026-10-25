@@ -27,6 +27,7 @@ pub fn Settings() -> impl IntoView {
     let pw_busy = RwSignal::new(false);
     let del_open = RwSignal::new(false);
     let del_text = RwSignal::new(String::new());
+    let del_pw = RwSignal::new(String::new());
     let navigate = use_navigate();
     let loaded = RwSignal::new(false);
 
@@ -110,7 +111,7 @@ pub fn Settings() -> impl IntoView {
     let delete = Callback::new(move |_: ()| {
         let navigate = navigate.clone();
         spawn_local(async move {
-            match api::delete_account().await {
+            match api::delete_account(&del_pw.get_untracked()).await {
                 Ok(()) => {
                     del_open.set(false);
                     auth.set(None);
@@ -173,15 +174,16 @@ pub fn Settings() -> impl IntoView {
                 <div class="card col">
                     <h2>"Delete account"</h2>
                     <p class="muted">"Your name and e-mail are scrubbed. Games you played stay in the history under \"Deleted user\"."</p>
-                    <button class="danger" on:click=move |_| { del_text.set(String::new()); del_open.set(true); }>"Delete my account"</button>
+                    <button class="danger" on:click=move |_| { del_text.set(String::new()); del_pw.set(String::new()); del_open.set(true); }>"Delete my account"</button>
                 </div>
             </div>
             <Modal open=del_open title="Delete your account?">
                 <div class="col">
                     <p>"This cannot be undone. You will be logged out everywhere and your profile disappears from the leaderboards."</p>
                     <TextField label="Type DELETE to confirm" value=del_text />
+                    <TextField label="Your password" value=del_pw kind="password" />
                     <div class="row">
-                        <button class="danger" disabled=move || del_text.with(|t| t.trim() != "DELETE") on:click=move |_| delete.run(())>"Delete forever"</button>
+                        <button class="danger" disabled=move || del_text.with(|t| t.trim() != "DELETE") || del_pw.with(|p| p.is_empty()) on:click=move |_| delete.run(())>"Delete forever"</button>
                         <button class="secondary" on:click=move |_| del_open.set(false)>"Cancel"</button>
                     </div>
                 </div>

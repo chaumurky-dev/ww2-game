@@ -2,7 +2,11 @@ use argon2::password_hash::{
     rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString,
 };
 use argon2::Argon2;
+use std::sync::{Arc, OnceLock};
+use std::time::Duration as StdDuration;
+
 use chrono::{Duration, Utc};
+use tokio::sync::Semaphore;
 use uuid::Uuid;
 use wartide_protocol::auth::*;
 
@@ -14,6 +18,54 @@ use crate::util::*;
 
 pub const SESSION_DAYS: i64 = 30;
 const MIN_PASSWORD: usize = 8;
+const HOUR: StdDuration = StdDuration::from_secs(3600);
+const LOGIN_WINDOW: StdDuration = StdDuration::from_secs(15 * 60);
+const LOGIN_FAILURES: usize = 10;
+
+/// Bounds concurrent Argon2 work so a flood of logins cannot exhaust memory.
+fn hash_gate() -> &'static Arc<Semaphore> {
+    static GATE: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    GATE.get_or_init(|| {
+        let n = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(2)
+            .max(2);
+        Arc::new(Semaphore::new(n))
+    })
+}
+
+async fn gated<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> AppResult<T> {
+    let permit = hash_gate()
+        .clone()
+        .acquire_owned()
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        f()
+    })
+    .await
+    .map_err(|e| AppError::Internal(e.into()))
+}
+
+pub async fn hash_password_async(password: &str) -> AppResult<String> {
+    let p = password.to_string();
+    gated(move || hash_password(&p)).await?
+}
+
+pub async fn verify_password_async(password: &str, hash: &str) -> AppResult<bool> {
+    let (p, h) = (password.to_string(), hash.to_string());
+    gated(move || verify_password(&p, &h)).await
+}
+
+/// A valid Argon2 hash nobody knows the password for; verified against when no account matches so
+/// login timing does not reveal which identifiers exist.
+fn dummy_hash() -> &'static str {
+    static DUMMY: OnceLock<String> = OnceLock::new();
+    DUMMY.get_or_init(|| {
+        hash_password("dummy-password-for-timing-equalisation").expect("dummy hash")
+    })
+}
 
 pub fn hash_password(password: &str) -> AppResult<String> {
     let salt = SaltString::generate(&mut OsRng);
@@ -105,13 +157,17 @@ pub async fn register(state: &AppState, req: RegisterRequest) -> AppResult<Sessi
             "username must be 3-24 characters: letters, digits, _ or -".into(),
         ));
     }
+    if crate::services::users::is_reserved_name(&username) {
+        return Err(AppError::BadRequest(
+            "invalid_username",
+            "that username is reserved".into(),
+        ));
+    }
     check_password(&req.password)?;
-    let hash = tokio::task::spawn_blocking({
-        let p = req.password.clone();
-        move || hash_password(&p)
-    })
-    .await
-    .map_err(|e| AppError::Internal(e.into()))??;
+    state
+        .limiter
+        .check(&format!("register:{}", email.to_lowercase()), 3, HOUR)?;
+    let hash = hash_password_async(&req.password).await?;
     let id = Uuid::new_v4();
     let res = sqlx::query_as::<_, CurrentUser>(
         "INSERT INTO users (id, email, username, display_name, password_hash) VALUES ($1,$2,$3,$3,$4)
@@ -153,6 +209,12 @@ pub async fn verify_email(state: &AppState, token: &str) -> AppResult<()> {
         .bind(uid)
         .execute(&state.db)
         .await?;
+    // Defeat account pre-hijacking: whoever registered with this address and holds a session
+    // loses it once the real owner proves control of the mailbox.
+    sqlx::query("DELETE FROM sessions WHERE user_id=$1")
+        .bind(uid)
+        .execute(&state.db)
+        .await?;
     Ok(())
 }
 
@@ -163,11 +225,23 @@ pub async fn resend_verification(state: &AppState, user: &CurrentUser) -> AppRes
             "email already verified",
         ));
     }
+    // Per-address limit; over the limit we silently do nothing (uniform response).
+    if state
+        .limiter
+        .check(&format!("resend:{}", user.email.to_lowercase()), 3, HOUR)
+        .is_err()
+    {
+        return Ok(());
+    }
     send_verification(state, user.id, &user.email, &user.username).await
 }
 
 /// Returns the raw session token on success.
 pub async fn login(state: &AppState, req: LoginRequest) -> AppResult<(String, SessionUser)> {
+    let fail_key = format!("loginfail:{}", req.login.trim().to_lowercase());
+    state
+        .limiter
+        .ensure_below(&fail_key, LOGIN_FAILURES, LOGIN_WINDOW)?;
     let row: Option<(Uuid, String)> = sqlx::query_as(
         "SELECT id, password_hash FROM users WHERE deleted_at IS NULL AND (lower(email)=lower($1) OR lower(username)=lower($1))",
     )
@@ -175,12 +249,18 @@ pub async fn login(state: &AppState, req: LoginRequest) -> AppResult<(String, Se
     .fetch_optional(&state.db)
     .await?;
     let bad = || AppError::BadRequest("invalid_credentials", "invalid login or password".into());
-    let (id, hash) = row.ok_or_else(bad)?;
-    let pw = req.password.clone();
-    let ok = tokio::task::spawn_blocking(move || verify_password(&pw, &hash))
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
+    let (id, hash) = match row {
+        Some(r) => r,
+        None => {
+            // burn the same Argon2 time as a real check
+            let _ = verify_password_async(&req.password, dummy_hash()).await?;
+            state.limiter.record(&fail_key);
+            return Err(bad());
+        }
+    };
+    let ok = verify_password_async(&req.password, &hash).await?;
     if !ok {
+        state.limiter.record(&fail_key);
         return Err(bad());
     }
     let token = new_token();
@@ -209,6 +289,13 @@ pub async fn logout(state: &AppState, token: &str) -> AppResult<()> {
 
 /// Always succeeds from the caller's point of view, to avoid leaking which emails exist.
 pub async fn forgot_password(state: &AppState, email: &str) -> AppResult<()> {
+    if state
+        .limiter
+        .check(&format!("forgot:{}", email.trim().to_lowercase()), 3, HOUR)
+        .is_err()
+    {
+        return Ok(());
+    }
     let row: Option<(Uuid, String, String)> = sqlx::query_as(
         "SELECT id, email, username FROM users WHERE deleted_at IS NULL AND lower(email)=lower($1)",
     )
@@ -216,6 +303,12 @@ pub async fn forgot_password(state: &AppState, email: &str) -> AppResult<()> {
     .fetch_optional(&state.db)
     .await?;
     if let Some((id, email, username)) = row {
+        sqlx::query(
+            "DELETE FROM email_tokens WHERE user_id=$1 AND purpose='reset' AND used_at IS NULL",
+        )
+        .bind(id)
+        .execute(&state.db)
+        .await?;
         let token = issue_email_token(state, id, "reset", Duration::hours(2)).await?;
         let link = format!(
             "{}/reset-password?token={}",
@@ -242,25 +335,21 @@ pub async fn change_password(
         .bind(user.id)
         .fetch_one(&state.db)
         .await?;
-    let current = req.current_password.clone();
-    let ok = tokio::task::spawn_blocking(move || verify_password(&current, &hash))
-        .await
-        .map_err(|e| AppError::Internal(e.into()))?;
+    let ok = verify_password_async(&req.current_password, &hash).await?;
     if !ok {
         return Err(AppError::BadRequest(
             "invalid_credentials",
             "current password is incorrect".into(),
         ));
     }
-    let new_hash = tokio::task::spawn_blocking({
-        let p = req.new_password.clone();
-        move || hash_password(&p)
-    })
-    .await
-    .map_err(|e| AppError::Internal(e.into()))??;
+    let new_hash = hash_password_async(&req.new_password).await?;
     sqlx::query("UPDATE users SET password_hash=$2 WHERE id=$1")
         .bind(user.id)
         .bind(new_hash)
+        .execute(&state.db)
+        .await?;
+    sqlx::query("DELETE FROM email_tokens WHERE user_id=$1 AND purpose='reset'")
+        .bind(user.id)
         .execute(&state.db)
         .await?;
     sqlx::query("DELETE FROM sessions WHERE user_id=$1 AND token_hash <> $2")
@@ -272,7 +361,17 @@ pub async fn change_password(
 }
 
 /// Soft-delete: scrub identifying data but keep the row so games, seats and chat stay intact.
-pub async fn delete_account(state: &AppState, user: &CurrentUser) -> AppResult<()> {
+pub async fn delete_account(state: &AppState, user: &CurrentUser, password: &str) -> AppResult<()> {
+    let (hash,): (String,) = sqlx::query_as("SELECT password_hash FROM users WHERE id=$1")
+        .bind(user.id)
+        .fetch_one(&state.db)
+        .await?;
+    if !verify_password_async(password, &hash).await? {
+        return Err(AppError::ForbiddenCode(
+            "invalid_credentials",
+            "password is incorrect".into(),
+        ));
+    }
     let mut tx = state.db.begin().await?;
     sqlx::query(
         "UPDATE users SET
@@ -302,12 +401,7 @@ pub async fn delete_account(state: &AppState, user: &CurrentUser) -> AppResult<(
 
 pub async fn reset_password(state: &AppState, req: ResetPasswordRequest) -> AppResult<()> {
     check_password(&req.new_password)?;
-    let hash = tokio::task::spawn_blocking({
-        let p = req.new_password.clone();
-        move || hash_password(&p)
-    })
-    .await
-    .map_err(|e| AppError::Internal(e.into()))??;
+    let hash = hash_password_async(&req.new_password).await?;
     let row: Option<(Uuid,)> = sqlx::query_as(
         "UPDATE email_tokens SET used_at = now()
          WHERE token_hash=$1 AND purpose='reset' AND used_at IS NULL AND expires_at > now()
@@ -323,8 +417,12 @@ pub async fn reset_password(state: &AppState, req: ResetPasswordRequest) -> AppR
         .bind(hash)
         .execute(&state.db)
         .await?;
-    // log out everywhere
+    // log out everywhere, and burn any other outstanding reset links
     sqlx::query("DELETE FROM sessions WHERE user_id=$1")
+        .bind(uid)
+        .execute(&state.db)
+        .await?;
+    sqlx::query("DELETE FROM email_tokens WHERE user_id=$1 AND purpose='reset'")
         .bind(uid)
         .execute(&state.db)
         .await?;
@@ -342,6 +440,13 @@ mod tests {
         assert!(verify_password("correct horse", &h));
         assert!(!verify_password("wrong", &h));
         assert!(!verify_password("x", "garbage"));
+    }
+
+    #[test]
+    fn dummy_hash_is_a_valid_argon2_hash() {
+        let h = dummy_hash();
+        assert!(h.starts_with("$argon2id$"));
+        assert!(!verify_password("anything", h));
     }
 
     #[test]

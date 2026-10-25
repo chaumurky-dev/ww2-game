@@ -481,6 +481,7 @@ resource "aws_ecs_task_definition" "app" {
       { name = "SMTP_HOST", value = "email-smtp.${var.region}.amazonaws.com" },
       { name = "SMTP_PORT", value = "587" },
       { name = "SMTP_TLS", value = "starttls" },
+      { name = "TRUSTED_PROXY_HOPS", value = "1" },
       { name = "SMTP_FROM", value = "Wartide <${var.ses_from_local_part}@${var.domain_name}>" },
     ]
     secrets = [

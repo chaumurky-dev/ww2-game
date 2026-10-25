@@ -12,6 +12,8 @@ export BASE_URL := env_var_or_default("BASE_URL", "http://localhost:8080")
 export SMTP_HOST := env_var_or_default("SMTP_HOST", "localhost")
 export SMTP_PORT := env_var_or_default("SMTP_PORT", "1025")
 export SMTP_TLS := env_var_or_default("SMTP_TLS", "none")
+# trunk serves the client on 8081 and proxies /ws to the server; let that origin open sockets
+export ALLOWED_ORIGINS := env_var_or_default("ALLOWED_ORIGINS", "http://localhost:8081,http://127.0.0.1:8081")
 export SMTP_FROM := env_var_or_default("SMTP_FROM", "Wartide <noreply@wartide.local>")
 export SESSION_SECRET := env_var_or_default("SESSION_SECRET", "local-dev-session-secret-change-me-0123456789abcdef0123456789abcdef")
 export WEB_DIST_DIR := env_var_or_default("WEB_DIST_DIR", "crates/web/dist")

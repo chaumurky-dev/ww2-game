@@ -14,6 +14,8 @@ pub enum AppError {
     EmailUnverified,
     #[error("{0}")]
     Forbidden(String),
+    #[error("{1}")]
+    ForbiddenCode(&'static str, String),
     #[error("{0}")]
     NotFound(String),
     #[error("{1}")]
@@ -44,7 +46,9 @@ impl AppError {
         match self {
             AppError::BadRequest(..) => StatusCode::BAD_REQUEST,
             AppError::Unauthorized => StatusCode::UNAUTHORIZED,
-            AppError::EmailUnverified | AppError::Forbidden(_) => StatusCode::FORBIDDEN,
+            AppError::EmailUnverified | AppError::Forbidden(_) | AppError::ForbiddenCode(..) => {
+                StatusCode::FORBIDDEN
+            }
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
             AppError::Conflict(..) => StatusCode::CONFLICT,
             AppError::TooManyRequests(_) => StatusCode::TOO_MANY_REQUESTS,
@@ -54,7 +58,9 @@ impl AppError {
 
     pub fn code(&self) -> &str {
         match self {
-            AppError::BadRequest(c, _) | AppError::Conflict(c, _) => c,
+            AppError::BadRequest(c, _)
+            | AppError::Conflict(c, _)
+            | AppError::ForbiddenCode(c, _) => c,
             AppError::Unauthorized => "unauthorized",
             AppError::EmailUnverified => "email_unverified",
             AppError::Forbidden(_) => "forbidden",
