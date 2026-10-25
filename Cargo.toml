@@ -12,7 +12,7 @@ members = [
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/TBD/wartide"
+repository = "https://github.com/chaumurky-dev/ww2-game"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
