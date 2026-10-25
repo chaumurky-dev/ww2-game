@@ -10,4 +10,12 @@ github_repo                 = "chaumurky-dev/ww2-game"
 create_github_oidc_provider = false # the account already has it
 
 # This org uses GitHub's immutable OIDC subject (owner/repo ids). See variables.tf.
-github_oidc_subjects = ["repo:chaumurky-dev@305633583/ww2-game@1432703929:ref:refs/heads/main"]
+github_oidc_subjects = [
+  "repo:chaumurky-dev@305633583/ww2-game@1432703929:ref:refs/heads/main",
+  "repo:chaumurky-dev@305633583/ww2-game@1432703929:environment:production",
+]
+
+# Required: budget / anomaly / alarm / account-contact notifications (see guardrails.tf).
+alert_email = "you@example.com"
+alert_phone = "+10000000000" # replace with a real E.164 number for the account alternate contacts
+# monthly_budget_usd = 60

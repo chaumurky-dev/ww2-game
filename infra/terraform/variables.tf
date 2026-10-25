@@ -118,18 +118,36 @@ variable "log_retention_days" {
 }
 
 variable "db_backup_retention_days" {
-  description = "RDS automated backup retention. 1 is the cheap default; use 7+ for production."
+  description = "RDS automated backup retention in days."
   type        = number
-  default     = 1
+  default     = 7
 }
 
 variable "db_deletion_protection" {
-  type    = bool
-  default = false
+  description = "RDS deletion protection. Set false (and apply) before a destroy."
+  type        = bool
+  default     = true
 }
 
 variable "db_skip_final_snapshot" {
-  description = "Skip the final snapshot on destroy. Set false (with db_deletion_protection = true) to harden."
+  description = "Skip the final snapshot on destroy. Keep false in production."
   type        = bool
-  default     = true
+  default     = false
+}
+
+variable "alert_email" {
+  description = "Email for budget, cost-anomaly, CloudWatch alarm and account (security/billing/operations) notifications. Required."
+  type        = string
+}
+
+variable "alert_phone" {
+  description = "Phone number (E.164, e.g. +14155550123) for the account alternate contacts. The default is a placeholder: replace it."
+  type        = string
+  default     = "+10000000000"
+}
+
+variable "monthly_budget_usd" {
+  description = "Monthly cost budget in USD; alerts at 50% and 100% actual and 100% forecast."
+  type        = number
+  default     = 60
 }
