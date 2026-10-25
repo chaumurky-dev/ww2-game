@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+wartide-engine = { path = "../engine" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 # wasm-friendly: no RNG/clock features here (the server enables v4 / clock itself).

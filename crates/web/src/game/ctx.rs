@@ -63,6 +63,8 @@ pub struct GameCtx {
     pub log: RwSignal<Vec<LogLine>>,
     pub income: RwSignal<Option<IncomeNote>>,
     pub busy: RwSignal<bool>,
+    /// Online games: the server resolves defenders' casualties and submarine withdrawals.
+    pub auto_defense: bool,
     /// Locations to flash on the board after new events (cleared after ~1.6 s).
     pub flash: RwSignal<Vec<LocationId>>,
     /// Destinations of the picked units (movement phases).
@@ -103,6 +105,7 @@ impl GameCtx {
             log: RwSignal::new(vec![]),
             income: RwSignal::new(None),
             busy: RwSignal::new(false),
+            auto_defense: false,
             flash: RwSignal::new(vec![]),
             reach,
             movable,

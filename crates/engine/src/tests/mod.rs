@@ -5,6 +5,7 @@ use crate::*;
 
 mod audit_tests;
 mod bombing_tests;
+mod casualty_policy_tests;
 mod combat_tests;
 mod economy_tests;
 mod flow_tests;

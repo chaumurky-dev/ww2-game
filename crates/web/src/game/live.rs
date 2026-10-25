@@ -99,7 +99,8 @@ pub fn LiveGame(
                 .unwrap_or_default()
         })
     });
-    let ctx = GameCtx::new(GameState::new(GameSettings::default()), viewer);
+    let mut ctx = GameCtx::new(GameState::new(GameSettings::default()), viewer);
+    ctx.auto_defense = true;
     provide_context(ctx);
     let sync = Sync {
         ctx,

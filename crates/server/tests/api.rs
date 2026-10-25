@@ -1510,7 +1510,12 @@ async fn full_stack_game_against_bots() {
                 posted += 1;
             } else {
                 rejected += 1;
-                assert_eq!(env["code"], "illegal_action", "{env}");
+                // Racing the server's automatic defender resolution can also surface as
+                // "not your turn" once control has moved on.
+                assert!(
+                    env["code"] == "illegal_action" || env["code"] == "not_your_turn",
+                    "{env}"
+                );
             }
         } else {
             tokio::time::sleep(std::time::Duration::from_millis(20)).await;
@@ -1639,14 +1644,13 @@ async fn three_player_custom_layout_runs_to_round_two() {
     let gid = game["id"].as_str().unwrap().to_string();
     let guid: Uuid = gid.parse().unwrap();
 
-    // The host controls UK and then USA; bots drive USSR and Germany+Japan. The host ends its
-    // own phases immediately, but it is also "pending" whenever a bot's attack needs a defender
-    // decision (casualties, sub withdrawal), so answer those with the random policy instead of
-    // posting an end_phase that the engine rightly rejects while a battle is in progress.
-    use wartide_engine::{random_policy::RandomPolicy, Decision, GameState};
-    let mut policy = RandomPolicy::new(11);
+    // The host controls UK and then USA; bots drive USSR and Germany+Japan. The host ONLY ever
+    // handles `Decision::Phase`: when a bot attacks the host's territory the server resolves the
+    // host's casualties and submarine withdrawals itself, so the host is never asked.
+    use wartide_engine::{Decision, GameState};
     let mut acted = std::collections::BTreeSet::new();
     let mut round = 0;
+    let mut waiting_on_host_defender = 0;
     for _ in 0..600 {
         let (st, sv, _) = call(
             &c.app,
@@ -1664,15 +1668,28 @@ async fn three_player_custom_layout_runs_to_round_two() {
         }
         let (power, action) = match wartide_engine::pending_decision(&gs) {
             Decision::Phase { power, .. } if power.is_host_power() => {
+                waiting_on_host_defender = 0;
                 (power, json!({"type": "end_phase"}))
             }
-            Decision::SelectCasualties { power, .. }
-            | Decision::RetreatOrPress { power, .. }
-            | Decision::SubWithdrawal { power, .. }
-                if power.is_host_power() =>
-            {
-                let (_, action) = policy.next_action(&gs).expect("action");
-                (power, serde_json::to_value(action).unwrap())
+            d @ (Decision::SelectCasualties { .. }
+            | Decision::RetreatOrPress { .. }
+            | Decision::SubWithdrawal { .. }) => {
+                let p = match &d {
+                    Decision::SelectCasualties { power, .. }
+                    | Decision::RetreatOrPress { power, .. }
+                    | Decision::SubWithdrawal { power, .. } => *power,
+                    _ => unreachable!(),
+                };
+                if p.is_host_power() {
+                    // The driver resolves this within milliseconds; the host never answers it.
+                    waiting_on_host_defender += 1;
+                    assert!(
+                        waiting_on_host_defender < 100,
+                        "host was left holding a defender decision: {d:?}"
+                    );
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+                continue;
             }
             _ => {
                 tokio::time::sleep(std::time::Duration::from_millis(30)).await;
@@ -1706,6 +1723,68 @@ async fn three_player_custom_layout_runs_to_round_two() {
             .await
             .unwrap();
     assert!(g_acts > 0);
+}
+
+#[tokio::test]
+async fn battle_preferences_round_trip_and_reject_garbage() {
+    let Some(c) = setup().await else { return };
+    let a = register(&c, true).await;
+    let (st, s, _) = call(
+        &c.app,
+        Method::GET,
+        "/api/me/settings",
+        Some(&a.cookie),
+        None,
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK, "{s}");
+    assert_eq!(s["casualty_policy"], "cheapest_first");
+    assert_eq!(s["sub_withdrawal"], "when_outgunned");
+    let (st, s, _) = call(
+        &c.app,
+        Method::PATCH,
+        "/api/me/settings",
+        Some(&a.cookie),
+        Some(json!({"casualty_policy": "protect_aircraft", "sub_withdrawal": "always"})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK, "{s}");
+    assert_eq!(s["casualty_policy"], "protect_aircraft");
+    assert_eq!(s["sub_withdrawal"], "always");
+    // an unrelated patch leaves them alone
+    let (_, s, _) = call(
+        &c.app,
+        Method::PATCH,
+        "/api/me/settings",
+        Some(&a.cookie),
+        Some(json!({"email_match_found": false})),
+    )
+    .await;
+    assert_eq!(s["casualty_policy"], "protect_aircraft");
+    for bad in [
+        json!({"casualty_policy": "nonsense"}),
+        json!({"sub_withdrawal": "sometimes"}),
+        json!({"casualty_policy": 7}),
+    ] {
+        let (st, e, _) = call(
+            &c.app,
+            Method::PATCH,
+            "/api/me/settings",
+            Some(&a.cookie),
+            Some(bad.clone()),
+        )
+        .await;
+        assert_eq!(st, StatusCode::BAD_REQUEST, "{bad}: {e}");
+    }
+    let (_, s, _) = call(
+        &c.app,
+        Method::GET,
+        "/api/me/settings",
+        Some(&a.cookie),
+        None,
+    )
+    .await;
+    assert_eq!(s["casualty_policy"], "protect_aircraft");
 }
 
 #[tokio::test]
