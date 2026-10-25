@@ -41,6 +41,8 @@ pub struct BoardModel {
     pub stacks: HashMap<String, Vec<Stack>>,
     pub highlights: HashMap<String, Highlight>,
     pub selected: Option<String>,
+    /// Locations touched by the latest events (brief highlight animation).
+    pub flash: std::collections::HashSet<String>,
     /// Hover text (multi-line) per location.
     pub tips: HashMap<String, String>,
 }
@@ -66,6 +68,9 @@ fn loc_class(kind: LocKind, sea_alt: bool, id: &str, m: &BoardModel) -> String {
     }
     if m.selected.as_deref() == Some(id) {
         c.push_str(" selected");
+    }
+    if m.flash.contains(id) {
+        c.push_str(" flash");
     }
     c
 }

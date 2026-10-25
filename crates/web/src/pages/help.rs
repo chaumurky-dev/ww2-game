@@ -52,7 +52,7 @@ pub fn Help() -> impl IntoView {
                 <h2>"How Wartide works"</h2>
                 <p class="serif">"Five powers fight a world war over a shared map. Every power earns IPC (the money of the game) from the territories it holds, buys units with it, moves them, and settles disputes by rolling dice. The Axis (Germany, Japan) race the Allies (Soviet Union, United Kingdom, United States). Games are play-by-web: you take your turn whenever you like before the deadline, and the computer players move as fast as they can."</p>
                 <ul class="plain">{powers}</ul>
-                <p class="muted">"Turn order is Soviet Union, Germany, United Kingdom, Japan, United States; one lap is a round. The complete rules live in docs/RULES.md."</p>
+                <p class="muted">"Turn order is Soviet Union, Germany, United Kingdom, Japan, United States; one lap is a round."</p>
             </div>
             <div class="card col">
                 <h2>"Turn phases"</h2>

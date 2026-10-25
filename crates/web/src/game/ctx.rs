@@ -63,6 +63,8 @@ pub struct GameCtx {
     pub log: RwSignal<Vec<LogLine>>,
     pub income: RwSignal<Option<IncomeNote>>,
     pub busy: RwSignal<bool>,
+    /// Locations to flash on the board after new events (cleared after ~1.6 s).
+    pub flash: RwSignal<Vec<LocationId>>,
     /// Destinations of the picked units (movement phases).
     pub reach: Memo<Vec<Reach>>,
     /// Locations with units that can still act (movement phases, viewer's turn).
@@ -101,6 +103,7 @@ impl GameCtx {
             log: RwSignal::new(vec![]),
             income: RwSignal::new(None),
             busy: RwSignal::new(false),
+            flash: RwSignal::new(vec![]),
             reach,
             movable,
             backend: StoredValue::new(None),
@@ -167,6 +170,12 @@ impl GameCtx {
         let base = self.counter.get_value();
         self.counter.set_value(base + events.len() as u64 + 1);
         if animate {
+            let locs = super::model::event_locations(events);
+            if !locs.is_empty() {
+                self.flash.set(locs);
+                let flash = self.flash;
+                gloo_timers::callback::Timeout::new(1600, move || flash.set(vec![])).forget();
+            }
             if events
                 .iter()
                 .any(|e| matches!(e, Event::TurnStarted { .. }))

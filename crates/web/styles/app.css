@@ -285,11 +285,15 @@ button.danger { background: var(--bad); }
   .hero h1 { font-size: 2.6rem; }
   .page { padding: .6rem; }
   .nav { gap: .5rem .8rem; padding: .4rem .6rem; }
-  .game { grid-template-rows: auto minmax(0, 1fr) auto; height: calc(100dvh - 92px); min-height: 0; }
+  .game { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; height: calc(100dvh - 92px); min-height: 0; }
   .topbar { gap: .3rem .5rem; padding: .3rem .5rem; max-height: 5.2rem; overflow-y: auto; }
   .topbar h3 { font-size: 1rem; }
   .stepper .step { font-size: .58rem; padding: .08rem .25rem; }
-  .econ-pill { font-size: .62rem; padding: 0 .35rem; }
+  .econ-pill { font-size: .62rem; padding: 0 .35rem; white-space: nowrap; }
+  .topbar { min-width: 0; }
+  .topbar .econ { flex-wrap: nowrap; overflow-x: auto; width: 100%; min-width: 0; padding-bottom: 2px; }
+  .game-body { min-width: 0; } .board-wrap, .side { min-width: 0; }
+  .topbar { max-height: none; overflow: visible; }
   .game-body { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }
   .side { border-left: 0; border-top: 2px solid var(--line); max-height: 52dvh; padding: .6rem; }
   .game[data-mtab="board"] .side { display: none; }
@@ -297,6 +301,8 @@ button.danger { background: var(--bad); }
   .game[data-mtab="chat"] .sec-actions, .game[data-mtab="chat"] .sec-log,
   .game[data-mtab="log"] .sec-actions, .game[data-mtab="log"] .sec-chat { display: none; }
   .game[data-mtab="log"] .log { max-height: none; }
+  .sec-actions .sidepanel { order: -1; }
+  .sec-actions .game-info { border-bottom: 0; border-top: 1px solid var(--line); padding-top: .6rem; }
   .mtabs { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 2px solid var(--line); background: var(--paper); }
   .mtab { border-radius: 0; border: 0; border-right: 1px solid var(--line); background: var(--parchment-2); color: var(--ink); padding: .55rem 0; font-size: .9rem; position: relative; }
   .mtab.on { background: var(--ink); color: var(--parchment); }
@@ -313,3 +319,6 @@ button.danger { background: var(--bad); }
 .seat-label { flex: 0 0 11rem; }
 @media (max-width: 800px) { .seat-cfg > .row { flex-wrap: wrap; } .seat-label { flex-basis: 100%; } }
 td { vertical-align: top; } td:nth-child(2) { white-space: nowrap; }
+.loc.flash { animation: locflash 1.6s ease-out; }
+@keyframes locflash { 0% { filter: brightness(1.8) drop-shadow(0 0 8px #fff); } 100% { filter: none; } }
+@media (max-width: 800px) { button.small { min-height: 1.9rem; } }

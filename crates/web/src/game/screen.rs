@@ -20,6 +20,7 @@ fn overlay(ctx: GameCtx) -> Overlay {
         selected: sel.from,
         ..Default::default()
     };
+    ov.flash = ctx.flash.get();
     ov.battles = battles_pending(&st);
     if let Some(b) = &st.battle {
         ov.battles.push(b.location);
@@ -153,6 +154,22 @@ pub fn GameScreen(
         }
         now
     });
+    // Browser tab title flags a pending decision ("(!)") so a background tab is noticeable.
+    Effect::new(move |_| {
+        let title = if needs_me.get() {
+            "(!) Your move - Wartide"
+        } else {
+            "Wartide"
+        };
+        if let Some(d) = web_sys::window().and_then(|w| w.document()) {
+            d.set_title(title);
+        }
+    });
+    on_cleanup(|| {
+        if let Some(d) = web_sys::window().and_then(|w| w.document()) {
+            d.set_title("Wartide");
+        }
+    });
     let handle = window_event_listener(leptos::ev::keydown, move |e| keyboard(ctx, e));
     on_cleanup(move || handle.remove());
     let tab = move |id: &'static str, label: &'static str| {
@@ -164,7 +181,7 @@ pub fn GameScreen(
         }
     };
     view! {
-        <div class="game" attr:data-mtab=move || mtab.get()>
+        <div class="game" data-mtab=move || mtab.get()>
             <TopBar deadline_ms />
             <div class="game-body">
                 <Board map model on_select focus />

@@ -4,6 +4,7 @@ use super::ctx::GameCtx;
 use super::log::{format_events, push_lines};
 use super::screen::GameScreen;
 use crate::api;
+use crate::components::skeleton::Skeleton;
 use crate::map::SharedMap;
 use crate::realtime::Realtime;
 use crate::state::Toasts;
@@ -128,7 +129,7 @@ pub fn LiveGame(
         spawn_local(sync.refresh());
     });
     view! {
-        <Show when=move || sync.loaded.get() fallback=|| view! { <div class="page"><p>"Loading game state..."</p></div> }>
+        <Show when=move || sync.loaded.get() fallback=|| view! { <div class="page"><Skeleton lines=6 /></div> }>
             <GameScreen map=map.clone() deadline_ms=deadline top=top.clone() bottom=bottom.clone() />
         </Show>
     }

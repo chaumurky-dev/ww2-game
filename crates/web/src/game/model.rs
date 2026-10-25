@@ -14,6 +14,28 @@ pub struct Overlay {
     pub placements: Vec<LocationId>,
     pub battles: Vec<LocationId>,
     pub movable: Vec<LocationId>,
+    pub flash: Vec<LocationId>,
+}
+
+/// Locations worth a brief highlight when `events` arrive (moves, battles, captures, placements).
+pub fn event_locations(events: &[wartide_engine::Event]) -> Vec<LocationId> {
+    use wartide_engine::Event as E;
+    let mut v: Vec<LocationId> = vec![];
+    for e in events {
+        match e {
+            E::UnitsMoved { from, path, .. } => v.push(*path.last().unwrap_or(from)),
+            E::UnitsUnloaded { to, .. } => v.push(*to),
+            E::TerritoryCaptured { location, .. } | E::BattleStarted { location, .. } => {
+                v.push(*location)
+            }
+            E::Retreated { to, .. } => v.push(*to),
+            E::UnitsPlaced { location, .. } => v.push(*location),
+            _ => {}
+        }
+    }
+    v.sort_by_key(|l| l.0);
+    v.dedup();
+    v
 }
 
 /// Unit stacks at a location grouped by (power, unit type); cargo is folded into its ship.
@@ -111,6 +133,7 @@ pub fn board_model(st: &GameState, ov: &Overlay) -> BoardModel {
         b.highlights.insert(loc_key(l), h);
     }
     b.selected = ov.selected.map(loc_key);
+    b.flash = ov.flash.iter().map(|&l| loc_key(l)).collect();
     b
 }
 
@@ -172,5 +195,28 @@ mod tests {
         let b = board_model(&st, &ov);
         assert_eq!(b.highlights.get("germany"), Some(&Highlight::Attack));
         assert_eq!(b.selected.as_deref(), Some("germany"));
+    }
+
+    #[test]
+    fn event_locations_dedup_and_targets() {
+        use wartide_engine::{Event, LocationId, Power as P};
+        let a = LocationId::from_id("russia").unwrap();
+        let b = LocationId::from_id("karelia_s_s_r").unwrap();
+        let evs = vec![
+            Event::UnitsMoved {
+                power: P::Ussr,
+                units: vec![],
+                from: a,
+                path: vec![b],
+            },
+            Event::TerritoryCaptured {
+                power: P::Ussr,
+                location: b,
+                from: None,
+                liberated: false,
+            },
+        ];
+        assert_eq!(event_locations(&evs), vec![b]);
+        assert!(event_locations(&[]).is_empty());
     }
 }
