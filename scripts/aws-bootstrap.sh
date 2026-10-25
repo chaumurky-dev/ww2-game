@@ -2,7 +2,7 @@
 # Wartide AWS bootstrap: everything needed before the first `terraform apply`, scripted and idempotent.
 #
 # Subcommands (see docs/DEPLOY.md):
-#   operator-role  [admin profile] create/update the least-privilege `wartide-terraform` role + policy
+#   operator-role  [admin profile] create/update the `wartide-terraform` role + policy and the `wartide-boundary` permissions boundary
 #   profile        write the `wartide` CLI profile that assumes that role
 #   state-bucket   [wartide profile] create the private, versioned, encrypted Terraform state bucket
 #   github         set GitHub secret/variables from `terraform output`
@@ -14,6 +14,7 @@
 #   AWS_REGION          default us-east-1
 #   ADMIN_PRINCIPAL_ARN principal allowed to assume the role (default: caller of operator-role)
 #   ROLE_NAME           default wartide-terraform      POLICY_NAME  default wartide-terraform
+#   BOUNDARY_NAME       default wartide-boundary       ENV_NAME     default prod (Terraform env suffix)
 #   STATE_BUCKET        default wartide-terraform-state-<account id>
 #   GITHUB_REPO         default chaumurky-dev/ww2-game
 set -euo pipefail
@@ -23,6 +24,8 @@ IAM_DIR="$REPO_ROOT/infra/iam"
 REGION="${AWS_REGION:-us-east-1}"
 ROLE_NAME="${ROLE_NAME:-wartide-terraform}"
 POLICY_NAME="${POLICY_NAME:-wartide-terraform}"
+BOUNDARY_NAME="${BOUNDARY_NAME:-wartide-boundary}"
+ENV_NAME="${ENV_NAME:-prod}"
 GITHUB_REPO="${GITHUB_REPO:-chaumurky-dev/ww2-game}"
 ASSUME_YES=0
 TF_DIR="$REPO_ROOT/infra/terraform"
@@ -49,6 +52,39 @@ confirm() { # confirm "message"
 }
 
 account_id() { aws sts get-caller-identity --query Account --output text; }
+
+# upsert_policy NAME DOCUMENT_FILE POLICY_ARN: create the managed policy, or publish a new default version
+# only when the document changed. IAM keeps at most 5 versions, so the oldest non-default one is deleted
+# first when 4 non-default versions already exist.
+upsert_policy() {
+  local name="$1" doc="$2" arn="$3"
+  python3 -m json.tool "$doc" >/dev/null || { echo "invalid JSON: $doc" >&2; exit 1; }
+  if ! aws iam get-policy --policy-arn "$arn" >/dev/null 2>&1; then
+    run aws iam create-policy --policy-name "$name" --policy-document "file://$doc"
+    echo "Policy ${name}: created"
+    return 0
+  fi
+  local ver current want
+  ver="$(aws iam get-policy --policy-arn "$arn" --query Policy.DefaultVersionId --output text)"
+  current="$(aws iam get-policy-version --policy-arn "$arn" --version-id "$ver" \
+    --query PolicyVersion.Document --output json | python3 -c 'import json,sys;print(json.dumps(json.load(sys.stdin),sort_keys=True))')"
+  want="$(python3 -c 'import json,sys;print(json.dumps(json.load(open(sys.argv[1])),sort_keys=True))' "$doc")"
+  if [ "$current" = "$want" ]; then
+    echo "Policy ${name}: up to date (${ver})"
+    return 0
+  fi
+  local non_default n oldest
+  non_default="$(aws iam list-policy-versions --policy-arn "$arn" \
+    --query 'sort_by(Versions,&CreateDate)[?IsDefaultVersion==`false`].VersionId' --output text)"
+  n="$(wc -w <<<"$non_default")"
+  for oldest in $non_default; do
+    [ "$n" -le 3 ] && break
+    run aws iam delete-policy-version --policy-arn "$arn" --version-id "$oldest"
+    n=$((n - 1))
+  done
+  run aws iam create-policy-version --policy-arn "$arn" --policy-document "file://$doc" --set-as-default
+  echo "Policy ${name}: new default version published (was ${ver})"
+}
 
 # ---------------------------------------------------------------- operator-role
 cmd_operator_role() {
@@ -78,33 +114,10 @@ cmd_operator_role() {
       --assume-role-policy-document "file://$trust"
   fi
 
-  # 2. Managed policy: create, or publish a new default version only if the document changed.
-  local doc="$IAM_DIR/wartide-terraform-policy.json"
-  if aws iam get-policy --policy-arn "$policy_arn" >/dev/null 2>&1; then
-    local ver current want
-    ver="$(aws iam get-policy --policy-arn "$policy_arn" --query Policy.DefaultVersionId --output text)"
-    current="$(aws iam get-policy-version --policy-arn "$policy_arn" --version-id "$ver" \
-      --query PolicyVersion.Document --output json | python3 -c 'import json,sys;print(json.dumps(json.load(sys.stdin),sort_keys=True))')"
-    want="$(python3 -c 'import json,sys;print(json.dumps(json.load(open(sys.argv[1])),sort_keys=True))' "$doc")"
-    if [ "$current" = "$want" ]; then
-      echo "Policy ${POLICY_NAME} is up to date (${ver})"
-    else
-      # IAM allows 5 versions; prune oldest non-default ones until at most 4 remain.
-      local non_default n oldest
-      non_default="$(aws iam list-policy-versions --policy-arn "$policy_arn" \
-        --query 'sort_by(Versions,&CreateDate)[?IsDefaultVersion==`false`].VersionId' --output text)"
-      n="$(wc -w <<<"$non_default")"
-      for oldest in $non_default; do
-        [ "$n" -le 3 ] && break
-        run aws iam delete-policy-version --policy-arn "$policy_arn" --version-id "$oldest"
-        n=$((n - 1))
-      done
-      run aws iam create-policy-version --policy-arn "$policy_arn" \
-        --policy-document "file://$doc" --set-as-default
-    fi
-  else
-    run aws iam create-policy --policy-name "$POLICY_NAME" --policy-document "file://$doc"
-  fi
+  # 2. Permissions boundary first (the operator policy only allows creating principals that carry it), then the
+  #    operator policy itself. Each is created, or gets a new default version only if the document changed.
+  upsert_policy "$BOUNDARY_NAME" "$IAM_DIR/wartide-boundary-policy.json" "arn:aws:iam::${acct}:policy/${BOUNDARY_NAME}"
+  upsert_policy "$POLICY_NAME" "$IAM_DIR/wartide-terraform-policy.json" "$policy_arn"
 
   # 3. Attach our policy; make sure AdministratorAccess is not attached.
   run aws iam attach-role-policy --role-name "$ROLE_NAME" --policy-arn "$policy_arn"
@@ -113,6 +126,25 @@ cmd_operator_role() {
     --query "AttachedPolicies[?PolicyArn=='${admin_arn}'].PolicyArn" --output text | grep -q .; then
     run aws iam detach-role-policy --role-name "$ROLE_NAME" --policy-arn "$admin_arn"
   fi
+  # 4. Principals Terraform created before the boundary existed need it attached once, by the admin: the operator
+  #    policy denies iam:Put*PermissionsBoundary, so Terraform itself cannot. New ones get it from Terraform.
+  local boundary_arn="arn:aws:iam::${acct}:policy/${BOUNDARY_NAME}" r u cur
+  for r in $(aws iam list-roles --query "Roles[?starts_with(RoleName, 'wartide-${ENV_NAME}-')].RoleName" --output text); do
+    cur="$(aws iam get-role --role-name "$r" --query 'Role.PermissionsBoundary.PermissionsBoundaryArn' --output text)"
+    if [ "$cur" = "$boundary_arn" ]; then
+      echo "Role ${r}: boundary already attached"
+    else
+      run aws iam put-role-permissions-boundary --role-name "$r" --permissions-boundary "$boundary_arn"
+    fi
+  done
+  for u in $(aws iam list-users --query "Users[?starts_with(UserName, 'wartide-${ENV_NAME}-')].UserName" --output text); do
+    cur="$(aws iam get-user --user-name "$u" --query 'User.PermissionsBoundary.PermissionsBoundaryArn' --output text)"
+    if [ "$cur" = "$boundary_arn" ]; then
+      echo "User ${u}: boundary already attached"
+    else
+      run aws iam put-user-permissions-boundary --user-name "$u" --permissions-boundary "$boundary_arn"
+    fi
+  done
   echo "Role ready: arn:aws:iam::${acct}:role/${ROLE_NAME}"
 }
 
@@ -146,9 +178,16 @@ cmd_state_bucket() {
   fi
   run aws s3api put-public-access-block --bucket "$bucket" --public-access-block-configuration \
     BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+  run aws s3api put-bucket-ownership-controls --bucket "$bucket" \
+    --ownership-controls 'Rules=[{ObjectOwnership=BucketOwnerEnforced}]'
   run aws s3api put-bucket-versioning --bucket "$bucket" --versioning-configuration Status=Enabled
   run aws s3api put-bucket-encryption --bucket "$bucket" --server-side-encryption-configuration \
     '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"},"BucketKeyEnabled":true}]}'
+  run aws s3api put-bucket-lifecycle-configuration --bucket "$bucket" --lifecycle-configuration \
+    '{"Rules":[{"ID":"expire-noncurrent-90d","Status":"Enabled","Filter":{},"NoncurrentVersionExpiration":{"NoncurrentDays":90},"AbortIncompleteMultipartUpload":{"DaysAfterInitiation":7}}]}'
+  local policy
+  policy="$(printf '{"Version":"2012-10-17","Statement":[{"Sid":"DenyInsecureTransport","Effect":"Deny","Principal":"*","Action":"s3:*","Resource":["arn:aws:s3:::%s","arn:aws:s3:::%s/*"],"Condition":{"Bool":{"aws:SecureTransport":"false"}}}]}' "$bucket" "$bucket")"
+  run aws s3api put-bucket-policy --bucket "$bucket" --policy "$policy"
   echo "State bucket ready: ${bucket}"
 }
 
