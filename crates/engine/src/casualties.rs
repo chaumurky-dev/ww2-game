@@ -1,5 +1,6 @@
 //! Casualty selection: who must lose what, forced-choice detection, removal.
 use crate::battle::defending_controller;
+use crate::casualty_policy::{choose_casualties, CasualtyPolicy};
 use crate::combat::advance;
 use crate::dice::Rng;
 use crate::error::{illegal, Result, RuleError};
@@ -100,30 +101,10 @@ pub(crate) fn remove_now(
 }
 
 /// Cheapest-first valid casualty choice (used for auto-resolution and as an AI fallback).
+/// This is [`choose_casualties`](crate::casualty_policy::choose_casualties) under the default
+/// policy.
 pub fn default_pick(state: &GameState, cand: &[UnitId], normal: u32, sub: u32) -> Vec<UnitId> {
-    let mut sorted: Vec<&crate::units::Unit> = cand.iter().filter_map(|&i| state.unit(i)).collect();
-    sorted.sort_by_key(|u| (u.kind.stats().cost, u.id));
-    let mut out = vec![];
-    let mut sub_left = sub;
-    for u in sorted.iter().filter(|u| !u.kind.is_air()) {
-        if sub_left == 0 {
-            break;
-        }
-        out.push(u.id);
-        sub_left -= 1;
-    }
-    let mut normal_left = normal;
-    for u in &sorted {
-        if normal_left == 0 {
-            break;
-        }
-        if out.contains(&u.id) {
-            continue;
-        }
-        out.push(u.id);
-        normal_left -= 1;
-    }
-    out
+    choose_casualties(state, CasualtyPolicy::default(), normal + sub, sub, cand)
 }
 
 /// Assign the casualties now if the choice is forced; otherwise record a pending selection.

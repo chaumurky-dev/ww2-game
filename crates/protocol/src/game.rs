@@ -238,9 +238,6 @@ pub struct GameSettings {
     pub japan_super_subs: bool,
 }
 
-fn default_mode() -> GameMode {
-    GameMode::FivePlayer
-}
 fn default_timeout() -> u32 {
     172_800
 }
@@ -354,28 +351,12 @@ pub struct GameSummary {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreatePrivateGameRequest {
-    /// Legacy layout selector (`two_player`/`five_player`); ignored when `seats` is given.
-    #[serde(default = "default_mode")]
-    pub mode: GameMode,
-    /// General seat model: 1-5 seats partitioning the five powers, exactly one `host`. When
-    /// present it supersedes `mode`, `human_seats`, `bot_seats` and `bot_personas`. The game's
-    /// mode is derived from the layout (see `GameMode::derive`).
-    #[serde(default)]
-    pub seats: Option<Vec<SeatSpec>>,
+    /// Seat model: 1-5 seats partitioning the five powers, exactly one `host`. The game's mode
+    /// is derived from the layout (see `GameMode::derive`).
+    pub seats: Vec<SeatSpec>,
     /// Game title (1-60 chars). Defaults to `Private game #<short id>`.
     #[serde(default)]
     pub name: Option<String>,
-    /// Persona ids per seat index (0-based); `null`/missing = default for that seat. Entries are
-    /// only allowed for seats listed in `bot_seats`.
-    #[serde(default)]
-    pub bot_personas: Vec<Option<String>>,
-    /// Number of human seats (including the host). Remaining seats are bots or must be
-    /// listed in `bot_seats`. Defaults to `seat_count - bot_seats.len()`.
-    #[serde(default)]
-    pub human_seats: Option<u8>,
-    /// Seat indexes (0-based) that are bots.
-    #[serde(default)]
-    pub bot_seats: Vec<u8>,
     #[serde(default)]
     pub settings: GameSettings,
     #[serde(default)]
@@ -439,14 +420,16 @@ mod tests {
     }
 
     #[test]
-    fn create_request_new_fields_are_optional() {
-        let r: CreatePrivateGameRequest = serde_json::from_str(r#"{"mode":"two_player"}"#).unwrap();
-        assert!(r.name.is_none() && r.bot_personas.is_empty());
+    fn create_request_requires_seats_and_defaults_the_rest() {
+        assert!(serde_json::from_str::<CreatePrivateGameRequest>("{}").is_err());
         let r: CreatePrivateGameRequest = serde_json::from_str(
-            r#"{"mode":"five_player","name":"X","bot_personas":[null,"frost"]}"#,
+            r#"{"seats":[{"powers":["germany","japan"],"kind":"host"},
+                {"powers":["ussr","uk","usa"],"kind":"bot","persona":"frost"}]}"#,
         )
         .unwrap();
-        assert_eq!(r.bot_personas, vec![None, Some("frost".to_string())]);
+        assert!(r.name.is_none() && r.group_id.is_none());
+        assert_eq!(r.seats.len(), 2);
+        assert_eq!(r.seats[1].persona.as_deref(), Some("frost"));
     }
 
     #[test]
