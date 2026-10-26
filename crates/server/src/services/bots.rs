@@ -288,9 +288,9 @@ async fn run_pass(
                 }
             }
         } else if attempt < BOT_ATTEMPTS + RANDOM_ATTEMPTS {
-            let mut rp = engine::random_policy::RandomPolicy::new(rules::fallback_seed(
-                g.seed, seq, attempt,
-            ));
+            let mut rp = engine::random_policy::RandomPolicy::new(
+                wartide_protocol::seed::fallback_seed(g.seed as u64, seq, attempt),
+            );
             match rp.next_action(&gs) {
                 Some((p, a)) if rules::power_from_engine(p) == power => (a, Vec::new()),
                 _ => {
@@ -384,7 +384,7 @@ fn defender_action(
                         gs,
                         power,
                         &subs,
-                        rules::fallback_seed(game_seed, seq, 0),
+                        wartide_protocol::seed::fallback_seed(game_seed as u64, seq, 0),
                     )
                 }
             })
@@ -416,7 +416,7 @@ async fn plan(
         Bot::new(
             persona,
             rules::power_to_engine(power),
-            rules::bot_seed(game_seed, power),
+            wartide_protocol::seed::bot_seed(game_seed as u64, power),
         )
     });
     let (bot, out) = tokio::task::spawn_blocking(move || {

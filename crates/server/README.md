@@ -141,7 +141,7 @@ turn e-mail only when the acting seat changes.
 - Every action goes through `games::apply_locked`: one transaction that locks the game row, parses the stored
   `GameState`, calls `wartide_engine::apply(state, pending_power, action, seed)` and appends action + events + new
   state. The RNG seed of action `seq` is `splitmix64(fnv1a64("wartide/action" ++ le64(games.seed) ++ le64(seq)))`
-  (`rules::action_seed`), so a game replays from its log (`wartide_engine::replay`).
+  (`wartide_protocol::seed::action_seed`), so a game replays from its log (`wartide_engine::replay`).
 - Per-game serialisation: `state.runtime.lock(game_id)` (one `tokio::sync::Mutex` per game) is held while an action is
   applied, by HTTP actions, resign, timeout handling and the bot driver alike.
 - **Bot driver** (`services/bots.rs`, `spawn_driver`): started after game start, after every accepted action, after

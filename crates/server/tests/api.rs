@@ -1707,7 +1707,7 @@ async fn full_stack_game_against_bots() {
             | wartide_engine::Decision::SubWithdrawal { power, .. } => power,
             other => panic!("log continues after {other:?}"),
         };
-        let seed = wartide_server::services::rules::action_seed(seed, seq);
+        let seed = wartide_protocol::seed::action_seed(seed as u64, seq);
         wartide_engine::apply(&mut stepper, power, &action, seed).unwrap();
         entries.push((power, action, seed));
     }

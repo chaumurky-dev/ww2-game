@@ -6,6 +6,7 @@ pub mod bots;
 pub mod chat;
 pub mod game;
 pub mod group;
+pub mod seed;
 pub mod user;
 pub mod ws;
 
