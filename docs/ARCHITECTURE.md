@@ -62,6 +62,20 @@ act is a bot it runs the bot synchronously (bounded) until a human must decide. 
 remainder of the turn for the absent player. Ratings: Glicko-2 per ladder (`public:2p`,
 `public:5p`, `group:{id}:{2p|5p}`); private non-group games are unrated.
 
+Layout: `routes/*` are thin axum handlers; `services/*` hold the logic and all SQL. The games
+service is a directory module: `games/rows.rs` (row types, column lists, seat lookups),
+`games/read.rs` (summaries, listings, state view), `games/lobby.rs` (create, join, start),
+`games/play.rs` (`submit_action` → `apply_locked`, the one action pipeline shared by humans,
+bots and automatic defender decisions), `games/ending.rs` (finish, resign, abandon).
+`services/transition.rs` is the pure rule that turns a before/after pending decision into
+"start a clock / notify / finish" and is unit-tested without a database. `services/rules.rs`
+is the engine adapter (settings mapping, applying an action); seed derivation lives in
+`wartide_protocol::seed` so the web replay uses the same function. Protocol DTOs carry the
+engine's `GameState`, `Action` and `Event` types directly (JSON only at the Postgres boundary via
+`sqlx::types::Json`), and the `status`/`kind`/`mode` TEXT columns decode straight into the
+protocol enums (`sqlx::Type` derive behind the protocol crate's server-only `sqlx` feature).
+`Power` and `Team` exist once, in the engine; protocol re-exports them.
+
 ## Web (`wartide-web`)
 Leptos 0.8 CSR. SVG map generated from public-domain Natural Earth geometry (see
 `scripts/mapgen/`), unit stacks rendered as tinted icon badges per power, phase-driven action
