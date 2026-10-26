@@ -104,7 +104,7 @@ impl Realtime {
             ServerMessage::YourTurn { game_id, power } => {
                 self.bump();
                 let who = power
-                    .map(|p| format!(" ({})", crate::model::PowerExt::name(p)))
+                    .map(|p| format!(" ({})", p.name()))
                     .unwrap_or_default();
                 let here = web_sys::window()
                     .and_then(|w| w.location().pathname().ok())

@@ -1,5 +1,4 @@
 //! Server-driven game: loads `GameState`, submits engine actions, refetches on `GameUpdated`.
-use super::conv::eng_power;
 use super::ctx::GameCtx;
 use super::log::{format_events, push_lines};
 use super::screen::GameScreen;
@@ -10,7 +9,7 @@ use crate::realtime::Realtime;
 use crate::state::Toasts;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use wartide_engine::{Action, Event, GameSettings, GameState, Power};
+use wartide_engine::{Action, GameSettings, GameState, Power};
 use wartide_protocol::game::{GameId, GameSummary};
 
 #[derive(Clone, Copy)]
@@ -22,10 +21,6 @@ struct Sync {
     running: StoredValue<bool>,
     again: StoredValue<bool>,
     toasts: Toasts,
-}
-
-fn parse_events(v: serde_json::Value) -> Vec<Event> {
-    serde_json::from_value(v).unwrap_or_default()
 }
 
 impl Sync {
@@ -51,10 +46,7 @@ impl Sync {
             Ok(r) => r,
             Err(e) => return self.toasts.api_error(&e),
         };
-        let st: GameState = match serde_json::from_value(resp.state) {
-            Ok(s) => s,
-            Err(e) => return self.toasts.error(format!("Bad game state: {e}")),
-        };
+        let st: GameState = resp.state;
         let first = !self.loaded.get_untracked();
         let since = if first {
             (resp.seq - 60).max(0)
@@ -64,7 +56,7 @@ impl Sync {
         let envs = api::game_actions(self.id, since).await.unwrap_or_default();
         let mut events = vec![];
         for e in envs.into_iter().filter(|e| e.seq > since) {
-            events.extend(parse_events(e.events));
+            events.extend(e.events);
         }
         if first {
             self.ctx.battles.set_value(Default::default());
@@ -100,7 +92,7 @@ pub fn LiveGame(
     let viewer = Signal::derive(move || -> Vec<Power> {
         live.with(|s| {
             crate::model::my_seat(s)
-                .map(|seat| seat.powers.iter().map(|p| eng_power(*p)).collect())
+                .map(|seat| seat.powers.to_vec())
                 .unwrap_or_default()
         })
     });
@@ -120,8 +112,7 @@ pub fn LiveGame(
         spawn_local(async move {
             ctx.busy.set(true);
             for a in actions {
-                let body = serde_json::to_value(&a).unwrap_or_default();
-                if let Err(e) = api::submit_action(game_id, body).await {
+                if let Err(e) = api::submit_action(game_id, a).await {
                     toasts.api_error(&e);
                     break;
                 }

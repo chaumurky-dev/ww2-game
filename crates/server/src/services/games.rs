@@ -3,6 +3,7 @@ use rand::Rng;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
+use sqlx::types::Json;
 use sqlx::{FromRow, PgConnection};
 use uuid::Uuid;
 use wartide_engine as engine;
@@ -610,12 +611,11 @@ pub async fn begin_game(state: &AppState, id: Uuid) -> AppResult<()> {
     let settings: GameSettings = serde_json::from_value(game.settings.clone()).unwrap_or_default();
     let initial = state.rules.initial_state(&settings, game.seed);
     let first = rules::pending_of(&initial).power.unwrap_or(Power::Ussr);
-    let initial_json = rules::to_json(&initial)?;
     let mut tx = state.db.begin().await?;
     let n = sqlx::query("UPDATE games SET status='in_progress', round=$2, current_power=$3, pending_power=$3, phase=$4, updated_at=now() WHERE id=$1 AND status='lobby'")
         .bind(id)
         .bind(initial.round as i32)
-        .bind(rules::power_from_engine(initial.current_power).as_str())
+        .bind(initial.current_power.as_str())
         .bind(rules::phase_str(&initial))
         .execute(&mut *tx)
         .await?
@@ -625,7 +625,7 @@ pub async fn begin_game(state: &AppState, id: Uuid) -> AppResult<()> {
     }
     sqlx::query("INSERT INTO game_states (game_id, seq, state) VALUES ($1, 0, $2)")
         .bind(id)
-        .bind(initial_json)
+        .bind(Json(&initial))
         .execute(&mut *tx)
         .await?;
     let first_is_bot = seat_is_bot_for(&mut tx, id, first).await?;
@@ -727,8 +727,8 @@ pub async fn actions_since(
     struct Rw {
         seq: i64,
         actor_seat: Option<i32>,
-        action: Value,
-        events: Value,
+        action: Json<engine::Action>,
+        events: Json<Vec<engine::Event>>,
         created_at: DateTime<Utc>,
     }
     let rows = sqlx::query_as::<_, Rw>(
@@ -744,8 +744,8 @@ pub async fn actions_since(
         .map(|r| GameActionEnvelope {
             seq: r.seq,
             actor: r.actor_seat.map(|s| s as u8),
-            action: r.action,
-            events: r.events,
+            action: r.action.0,
+            events: r.events.0,
             created_at: r.created_at,
         })
         .collect())
@@ -753,16 +753,14 @@ pub async fn actions_since(
 
 /// Everything in the engine state is public except the per-game dice seed, which would let a
 /// client precompute every roll. Only the served copy is scrubbed; the stored state is untouched.
-pub fn scrub_state(mut st: Value) -> Value {
-    if let Some(seed) = st.get_mut("settings").and_then(|s| s.get_mut("seed")) {
-        *seed = Value::from(0u64);
-    }
+pub fn scrub_state(mut st: engine::GameState) -> engine::GameState {
+    st.settings.seed = 0;
     st
 }
 
 pub async fn state_view(state: &AppState, user: Uuid, id: Uuid) -> AppResult<GameStateResponse> {
     reader_access(state, id, user).await?;
-    let (seq, st): (i64, Value) =
+    let (seq, Json(st)): (i64, Json<engine::GameState>) =
         sqlx::query_as("SELECT seq, state FROM game_states WHERE game_id=$1")
             .bind(id)
             .fetch_optional(&state.db)
@@ -792,22 +790,24 @@ pub struct Applied {
     pub state: engine::GameState,
 }
 
+/// The seat `user` occupies in game `id`, or 403.
+pub async fn require_seat(state: &AppState, user: &CurrentUser, id: Uuid) -> AppResult<SeatRow> {
+    load_seats(state, id)
+        .await?
+        .into_iter()
+        .find(|s| s.user_id == Some(user.id))
+        .ok_or_else(|| AppError::forbidden("you are not a player in this game"))
+}
+
 /// Submit an action as `user`: checks seat/turn ownership, applies it through the engine and
 /// appends it to the log atomically, then lets the computer players continue.
 pub async fn submit_action(
     state: &AppState,
     user: &CurrentUser,
     id: Uuid,
-    action: Value,
+    action: engine::Action,
 ) -> AppResult<GameActionEnvelope> {
-    if !action.is_object() {
-        return Err(AppError::bad("action must be a JSON object"));
-    }
-    let seats = load_seats(state, id).await?;
-    let mine = seats
-        .iter()
-        .find(|s| s.user_id == Some(user.id))
-        .ok_or_else(|| AppError::forbidden("you are not a player in this game"))?;
+    let mine = require_seat(state, user, id).await?;
     let applied = {
         let _guard = state.runtime.lock(id).await;
         apply_locked(state, id, Actor::Human(mine.seat), action, None).await?
@@ -826,7 +826,7 @@ pub async fn apply_locked(
     state: &AppState,
     id: Uuid,
     actor: Actor,
-    action: Value,
+    action: engine::Action,
     expect_seq: Option<i64>,
 ) -> AppResult<Applied> {
     let mut tx = state.db.begin().await?;
@@ -843,7 +843,7 @@ pub async fn apply_locked(
             "game is not in progress",
         ));
     }
-    let (seq, cur_state): (i64, Value) =
+    let (seq, Json(mut gs)): (i64, Json<engine::GameState>) =
         sqlx::query_as("SELECT seq, state FROM game_states WHERE game_id=$1 FOR UPDATE")
             .bind(id)
             .fetch_one(&mut *tx)
@@ -855,7 +855,6 @@ pub async fn apply_locked(
         ));
     }
     let next_seq = seq + 1;
-    let mut gs = rules::parse_state(&cur_state)?;
     let before = rules::pending_of(&gs);
     let power = before
         .power
@@ -874,10 +873,7 @@ pub async fn apply_locked(
             ));
         }
     }
-    let parsed = rules::parse_action(&action)?;
-    let events = rules::apply_typed(&mut gs, power, &parsed, game.seed, next_seq)?;
-    let events = rules::to_json(&events)?;
-    let new_state = rules::to_json(&gs)?;
+    let events = rules::apply_typed(&mut gs, power, &action, game.seed, next_seq)?;
     let after = rules::pending_of(&gs);
 
     let created_at: DateTime<Utc> = sqlx::query_scalar(
@@ -886,20 +882,20 @@ pub async fn apply_locked(
     .bind(id)
     .bind(next_seq)
     .bind(power_seat.seat)
-    .bind(&action)
-    .bind(&events)
+    .bind(Json(&action))
+    .bind(Json(&events))
     .fetch_one(&mut *tx)
     .await?;
     sqlx::query("UPDATE game_states SET seq=$2, state=$3, updated_at=now() WHERE game_id=$1")
         .bind(id)
         .bind(next_seq)
-        .bind(&new_state)
+        .bind(Json(&gs))
         .execute(&mut *tx)
         .await?;
     sqlx::query("UPDATE games SET round=$2, current_power=$3, phase=$4, pending_power=$5, updated_at=now() WHERE id=$1")
         .bind(id)
         .bind(gs.round as i32)
-        .bind(rules::power_from_engine(gs.current_power).as_str())
+        .bind(gs.current_power.as_str())
         .bind(rules::phase_str(&gs))
         .bind(after.power.map(Power::as_str))
         .execute(&mut *tx)

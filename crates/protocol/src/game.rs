@@ -20,53 +20,7 @@ pub struct UserRef {
     pub avatar: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Power {
-    Ussr,
-    Germany,
-    Uk,
-    Japan,
-    Usa,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Team {
-    Axis,
-    Allies,
-}
-
-impl Power {
-    pub const ALL: [Power; 5] = [
-        Power::Ussr,
-        Power::Germany,
-        Power::Uk,
-        Power::Japan,
-        Power::Usa,
-    ];
-
-    pub fn team(self) -> Team {
-        match self {
-            Power::Germany | Power::Japan => Team::Axis,
-            _ => Team::Allies,
-        }
-    }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Power::Ussr => "ussr",
-            Power::Germany => "germany",
-            Power::Uk => "uk",
-            Power::Japan => "japan",
-            Power::Usa => "usa",
-        }
-    }
-
-    pub fn parse(s: &str) -> Option<Power> {
-        Power::ALL.into_iter().find(|p| p.as_str() == s)
-    }
-}
+pub use wartide_engine::{Power, Team};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -373,24 +327,23 @@ pub struct MatchmakingRequest {
     pub mode: GameMode,
 }
 
-/// The engine's `GameState` as JSON (all information is public in this game, so there is no
-/// per-viewer projection). See `crates/engine/README.md` for the shape.
-pub type GameStateView = serde_json::Value;
+/// The engine's `GameState` (all information is public in this game, so there is no per-viewer
+/// projection; the server zeroes `settings.seed`). See `crates/engine/README.md` for the shape.
+pub type GameStateView = wartide_engine::GameState;
 
-/// One log entry. `action` is a `wartide_engine::Action` and `events` a `Vec<wartide_engine::Event>`
-/// (both as JSON); `actor` is the seat that controlled the acting power.
+/// One log entry; `actor` is the seat that controlled the acting power.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GameActionEnvelope {
     pub seq: i64,
     pub actor: Option<u8>,
-    pub action: serde_json::Value,
-    pub events: serde_json::Value,
+    pub action: wartide_engine::Action,
+    pub events: Vec<wartide_engine::Event>,
     pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubmitActionRequest {
-    pub action: serde_json::Value,
+    pub action: wartide_engine::Action,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -402,6 +355,19 @@ pub struct GameStateResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn power_and_team_wire_format_is_pinned() {
+        assert_eq!(serde_json::to_string(&Power::Uk).unwrap(), "\"uk\"");
+        assert_eq!(serde_json::to_string(&Team::Allies).unwrap(), "\"allies\"");
+        for p in Power::ALL {
+            assert_eq!(Power::parse(p.as_str()), Some(p));
+            assert_eq!(
+                serde_json::to_string(&p).unwrap(),
+                format!("\"{}\"", p.as_str())
+            );
+        }
+    }
 
     #[test]
     fn teams() {

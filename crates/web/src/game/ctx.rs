@@ -1,5 +1,4 @@
 //! Shared game-screen context: engine state, UI selection, log, dice and the send backend.
-use super::conv::ui_power;
 use super::dice::{dice_shows, DiceShow};
 use super::log::{format_events, push_lines, BattleAcc, LogLine};
 use super::moves::{group_reach, movable_locations};
@@ -222,6 +221,6 @@ impl GameCtx {
     }
 
     pub fn power_ui(p: Power) -> crate::model::Power {
-        ui_power(p)
+        p
     }
 }

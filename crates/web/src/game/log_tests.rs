@@ -1,7 +1,6 @@
 //! Tests for the log formatting.
 
 use super::log::*;
-use crate::model::Power as UiPower;
 use wartide_engine::event::DiceContext;
 use wartide_engine::state::PurchaseItem;
 use wartide_engine::units::UnitRef;
@@ -37,7 +36,7 @@ fn move_line_names_units_and_places() {
     let t = &lines[0].text;
     assert!(t.starts_with("Germany moves 3 infantry, 1 armor "), "{t}");
     assert!(t.contains('\u{2192}'));
-    assert_eq!(lines[0].power, Some(UiPower::Germany));
+    assert_eq!(lines[0].power, Some(Power::Germany));
 }
 
 #[test]
