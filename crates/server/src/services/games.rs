@@ -11,6 +11,7 @@ use wartide_protocol::ws::ServerMessage;
 
 use crate::error::{is_unique_violation, AppError, AppResult};
 use crate::extract::CurrentUser;
+use crate::services::transition::{transition, Notice, Transition};
 use crate::services::{bots, chat, groups, notify, ratings, rules};
 use crate::state::AppState;
 use crate::util::{new_invite_code, normalize_invite_code};
@@ -987,22 +988,11 @@ pub async fn apply_locked(
     }
 
     // Control passes to another power: start its clock (bot turns are due immediately).
-    let mut notify = false;
-    let mut notify_email = false;
-    if let (Some(next), true) = (after.power, after.power != before.power) {
-        let next_seat = seat_for_power(&seats, next);
-        let bot = next_seat.is_some_and(|s| s.is_bot);
-        // A human's defender decision is resolved by the driver within moments: no clock and no
-        // "your turn" mail. Handing control back after one keeps the turn owner's running clock.
-        let human_defender_next = after.defender && !bot;
-        let human_defender_done = before.defender && !power_seat.is_bot;
-        if !human_defender_next && !human_defender_done {
-            let settings: GameSettings =
-                serde_json::from_value(game.settings.clone()).unwrap_or_default();
-            set_deadline(&mut tx, id, settings.turn_timeout_secs, bot).await?;
-            notify = !bot;
-            notify_email = notify && next_seat.map(|s| s.seat) != Some(power_seat.seat);
-        }
+    let step = transition(&before, &after, power_seat, &seats);
+    if let Transition::HandOff { bot, .. } = step {
+        let settings: GameSettings =
+            serde_json::from_value(game.settings.clone()).unwrap_or_default();
+        set_deadline(&mut tx, id, settings.turn_timeout_secs, bot).await?;
     }
     tx.commit().await?;
 
@@ -1013,10 +1003,21 @@ pub async fn apply_locked(
             seq: next_seq,
         },
     );
-    if let Some(winner) = after.game_over {
-        finish_game(state, id, winner).await?;
-    } else if notify {
-        notify_turn(state, id, notify_email).await;
+    match step {
+        Transition::GameOver(winner) => finish_game(state, id, winner).await?,
+        Transition::HandOff {
+            notice: Notice::InApp,
+            ..
+        } => notify_turn(state, id, false).await,
+        Transition::HandOff {
+            notice: Notice::Email,
+            ..
+        } => notify_turn(state, id, true).await,
+        Transition::HandOff {
+            notice: Notice::None,
+            ..
+        }
+        | Transition::Same => {}
     }
     Ok(Applied {
         envelope: GameActionEnvelope {
