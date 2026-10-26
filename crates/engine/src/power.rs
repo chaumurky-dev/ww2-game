@@ -38,6 +38,21 @@ impl Team {
             Team::Axis => Team::Allies,
         }
     }
+    /// Snake-case id used in JSON and the database.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Team::Allies => "allies",
+            Team::Axis => "axis",
+        }
+    }
+    /// Parse a snake-case id.
+    pub fn from_id(s: &str) -> Option<Team> {
+        match s {
+            "allies" => Some(Team::Allies),
+            "axis" => Some(Team::Axis),
+            _ => None,
+        }
+    }
     /// Members in turn order.
     pub fn powers(self) -> &'static [Power] {
         match self {

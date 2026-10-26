@@ -7,14 +7,10 @@ use wartide_protocol::ws::ServerMessage;
 
 use crate::error::{AppError, AppResult};
 use crate::extract::CurrentUser;
-use crate::services::games::{self, enum_str, SeatRow};
+use crate::services::games::{self, SeatRow};
 use crate::state::AppState;
 
 const MAX_BODY: usize = 1000;
-
-fn team_str(t: Team) -> String {
-    enum_str(&t)
-}
 
 /// What a viewer (a seat) is allowed to see in a game's chat.
 #[derive(Debug, Clone)]
@@ -57,7 +53,7 @@ pub fn visible_to(viewer: &Viewer, channel: ChatChannel, scope: Option<&str>) ->
     }
     match channel {
         ChatChannel::All | ChatChannel::Lobby => true,
-        ChatChannel::Team => scope == Some(team_str(viewer.team).as_str()),
+        ChatChannel::Team => scope == Some(viewer.team.as_str()),
         ChatChannel::Power => scope.is_some_and(|s| viewer.powers.iter().any(|p| p.as_str() == s)),
     }
 }
@@ -70,7 +66,7 @@ pub fn resolve_scope(
 ) -> AppResult<Option<String>> {
     match channel {
         ChatChannel::All | ChatChannel::Lobby => Ok(None),
-        ChatChannel::Team => Ok(Some(team_str(seat.team()))),
+        ChatChannel::Team => Ok(Some(seat.team().as_str().to_string())),
         ChatChannel::Power => {
             let p = match power {
                 Some(p) if seat.controls(p) => p,
@@ -89,7 +85,7 @@ pub fn resolve_scope(
 struct MsgRow {
     id: Uuid,
     game_id: Uuid,
-    channel: String,
+    channel: ChatChannel,
     scope: Option<String>,
     sender_kind: String,
     sender_name: Option<String>,
@@ -118,7 +114,7 @@ impl MsgRow {
         Ok(ChatMessage {
             id: self.id,
             game_id: GameId(self.game_id),
-            channel: games::parse_enum(&self.channel)?,
+            channel: self.channel,
             scope: self.scope,
             sender,
             body: self.body,
@@ -163,7 +159,7 @@ pub async fn history(
     )
     .bind(game)
     .bind(channel.map(|c| c.as_str()))
-    .bind(team_str(v.team))
+    .bind(v.team.as_str())
     .bind(&powers)
     .fetch_all(&state.db)
     .await?;
