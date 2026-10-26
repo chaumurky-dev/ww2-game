@@ -1,9 +1,10 @@
 //! Engine integration: settings mapping, seed derivation, (de)serialisation of states and the
 //! conversion between protocol and engine enums. All game rules live in `wartide-engine`; the
 //! server only stores the engine's `GameState` / `Action` / `Event` as JSON.
+use engine::{Power, Team};
 use serde_json::Value;
 use wartide_engine as engine;
-use wartide_protocol::game::{GameSettings, Power, Team};
+use wartide_protocol::game::GameSettings;
 
 use crate::error::{AppError, AppResult};
 
@@ -20,22 +21,6 @@ pub struct Pending {
     pub game_over: Option<Option<Team>>,
     /// The decision is a casualty/withdrawal choice for a defender (not the power whose turn it is).
     pub defender: bool,
-}
-
-pub fn power_from_engine(p: engine::Power) -> Power {
-    // Both enums share the same snake_case ids.
-    Power::parse(p.id()).expect("power ids match")
-}
-
-pub fn power_to_engine(p: Power) -> engine::Power {
-    engine::Power::from_id(p.as_str()).expect("power ids match")
-}
-
-pub fn team_from_engine(t: engine::Team) -> Team {
-    match t {
-        engine::Team::Axis => Team::Axis,
-        engine::Team::Allies => Team::Allies,
-    }
 }
 
 /// Map the stored/requested settings onto the engine's, with the per-game seed.
@@ -63,18 +48,18 @@ pub fn pending_of(state: &engine::GameState) -> Pending {
     let decision = engine::pending_decision(state);
     match decision {
         Phase { power, .. } | RetreatOrPress { power, .. } => Pending {
-            power: Some(power_from_engine(power)),
+            power: Some(power),
             game_over: None,
             defender: false,
         },
         SelectCasualties { power, .. } | SubWithdrawal { power, .. } => Pending {
-            power: Some(power_from_engine(power)),
+            power: Some(power),
             game_over: None,
             defender: power != state.current_power,
         },
         GameOver { winner } => Pending {
             power: None,
-            game_over: Some(winner.map(team_from_engine)),
+            game_over: Some(winner),
             defender: false,
         },
     }
@@ -128,7 +113,7 @@ pub fn apply_typed(
 ) -> AppResult<Vec<engine::Event>> {
     engine::apply(
         gs,
-        power_to_engine(power),
+        power,
         action,
         wartide_protocol::seed::action_seed(game_seed as u64, seq),
     )
@@ -182,12 +167,5 @@ mod tests {
             )
             .unwrap_err();
         assert_eq!(err.code(), "illegal_action");
-    }
-
-    #[test]
-    fn power_conversions() {
-        for p in Power::ALL {
-            assert_eq!(power_from_engine(power_to_engine(p)), p);
-        }
     }
 }

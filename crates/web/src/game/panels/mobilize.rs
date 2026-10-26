@@ -92,7 +92,7 @@ pub fn MobilizePanel(power: Power) -> impl IntoView {
                                 s.place_count = 1;
                                 count.set(1);
                             })>
-                                <UnitBadge kind=ui_kind(k) power=ui_power(power) count=i.count />
+                                <UnitBadge kind=ui_kind(k) power=power count=i.count />
                             </button>
                         }
                     }).collect_view()}

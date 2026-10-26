@@ -1,8 +1,6 @@
 //! Human-readable action log built from engine events (formatting is pure and unit-tested).
 use super::conv::*;
 use super::logfmt_battle::battle_arm;
-use crate::model::Power as UiPower;
-use crate::model::PowerExt;
 use leptos::prelude::*;
 use wartide_engine::event::DiceContext;
 use wartide_engine::units::UnitRef;
@@ -25,7 +23,7 @@ pub enum LogLevel {
 #[derive(Clone, Debug, PartialEq)]
 pub struct LogLine {
     pub round: u32,
-    pub power: Option<UiPower>,
+    pub power: Option<Power>,
     pub text: String,
     pub level: LogLevel,
 }
@@ -276,7 +274,7 @@ pub fn format_events(events: &[Event], mut round: u32, acc: &mut BattleAcc) -> V
                 if let Some(t) = text.take() {
                     out.push(LogLine {
                         round,
-                        power: who.map(ui_power),
+                        power: who,
                         text: t,
                         level: LogLevel::Detail,
                     });
@@ -339,7 +337,7 @@ pub fn format_events(events: &[Event], mut round: u32, acc: &mut BattleAcc) -> V
         if let Some(text) = text {
             out.push(LogLine {
                 round,
-                power: who.map(ui_power),
+                power: who,
                 text,
                 level,
             });

@@ -292,7 +292,7 @@ async fn run_pass(
                 wartide_protocol::seed::fallback_seed(g.seed as u64, seq, attempt),
             );
             match rp.next_action(&gs) {
-                Some((p, a)) if rules::power_from_engine(p) == power => (a, Vec::new()),
+                Some((p, a)) if p == power => (a, Vec::new()),
                 _ => {
                     failures.1 += 1;
                     continue;
@@ -415,7 +415,7 @@ async fn plan(
     let mut bot = cached.unwrap_or_else(|| {
         Bot::new(
             persona,
-            rules::power_to_engine(power),
+            power,
             wartide_protocol::seed::bot_seed(game_seed as u64, power),
         )
     });

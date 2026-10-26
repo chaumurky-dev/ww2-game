@@ -13,7 +13,7 @@ pub fn TopBar(#[prop(into)] deadline_ms: Signal<Option<f64>>) -> impl IntoView {
     view! {
         <div class="topbar">
             <h3 style="margin:0">{move || format!("Round {}", ctx.state.with(|s| s.round))}</h3>
-            {move || view! { <PowerBadge power=ui_power(ctx.state.with(|s| s.current_power)) /> }}
+            {move || view! { <PowerBadge power=ctx.state.with(|s| s.current_power) /> }}
             {move || deadline_ms.get().map(|d| view! {
                 <span class="deadline" title="Time left to act">
                     <span class="muted">{format!("Deadline: {} ", crate::tz::deadline_text(d))}</span>
@@ -38,7 +38,7 @@ pub fn TopBar(#[prop(into)] deadline_ms: Signal<Option<f64>>) -> impl IntoView {
                         let title = st.techs[p].iter().map(|t| tech_name(*t)).collect::<Vec<_>>().join(", ");
                         let cur = p == st.current_power;
                         view! {
-                            <span class="pill econ-pill" class:hot=cur style=format!("border-color:{}", ui_power(p).color())
+                            <span class="pill econ-pill" class:hot=cur style=format!("border-color:{}", p.color())
                                 title=format!("{}: treasury {}, production {}{}", p.name(), st.treasury[p], production_level(&st, p),
                                     if title.is_empty() { String::new() } else { format!(", tech: {title}") })>
                                 <b>{p.id().to_uppercase()}</b>

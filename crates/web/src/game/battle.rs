@@ -44,10 +44,10 @@ fn side_view(
 ) -> impl IntoView {
     view! {
         <div class="bside">
-            <div class="row"><strong>{title}</strong><PowerBadge power=ui_power(power) short=true /></div>
+            <div class="row"><strong>{title}</strong><PowerBadge power=power short=true /></div>
             {rows.into_iter().map(|(k, n, x, h)| view! {
                 <div class="brow" class:dead=x == n>
-                    <UnitIcon kind=ui_kind(k) power=ui_power(power) />
+                    <UnitIcon kind=ui_kind(k) power=power />
                     <span class="grow">{format!("{} \u{d7}{n}", ui_kind(k).name())}{(x > 0).then(|| format!(" ({x} lost)"))}</span>
                     <span class="hitnum" title="Hits on this number or lower">{if h == 0 { "\u{2013}".to_string() } else { format!("\u{2264}{h}") }}</span>
                 </div>

@@ -1,4 +1,4 @@
-use crate::model::{Power, PowerExt};
+use crate::model::Power;
 use leptos::prelude::*;
 
 /// Power name pill with the power's emblem from the sprite (`power-<id>`).

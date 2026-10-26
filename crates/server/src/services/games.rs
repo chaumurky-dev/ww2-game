@@ -615,7 +615,7 @@ pub async fn begin_game(state: &AppState, id: Uuid) -> AppResult<()> {
     let n = sqlx::query("UPDATE games SET status='in_progress', round=$2, current_power=$3, pending_power=$3, phase=$4, updated_at=now() WHERE id=$1 AND status='lobby'")
         .bind(id)
         .bind(initial.round as i32)
-        .bind(rules::power_from_engine(initial.current_power).as_str())
+        .bind(initial.current_power.as_str())
         .bind(rules::phase_str(&initial))
         .execute(&mut *tx)
         .await?
@@ -899,7 +899,7 @@ pub async fn apply_locked(
     sqlx::query("UPDATE games SET round=$2, current_power=$3, phase=$4, pending_power=$5, updated_at=now() WHERE id=$1")
         .bind(id)
         .bind(gs.round as i32)
-        .bind(rules::power_from_engine(gs.current_power).as_str())
+        .bind(gs.current_power.as_str())
         .bind(rules::phase_str(&gs))
         .bind(after.power.map(Power::as_str))
         .execute(&mut *tx)

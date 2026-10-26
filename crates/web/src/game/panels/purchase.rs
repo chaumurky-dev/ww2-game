@@ -47,7 +47,7 @@ pub fn PurchasePanel(power: Power) -> impl IntoView {
             });
             view! {
                 <tr class:dim=move || max.get() == 0 && q.get() == 0>
-                    <td><UnitIcon kind=ui_kind(k) power=ui_power(power) /></td>
+                    <td><UnitIcon kind=ui_kind(k) power=power /></td>
                     <td>{ui_kind(k).name()}</td>
                     <td class="num">
                         {cost}

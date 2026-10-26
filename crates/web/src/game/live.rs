@@ -1,5 +1,4 @@
 //! Server-driven game: loads `GameState`, submits engine actions, refetches on `GameUpdated`.
-use super::conv::eng_power;
 use super::ctx::GameCtx;
 use super::log::{format_events, push_lines};
 use super::screen::GameScreen;
@@ -100,7 +99,7 @@ pub fn LiveGame(
     let viewer = Signal::derive(move || -> Vec<Power> {
         live.with(|s| {
             crate::model::my_seat(s)
-                .map(|seat| seat.powers.iter().map(|p| eng_power(*p)).collect())
+                .map(|seat| seat.powers.to_vec())
                 .unwrap_or_default()
         })
     });

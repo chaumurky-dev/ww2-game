@@ -94,6 +94,14 @@ impl Power {
     pub fn from_id(s: &str) -> Option<Power> {
         Power::ALL.into_iter().find(|p| p.id() == s)
     }
+    /// Snake-case id (same as [`Power::id`]).
+    pub fn as_str(self) -> &'static str {
+        self.id()
+    }
+    /// Parse a snake-case id (same as [`Power::from_id`]).
+    pub fn parse(s: &str) -> Option<Power> {
+        Power::from_id(s)
+    }
     /// Display name.
     pub fn name(self) -> &'static str {
         match self {
