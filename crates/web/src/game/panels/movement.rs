@@ -39,7 +39,7 @@ fn group_row(ctx: GameCtx, power: Power, g: UnitGroup, picked: usize) -> impl In
     let can = g.can_move;
     view! {
         <div class="urow" class:dim=!can>
-            <UnitIcon kind=ui_kind(g.kind) power=ui_power(power) />
+            <UnitIcon kind=ui_kind(g.kind) power=power />
             <span class="grow">
                 {format!("{} \u{d7}{n}", ui_kind(g.kind).name())}
                 {g.aboard.then_some(" (on carrier)")}

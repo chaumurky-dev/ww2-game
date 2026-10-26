@@ -1,7 +1,4 @@
 //! Dice display: per-die hit numbers reconstructed from the battle state, and the `Die` view.
-use super::conv::*;
-use crate::model::Power as UiPower;
-use crate::model::PowerExt;
 use leptos::prelude::*;
 use wartide_engine::event::DiceContext;
 use wartide_engine::state::BattleKind;
@@ -21,7 +18,7 @@ pub struct DiceShow {
     /// Unique per ingest so the roll-in animation replays.
     pub id: u64,
     pub label: String,
-    pub power: UiPower,
+    pub power: Power,
     pub location: Option<LocationId>,
     pub is_attack: bool,
     pub dice: Vec<DieFace>,
@@ -197,7 +194,7 @@ pub fn dice_shows(
         out.push(DiceShow {
             id: id_base + i as u64,
             label,
-            power: ui_power(*power),
+            power: *power,
             location: ctx_location(context),
             is_attack: matches!(
                 context,
@@ -261,7 +258,7 @@ pub fn DiceBoard(#[prop(optional)] at: Option<LocationId>) -> impl IntoView {
             ctx.dice
                 .get()
                 .into_iter()
-                .filter(|d| d.location == at && (at.is_some() || d.power == ui_power(me)))
+                .filter(|d| d.location == at && (at.is_some() || d.power == me))
                 .map(|d| view! { <DiceRow show=d /> })
                 .collect_view()
         }}

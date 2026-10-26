@@ -21,7 +21,7 @@ fn waiting(power: Power, what: &str) -> impl IntoView {
     let what = what.to_string();
     view! {
         <div class="wait">
-            <PowerBadge power=ui_power(power) />
+            <PowerBadge power=power />
             <span>{format!(" is deciding ({what}) - waiting for them.")}</span>
         </div>
     }

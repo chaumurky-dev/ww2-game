@@ -1,27 +1,7 @@
 //! Conversions between engine types and the UI-side types (`model::Power`, `UnitKind`), plus
 //! display names. Pure; used by the model, log and panels.
-use crate::model::{Power as UiPower, UnitKind};
-use wartide_engine::{LocationId, MapData, Phase, Power, UnitType};
-
-pub fn ui_power(p: Power) -> UiPower {
-    match p {
-        Power::Ussr => UiPower::Ussr,
-        Power::Germany => UiPower::Germany,
-        Power::Uk => UiPower::Uk,
-        Power::Japan => UiPower::Japan,
-        Power::Usa => UiPower::Usa,
-    }
-}
-
-pub fn eng_power(p: UiPower) -> Power {
-    match p {
-        UiPower::Ussr => Power::Ussr,
-        UiPower::Germany => Power::Germany,
-        UiPower::Uk => Power::Uk,
-        UiPower::Japan => Power::Japan,
-        UiPower::Usa => Power::Usa,
-    }
-}
+use crate::model::UnitKind;
+use wartide_engine::{LocationId, MapData, Phase, UnitType};
 
 pub fn ui_kind(k: UnitType) -> UnitKind {
     match k {

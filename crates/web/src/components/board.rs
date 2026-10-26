@@ -2,7 +2,7 @@
 use super::unit_icon::{UnitBadge, UnitIcon};
 use super::viewport::ViewBox;
 use crate::map::{sea_shade, LocKind, SharedMap};
-use crate::model::{Power, PowerExt, UnitKind};
+use crate::model::{Power, UnitKind};
 use leptos::prelude::*;
 use std::collections::HashMap;
 use wasm_bindgen::JsCast;

@@ -45,8 +45,7 @@ impl Replay {
             checkpoints: vec![st.clone()],
         };
         for e in envs {
-            let action: Action = serde_json::from_value(e.action.clone())
-                .map_err(|x| format!("unreadable action #{}: {x}", e.seq))?;
+            let action: Action = e.action.clone();
             let who = acting(&st).ok_or_else(|| format!("action #{} after game over", e.seq))?;
             let seed = action_seed(last.settings.seed, e.seq);
             r.rounds.push(st.round);
@@ -97,7 +96,7 @@ impl Replay {
 
 async fn load(id: GameId) -> Result<Replay, String> {
     let fin = api::game_state(id).await.map_err(|e| e.message)?;
-    let last: GameState = serde_json::from_value(fin.state).map_err(|e| e.to_string())?;
+    let last: GameState = fin.state;
     let mut envs: Vec<GameActionEnvelope> = vec![];
     let mut since = 0;
     loop {
@@ -238,8 +237,8 @@ mod tests {
             envs.push(GameActionEnvelope {
                 seq,
                 actor: Some(0),
-                action: serde_json::to_value(&a).unwrap(),
-                events: serde_json::Value::Null,
+                action: a,
+                events: vec![],
                 created_at: chrono::DateTime::from_timestamp(0, 0).unwrap(),
             });
         }

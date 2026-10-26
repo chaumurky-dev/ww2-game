@@ -1,8 +1,7 @@
 //! `/help`: a short, original-wording summary of the game. The unit table is generated from the
 //! engine's unit data so it can never drift from the rules.
 use crate::components::unit_icon::UnitIcon;
-use crate::game::conv::{ui_kind, ui_power};
-use crate::model::PowerExt;
+use crate::game::conv::ui_kind;
 use leptos::prelude::*;
 use wartide_engine::{Power, UnitType};
 
@@ -31,7 +30,7 @@ pub fn Help() -> impl IntoView {
             let s = k.stats();
             view! {
                 <tr>
-                    <td><UnitIcon kind=ui_kind(k) power=ui_power(Power::Ussr) /></td>
+                    <td><UnitIcon kind=ui_kind(k) power=Power::Ussr /></td>
                     <td>{ui_kind(k).name()}</td>
                     <td class="num">{s.cost}</td>
                     <td class="num">{s.attack}</td>
@@ -44,7 +43,7 @@ pub fn Help() -> impl IntoView {
         .collect_view();
     let powers = Power::ALL
         .into_iter()
-        .map(|p| view! { <li><strong>{ui_power(p).name()}</strong>{format!(" ({:?})", p.team())}</li> })
+        .map(|p| view! { <li><strong>{p.name()}</strong>{format!(" ({:?})", p.team())}</li> })
         .collect_view();
     view! {
         <div class="page col help">
