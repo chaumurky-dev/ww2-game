@@ -12,26 +12,6 @@ pub use read::*;
 pub use rows::*;
 use rows::{GAME_COLS, SEAT_SELECT};
 
-use serde::de::DeserializeOwned;
-use serde::Serialize;
-use serde_json::Value;
-
-use crate::error::{AppError, AppResult};
-
-// ---------- pure helpers ----------
-
-pub fn enum_str<T: Serialize>(t: &T) -> String {
-    match serde_json::to_value(t) {
-        Ok(Value::String(s)) => s,
-        _ => String::new(),
-    }
-}
-
-pub fn parse_enum<T: DeserializeOwned>(s: &str) -> AppResult<T> {
-    serde_json::from_value(Value::String(s.to_string()))
-        .map_err(|_| AppError::Internal(anyhow::anyhow!("bad enum value in db: {s}")))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -83,13 +63,46 @@ mod tests {
         }
     }
 
+    /// The bytes sqlx writes for a TEXT-backed enum must equal its serde (JSON) string form.
+    fn assert_sqlx_matches_serde<T>(variants: &[T])
+    where
+        T: serde::Serialize + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+    {
+        for v in variants {
+            let mut buf = sqlx::postgres::PgArgumentBuffer::default();
+            let _ = sqlx::Encode::<sqlx::Postgres>::encode_by_ref(v, &mut buf).unwrap();
+            let json = serde_json::to_value(v).unwrap();
+            assert_eq!(std::str::from_utf8(&buf).unwrap(), json.as_str().unwrap());
+        }
+    }
+
     #[test]
     fn enum_roundtrip() {
-        assert_eq!(enum_str(&GameMode::TwoPlayer), "two_player");
-        assert_eq!(
-            parse_enum::<GameStatus>("in_progress").unwrap(),
-            GameStatus::InProgress
-        );
-        assert!(parse_enum::<GameStatus>("nope").is_err());
+        assert_sqlx_matches_serde(&[GameMode::TwoPlayer, GameMode::FivePlayer, GameMode::Custom]);
+        assert_sqlx_matches_serde(&[GameKind::Private, GameKind::Public]);
+        assert_sqlx_matches_serde(&[
+            GameStatus::Lobby,
+            GameStatus::InProgress,
+            GameStatus::Finished,
+            GameStatus::Abandoned,
+        ]);
+        assert_sqlx_matches_serde(&[
+            wartide_protocol::chat::ChatChannel::All,
+            wartide_protocol::chat::ChatChannel::Team,
+            wartide_protocol::chat::ChatChannel::Power,
+            wartide_protocol::chat::ChatChannel::Lobby,
+        ]);
+        for st in [
+            GameStatus::Lobby,
+            GameStatus::InProgress,
+            GameStatus::Finished,
+            GameStatus::Abandoned,
+        ] {
+            assert_eq!(GameStatus::parse(st.as_str()), Some(st));
+        }
+        for t in [Team::Allies, Team::Axis] {
+            assert_eq!(serde_json::to_value(t).unwrap().as_str(), Some(t.as_str()));
+            assert_eq!(Team::from_id(t.as_str()), Some(t));
+        }
     }
 }

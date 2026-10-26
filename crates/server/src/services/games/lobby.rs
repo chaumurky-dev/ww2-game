@@ -29,17 +29,18 @@ async fn insert_game(
     let seed: i64 = rand::rng().random();
     sqlx::query(
         "INSERT INTO games (id, name, kind, mode, status, settings, group_id, host_id, ladder, seed)
-         VALUES ($1,$9,$2,$3,'lobby',$4,$5,$6,$7,$8)",
+         VALUES ($1,$9,$2,$3,$10,$4,$5,$6,$7,$8)",
     )
     .bind(id)
-    .bind(enum_str(&kind))
-    .bind(enum_str(&mode))
+    .bind(kind)
+    .bind(mode)
     .bind(serde_json::to_value(settings).map_err(|e| AppError::Internal(e.into()))?)
     .bind(group_id)
     .bind(host)
     .bind(ladder)
     .bind(seed)
     .bind(name)
+    .bind(GameStatus::Lobby)
     .execute(&mut *conn)
     .await?;
     Ok(())
@@ -176,7 +177,7 @@ pub async fn join_by_invite(
     .bind(gid)
     .fetch_one(&mut *tx)
     .await?;
-    if game.status != "lobby" {
+    if game.status != GameStatus::Lobby {
         return Err(AppError::conflict(
             "game_started",
             "this game is no longer accepting players",
@@ -240,7 +241,7 @@ pub async fn start(state: &AppState, host: &CurrentUser, id: Uuid) -> AppResult<
     if game.host_id != Some(host.id) {
         return Err(AppError::forbidden("only the host can start the game"));
     }
-    if game.status != "lobby" {
+    if game.status != GameStatus::Lobby {
         return Err(AppError::conflict("game_started", "game already started"));
     }
     sqlx::query(
@@ -262,11 +263,13 @@ pub async fn begin_game(state: &AppState, id: Uuid) -> AppResult<()> {
     let initial = state.rules.initial_state(&settings, game.seed);
     let first = rules::pending_of(&initial).power.unwrap_or(Power::Ussr);
     let mut tx = state.db.begin().await?;
-    let n = sqlx::query("UPDATE games SET status='in_progress', round=$2, current_power=$3, pending_power=$3, phase=$4, updated_at=now() WHERE id=$1 AND status='lobby'")
+    let n = sqlx::query("UPDATE games SET status=$5, round=$2, current_power=$3, pending_power=$3, phase=$4, updated_at=now() WHERE id=$1 AND status=$6")
         .bind(id)
         .bind(initial.round as i32)
         .bind(initial.current_power.as_str())
         .bind(rules::phase_str(&initial))
+        .bind(GameStatus::InProgress)
+        .bind(GameStatus::Lobby)
         .execute(&mut *tx)
         .await?
         .rows_affected();

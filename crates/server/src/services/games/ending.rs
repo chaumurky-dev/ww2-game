@@ -14,11 +14,13 @@ use crate::state::AppState;
 /// Resigned seats (including players replaced after repeated timeouts) always count as losses.
 pub async fn finish_game(state: &AppState, id: Uuid, winner: Option<Team>) -> AppResult<()> {
     let row: Option<(Option<String>,)> = sqlx::query_as(
-        "UPDATE games SET status='finished', winner_team=$2, turn_deadline=NULL, updated_at=now()
-         WHERE id=$1 AND status='in_progress' RETURNING ladder",
+        "UPDATE games SET status=$3, winner_team=$2, turn_deadline=NULL, updated_at=now()
+         WHERE id=$1 AND status=$4 RETURNING ladder",
     )
     .bind(id)
-    .bind(winner.map(|t| enum_str(&t)))
+    .bind(winner.map(Team::as_str))
+    .bind(GameStatus::Finished)
+    .bind(GameStatus::InProgress)
     .fetch_optional(&state.db)
     .await?;
     let Some((ladder,)) = row else { return Ok(()) };
@@ -66,7 +68,7 @@ pub async fn resign(state: &AppState, user: &CurrentUser, id: Uuid) -> AppResult
     {
         let _guard = state.runtime.lock(id).await;
         let (game, seats, mine) = require_participant(state, id, user.id).await?;
-        if game.status != "in_progress" {
+        if game.status != GameStatus::InProgress {
             return Err(AppError::conflict(
                 "not_in_progress",
                 "game is not in progress",
@@ -137,15 +139,14 @@ pub async fn abandon(state: &AppState, user: &CurrentUser, id: Uuid) -> AppResul
     if game.host_id != Some(user.id) {
         return Err(AppError::forbidden("only the host can abandon the game"));
     }
-    if !matches!(game.status.as_str(), "lobby" | "in_progress") {
+    if !matches!(game.status, GameStatus::Lobby | GameStatus::InProgress) {
         return Err(AppError::conflict("already_over", "game is already over"));
     }
-    sqlx::query(
-        "UPDATE games SET status='abandoned', turn_deadline=NULL, updated_at=now() WHERE id=$1",
-    )
-    .bind(id)
-    .execute(&state.db)
-    .await?;
+    sqlx::query("UPDATE games SET status=$2, turn_deadline=NULL, updated_at=now() WHERE id=$1")
+        .bind(id)
+        .bind(GameStatus::Abandoned)
+        .execute(&state.db)
+        .await?;
     state.runtime.forget(id);
     state.hub.publish_game(
         id,

@@ -19,7 +19,7 @@ pub async fn summary(state: &AppState, id: Uuid, viewer: Option<Uuid>) -> AppRes
             .map(|s| s.seat as u8)
     });
     let is_host = viewer.is_some() && g.host_id == viewer;
-    let invite_code = if is_host && g.status == "lobby" {
+    let invite_code = if is_host && g.status == GameStatus::Lobby {
         sqlx::query_as::<_, (String,)>("SELECT code FROM game_invites WHERE game_id=$1")
             .bind(id)
             .fetch_optional(&state.db)
@@ -31,9 +31,9 @@ pub async fn summary(state: &AppState, id: Uuid, viewer: Option<Uuid>) -> AppRes
     Ok(GameSummary {
         id: GameId(g.id),
         name: g.name.clone(),
-        kind: parse_enum(&g.kind)?,
-        mode: parse_enum(&g.mode)?,
-        status: parse_enum(&g.status)?,
+        kind: g.kind,
+        mode: g.mode,
+        status: g.status,
         settings: serde_json::from_value(g.settings.clone()).unwrap_or_default(),
         seats: seats.iter().map(SeatRow::to_assignment).collect(),
         round: g.round,
@@ -46,7 +46,7 @@ pub async fn summary(state: &AppState, id: Uuid, viewer: Option<Uuid>) -> AppRes
         invite_code,
         created_at: g.created_at,
         updated_at: g.updated_at,
-        winner: g.winner_team.as_deref().and_then(|t| parse_enum(t).ok()),
+        winner: g.winner_team.as_deref().and_then(Team::from_id),
         my_seat,
     })
 }
@@ -65,7 +65,7 @@ pub fn redact_for_profile(g: &mut GameSummary) {
 /// Public games may be read by any logged-in user (spectating). Finished group games are also
 /// readable by group members (see [`reader_access`]); finished private games only by their players.
 pub fn is_spectatable(g: &GameRow) -> bool {
-    g.kind == "public"
+    g.kind == GameKind::Public
 }
 
 /// What a user may read of a game.
@@ -100,7 +100,9 @@ pub async fn reader_access(
     match seats.into_iter().find(|s| s.user_id == Some(user)) {
         Some(mine) => Ok((g, Access::Player(mine))),
         None if is_spectatable(&g) => Ok((g, Access::Spectator)),
-        None if g.status == "finished" && is_group_member(state, g.group_id, user).await? => {
+        None if g.status == GameStatus::Finished
+            && is_group_member(state, g.group_id, user).await? =>
+        {
             Ok((g, Access::Spectator))
         }
         None => Err(AppError::forbidden("you are not a player in this game")),
@@ -116,19 +118,24 @@ pub async fn list_public(
     per_page: i64,
 ) -> AppResult<wartide_protocol::Paginated<GameSummary>> {
     let page = page.max(1);
-    let status = if finished { "finished" } else { "in_progress" };
-    let (total,): (i64,) =
-        sqlx::query_as("SELECT count(*) FROM games WHERE kind='public' AND status=$1")
-            .bind(status)
-            .fetch_one(&state.db)
-            .await?;
+    let status = if finished {
+        GameStatus::Finished
+    } else {
+        GameStatus::InProgress
+    };
+    let (total,): (i64,) = sqlx::query_as("SELECT count(*) FROM games WHERE kind=$2 AND status=$1")
+        .bind(status)
+        .bind(GameKind::Public)
+        .fetch_one(&state.db)
+        .await?;
     let ids: Vec<(Uuid,)> = sqlx::query_as(
-        "SELECT id FROM games WHERE kind='public' AND status=$1
+        "SELECT id FROM games WHERE kind=$4 AND status=$1
          ORDER BY created_at DESC, id LIMIT $2 OFFSET $3",
     )
     .bind(status)
     .bind(per_page)
     .bind((page - 1) * per_page)
+    .bind(GameKind::Public)
     .fetch_all(&state.db)
     .await?;
     let mut items = Vec::with_capacity(ids.len());
@@ -195,10 +202,10 @@ pub async fn summary_for_viewer(
 }
 
 pub async fn list_mine(state: &AppState, user: Uuid, active: bool) -> AppResult<Vec<GameSummary>> {
-    let statuses: &[&str] = if active {
-        &["lobby", "in_progress"]
+    let statuses: &[GameStatus] = if active {
+        &[GameStatus::Lobby, GameStatus::InProgress]
     } else {
-        &["finished", "abandoned"]
+        &[GameStatus::Finished, GameStatus::Abandoned]
     };
     let ids: Vec<(Uuid,)> = sqlx::query_as(
         "SELECT g.id FROM games g WHERE g.status = ANY($2)

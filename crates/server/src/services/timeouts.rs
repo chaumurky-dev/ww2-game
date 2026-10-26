@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use uuid::Uuid;
-use wartide_protocol::game::{GameSettings, Power};
+use wartide_protocol::game::{GameSettings, GameStatus, Power};
 
 use crate::error::AppResult;
 use crate::services::{bots, chat, games};
@@ -38,7 +38,8 @@ impl TurnTimeoutHandler for DefaultTimeoutHandler {
             let _guard = state.runtime.lock(id).await;
             let g = games::load_game(state, id).await?;
             // Re-check under the lock: the player may have acted in the meantime.
-            if g.status != "in_progress" || g.turn_deadline.is_none_or(|d| d >= chrono::Utc::now())
+            if g.status != GameStatus::InProgress
+                || g.turn_deadline.is_none_or(|d| d >= chrono::Utc::now())
             {
                 return Ok(());
             }
@@ -102,8 +103,9 @@ impl TurnTimeoutHandler for DefaultTimeoutHandler {
 pub async fn sweep(state: &AppState) -> AppResult<usize> {
     let rows: Vec<(Uuid, Option<String>, i32)> = sqlx::query_as(
         "SELECT id, pending_power, round FROM games
-         WHERE status='in_progress' AND turn_deadline IS NOT NULL AND turn_deadline < now() LIMIT 100",
+         WHERE status=$1 AND turn_deadline IS NOT NULL AND turn_deadline < now() LIMIT 100",
     )
+    .bind(GameStatus::InProgress)
     .fetch_all(&state.db)
     .await?;
     let mut n = 0;

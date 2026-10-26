@@ -13,7 +13,7 @@ name = "wartide-server"
 path = "src/main.rs"
 
 [dependencies]
-wartide-protocol = { path = "../protocol" }
+wartide-protocol = { path = "../protocol", features = ["sqlx"] }
 wartide-engine = { path = "../engine" }
 wartide-ai = { path = "../ai" }
 axum = { version = "0.8", features = ["ws", "macros"] }

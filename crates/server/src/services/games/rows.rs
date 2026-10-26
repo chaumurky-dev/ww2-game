@@ -15,9 +15,9 @@ use crate::state::AppState;
 pub struct GameRow {
     pub id: Uuid,
     pub name: String,
-    pub kind: String,
-    pub mode: String,
-    pub status: String,
+    pub kind: GameKind,
+    pub mode: GameMode,
+    pub status: GameStatus,
     pub settings: Value,
     pub group_id: Option<Uuid>,
     pub host_id: Option<Uuid>,

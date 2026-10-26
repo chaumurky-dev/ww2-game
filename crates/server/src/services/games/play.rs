@@ -40,7 +40,7 @@ pub async fn set_deadline(
 pub async fn notify_turn(state: &AppState, id: Uuid, email: bool) {
     let res: AppResult<()> = async {
         let g = load_game(state, id).await?;
-        if g.status != "in_progress" {
+        if g.status != GameStatus::InProgress {
             return Ok(());
         }
         let Some(power) = g.pending_power.as_deref().and_then(Power::parse) else {
@@ -127,7 +127,7 @@ pub async fn apply_locked(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| AppError::not_found("game"))?;
-    if game.status != "in_progress" {
+    if game.status != GameStatus::InProgress {
         return Err(AppError::conflict(
             "not_in_progress",
             "game is not in progress",

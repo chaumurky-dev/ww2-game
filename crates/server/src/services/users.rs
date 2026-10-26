@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 use uuid::Uuid;
-use wartide_protocol::game::{GameKind, GameSummary};
+use wartide_protocol::game::{GameKind, GameStatus, GameSummary};
 use wartide_protocol::user::*;
 
 use crate::error::{AppError, AppResult};
@@ -106,10 +106,11 @@ async fn win_streaks(state: &AppState, user: Uuid) -> AppResult<HashMap<String, 
         "SELECT g.ladder,
                 (g.winner_team = CASE WHEN s.powers[1] IN ('germany','japan') THEN 'axis' ELSE 'allies' END) AS won
          FROM games g JOIN game_seats s ON s.game_id = g.id AND s.user_id = $1 AND NOT s.is_bot
-         WHERE g.status='finished' AND g.winner_team IS NOT NULL AND g.ladder LIKE 'public:%'
+         WHERE g.status=$2 AND g.winner_team IS NOT NULL AND g.ladder LIKE 'public:%'
          ORDER BY g.updated_at ASC, g.id",
     )
     .bind(user)
+    .bind(GameStatus::Finished)
     .fetch_all(&state.db)
     .await?;
     let mut by: HashMap<String, Vec<bool>> = HashMap::new();
@@ -124,12 +125,15 @@ async fn win_streaks(state: &AppState, user: Uuid) -> AppResult<HashMap<String, 
 async fn recent_games(state: &AppState, user: Uuid) -> AppResult<Vec<GameSummary>> {
     let ids: Vec<(Uuid,)> = sqlx::query_as(
         "SELECT g.id FROM games g
-         WHERE g.status IN ('in_progress','finished')
-           AND g.kind='public'
+         WHERE g.status IN ($2,$3)
+           AND g.kind=$4
            AND EXISTS (SELECT 1 FROM game_seats s WHERE s.game_id=g.id AND s.user_id=$1)
          ORDER BY g.updated_at DESC LIMIT 10",
     )
     .bind(user)
+    .bind(GameStatus::InProgress)
+    .bind(GameStatus::Finished)
+    .bind(GameKind::Public)
     .fetch_all(&state.db)
     .await?;
     let mut out = Vec::new();
