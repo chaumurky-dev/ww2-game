@@ -277,7 +277,10 @@ pub async fn game_actions(id: GameId, since: i64) -> ApiResult<Vec<GameActionEnv
     .await
 }
 
-pub async fn submit_action(id: GameId, action: serde_json::Value) -> ApiResult<GameActionEnvelope> {
+pub async fn submit_action(
+    id: GameId,
+    action: wartide_engine::Action,
+) -> ApiResult<GameActionEnvelope> {
     let body = SubmitActionRequest { action };
     json(
         Method::POST,

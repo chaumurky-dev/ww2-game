@@ -327,24 +327,23 @@ pub struct MatchmakingRequest {
     pub mode: GameMode,
 }
 
-/// The engine's `GameState` as JSON (all information is public in this game, so there is no
-/// per-viewer projection). See `crates/engine/README.md` for the shape.
-pub type GameStateView = serde_json::Value;
+/// The engine's `GameState` (all information is public in this game, so there is no per-viewer
+/// projection; the server zeroes `settings.seed`). See `crates/engine/README.md` for the shape.
+pub type GameStateView = wartide_engine::GameState;
 
-/// One log entry. `action` is a `wartide_engine::Action` and `events` a `Vec<wartide_engine::Event>`
-/// (both as JSON); `actor` is the seat that controlled the acting power.
+/// One log entry; `actor` is the seat that controlled the acting power.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GameActionEnvelope {
     pub seq: i64,
     pub actor: Option<u8>,
-    pub action: serde_json::Value,
-    pub events: serde_json::Value,
+    pub action: wartide_engine::Action,
+    pub events: Vec<wartide_engine::Event>,
     pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubmitActionRequest {
-    pub action: serde_json::Value,
+    pub action: wartide_engine::Action,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

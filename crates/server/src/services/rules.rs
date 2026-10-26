@@ -1,6 +1,5 @@
-//! Engine integration: settings mapping, seed derivation, (de)serialisation of states and the
-//! conversion between protocol and engine enums. All game rules live in `wartide-engine`; the
-//! server only stores the engine's `GameState` / `Action` / `Event` as JSON.
+//! Engine integration: settings mapping, seed derivation and applying actions. All game rules
+//! live in `wartide-engine`; the server stores its `GameState` / `Action` / `Event` as JSON.
 use engine::{Power, Team};
 use serde_json::Value;
 use wartide_engine as engine;
@@ -38,11 +37,6 @@ pub fn engine_settings(s: &GameSettings, seed: i64) -> engine::GameSettings {
     }
 }
 
-pub fn parse_state(v: &Value) -> AppResult<engine::GameState> {
-    serde_json::from_value(v.clone())
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("stored game state is invalid: {e}")))
-}
-
 pub fn pending_of(state: &engine::GameState) -> Pending {
     use engine::Decision::*;
     let decision = engine::pending_decision(state);
@@ -78,29 +72,6 @@ impl EngineRules {
     pub fn initial_state(&self, settings: &GameSettings, seed: i64) -> engine::GameState {
         engine::GameState::new(engine_settings(settings, seed))
     }
-
-    /// Apply a JSON action to a JSON state on behalf of the power the engine is waiting for.
-    /// Returns the new state and the events as JSON. Engine errors become `illegal_action`.
-    pub fn apply_json(
-        &self,
-        state: &Value,
-        action: &Value,
-        game_seed: i64,
-        seq: i64,
-    ) -> AppResult<(Value, Value)> {
-        let mut gs = parse_state(state)?;
-        let action = parse_action(action)?;
-        let power = pending_of(&gs)
-            .power
-            .ok_or_else(|| AppError::conflict("not_in_progress", "game is over"))?;
-        let events = apply_typed(&mut gs, power, &action, game_seed, seq)?;
-        Ok((to_json(&gs)?, to_json(&events)?))
-    }
-}
-
-pub fn parse_action(v: &Value) -> AppResult<engine::Action> {
-    serde_json::from_value(v.clone())
-        .map_err(|e| AppError::BadRequest("illegal_action", format!("invalid action: {e}")))
 }
 
 /// Apply with the derived seed; the state is untouched on error.
@@ -120,14 +91,9 @@ pub fn apply_typed(
     .map_err(|e| AppError::BadRequest("illegal_action", e.to_string()))
 }
 
-pub fn to_json<T: serde::Serialize>(t: &T) -> AppResult<Value> {
-    serde_json::to_value(t).map_err(|e| AppError::Internal(e.into()))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
     fn settings_map_to_engine() {
@@ -145,27 +111,20 @@ mod tests {
     }
 
     #[test]
-    fn apply_json_roundtrip_and_errors() {
+    fn apply_typed_roundtrip_and_errors() {
         let r = EngineRules;
-        let gs = r.initial_state(&GameSettings::default(), 3);
-        let st = to_json(&gs).unwrap();
-        let (new, ev) = r
-            .apply_json(&st, &json!({"type":"end_phase"}), 3, 1)
-            .unwrap();
-        assert_eq!(new["phase"], "purchase");
-        assert!(ev.is_array());
-        let err = r
-            .apply_json(&st, &json!({"type":"nonsense"}), 3, 1)
-            .unwrap_err();
+        let mut gs = r.initial_state(&GameSettings::default(), 3);
+        let power = pending_of(&gs).power.unwrap();
+        let ev = apply_typed(&mut gs, power, &engine::Action::EndPhase, 3, 1).unwrap();
+        assert_eq!(phase_str(&gs), "purchase");
+        assert!(!ev.is_empty());
+        let before = gs.clone();
+        let bad = engine::Action::Move {
+            units: vec![99999],
+            path: vec![engine::LocationId::from_id("germany").unwrap()],
+        };
+        let err = apply_typed(&mut gs, power, &bad, 3, 2).unwrap_err();
         assert_eq!(err.code(), "illegal_action");
-        let err = r
-            .apply_json(
-                &st,
-                &json!({"type":"move","units":[99999],"path":["germany"]}),
-                3,
-                1,
-            )
-            .unwrap_err();
-        assert_eq!(err.code(), "illegal_action");
+        assert_eq!(gs, before);
     }
 }

@@ -217,12 +217,11 @@ async fn run_pass(
         if g.status != "in_progress" {
             return Ok(None);
         }
-        let (seq, st): (i64, serde_json::Value) =
+        let (seq, sqlx::types::Json(gs)): (i64, sqlx::types::Json<engine::GameState>) =
             sqlx::query_as("SELECT seq, state FROM game_states WHERE game_id=$1")
                 .bind(game)
                 .fetch_one(&state.db)
                 .await?;
-        let gs = rules::parse_state(&st)?;
         let pending = rules::pending_of(&gs);
         let Some(power) = pending.power else {
             if let Some(w) = pending.game_over {
@@ -245,10 +244,9 @@ async fn run_pass(
             let Some(action) = defender_action(&gs, &settings, g.seed, seq) else {
                 return Ok(takeover);
             };
-            let value = rules::to_json(&action)?;
             let res = {
                 let _guard = state.runtime.lock(game).await;
-                games::apply_locked(state, game, Actor::Auto, value, Some(seq)).await
+                games::apply_locked(state, game, Actor::Auto, action, Some(seq)).await
             };
             match res {
                 Ok(_) => applied += 1,
@@ -313,10 +311,9 @@ async fn run_pass(
             (last, Vec::new())
         };
 
-        let value = rules::to_json(&action)?;
         let res = {
             let _guard = state.runtime.lock(game).await;
-            games::apply_locked(state, game, Actor::Bot, value, Some(seq)).await
+            games::apply_locked(state, game, Actor::Bot, action.clone(), Some(seq)).await
         };
         match res {
             Ok(_) => {
