@@ -7,7 +7,7 @@ use wartide_ai::{Bot, Commentary, Persona, Style, Verbosity};
 use wartide_engine as engine;
 use wartide_protocol::bots::{BotPersona, PersonaStyle, PersonaVerbosity};
 use wartide_protocol::chat::ChatChannel;
-use wartide_protocol::game::Power;
+use wartide_protocol::game::{GameStatus, Power};
 use wartide_protocol::user::UserSettings;
 
 use crate::error::{AppError, AppResult};
@@ -132,7 +132,8 @@ const RANDOM_ATTEMPTS: u32 = 20;
 /// restart (a bot mid-turn, or a defender decision awaiting automatic resolution) resume at once
 /// instead of waiting for a deadline to expire. Cheap: a pass with nothing to do returns quickly.
 pub async fn resume_all(state: &AppState) -> AppResult<usize> {
-    let ids: Vec<(Uuid,)> = sqlx::query_as("SELECT id FROM games WHERE status='in_progress'")
+    let ids: Vec<(Uuid,)> = sqlx::query_as("SELECT id FROM games WHERE status=$1")
+        .bind(GameStatus::InProgress)
         .fetch_all(&state.db)
         .await?;
     for (id,) in &ids {
@@ -214,7 +215,7 @@ async fn run_pass(
             return Ok(takeover);
         }
         let g = games::load_game(state, game).await?;
-        if g.status != "in_progress" {
+        if g.status != GameStatus::InProgress {
             return Ok(None);
         }
         let (seq, sqlx::types::Json(gs)): (i64, sqlx::types::Json<engine::GameState>) =
@@ -324,7 +325,7 @@ async fn run_pass(
                         game,
                         &bot_name,
                         ChatChannel::Team,
-                        Some(games::enum_str(&team)),
+                        Some(team.as_str().to_string()),
                         &c.text,
                     )
                     .await
