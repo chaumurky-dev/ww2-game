@@ -55,7 +55,7 @@ When `COOKIE_SECURE` is true (the default) `SESSION_SECRET` is mandatory and sta
 | PUT `/groups/{id}/members/{user_id}/role` | A owner | `SetMemberRoleRequest` | 204 |
 | DELETE `/groups/{id}/members/{user_id}` | A owner/admin | - | 204 |
 | GET `/groups/{id}/leaderboard?mode=` | A member | - | `[LeaderboardEntry]` (ladder `group:{id}:2p/5p`) |
-| POST `/games` | V (rate limited) | `CreatePrivateGameRequest {seats?, mode, name?, bot_seats, bot_personas?, human_seats?, settings, group_id?}` (see Seat model below) | `GameSummary` (auto-starts if no other human seats). `name` 1-60 chars, default `Private game #A1B2`. `bot_personas` is indexed by seat; `null`/missing = default for that seat; only allowed for seats in `bot_seats`; ids from `/bots/personas` (else 400 `invalid_persona`) |
+| POST `/games` | V (rate limited) | `CreatePrivateGameRequest {seats, name?, settings, group_id?}` (see Seat model below) | `GameSummary` (auto-starts if no other human seats). `name` 1-60 chars, default `Private game #A1B2`. A seat's `persona` is only allowed on bot seats, default by seat; ids from `/bots/personas` (else 400 `invalid_persona`) |
 | POST `/games/join` | V | `JoinByInviteRequest` | `GameSummary` (starts when full) |
 | GET `/games?status=active\|finished` | A | - | `[GameSummary]` (mine) |
 | GET `/games/public?status=active\|finished&page=` | A | - | `Paginated<GameSummary>` (matchmade games, 20 per page, newest first) for the watch list |
@@ -115,10 +115,7 @@ other team wins. Abandon = no result.
 powers must be partitioned exactly once (each power in exactly one seat, no empty seat), exactly one seat is `host`
 (the creator), `persona` only on `bot` seats (default by seat index). Zero `open` seats = the game starts at once;
 otherwise friends join by invite code, each taking the next free `open` seat with all its powers (`seat` order), and the
-host may start early (empty seats become bots). When `seats` is present it supersedes `mode`, `human_seats`,
-`bot_seats` and `bot_personas`; those legacy fields still work and are mapped onto seats (`two_player`: seat 0 = Axis,
-seat 1 = Allies; `five_player`: one power per seat; the first non-bot seat is the host, other human seats are open).
-The stored `games.mode` is derived (`GameMode::derive`): `two_player` for exactly two seats split by team,
+host may start early (empty seats become bots). The stored `games.mode` is derived (`GameMode::derive`): `two_player` for exactly two seats split by team,
 `five_player` for five single-power seats, otherwise `custom` (migration 0004 widens the CHECK). Presets for the
 dialog live in `wartide_protocol::game::preset_layout`. **Rating**: only `two_player`/`five_player` layouts can be
 rated (group ladders); `custom` layouts are never rated, also not in a group. Public matchmaking is unchanged
@@ -141,7 +138,7 @@ turn e-mail only when the acting seat changes.
 - Every action goes through `games::apply_locked`: one transaction that locks the game row, parses the stored
   `GameState`, calls `wartide_engine::apply(state, pending_power, action, seed)` and appends action + events + new
   state. The RNG seed of action `seq` is `splitmix64(fnv1a64("wartide/action" ++ le64(games.seed) ++ le64(seq)))`
-  (`rules::action_seed`), so a game replays from its log (`wartide_engine::replay`).
+  (`wartide_protocol::seed::action_seed`), so a game replays from its log (`wartide_engine::replay`).
 - Per-game serialisation: `state.runtime.lock(game_id)` (one `tokio::sync::Mutex` per game) is held while an action is
   applied, by HTTP actions, resign, timeout handling and the bot driver alike.
 - **Bot driver** (`services/bots.rs`, `spawn_driver`): started after game start, after every accepted action, after

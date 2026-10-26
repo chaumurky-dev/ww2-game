@@ -12,33 +12,9 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use wartide_engine::{apply, pending_decision, Action, Decision, Event, GameState, Power};
 use wartide_protocol::game::{GameActionEnvelope, GameId};
+use wartide_protocol::seed::action_seed;
 
 const CHECKPOINT: usize = 25;
-
-/// FNV-1a over the domain and little-endian parts, finished with splitmix64 (mirrors the server's
-/// `rules::stable_hash`; a mismatch is caught because the replayed end state is compared with the
-/// real one).
-fn stable_hash(domain: &[u8], parts: &[u64]) -> u64 {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    let mut feed = |bytes: &[u8]| {
-        for b in bytes {
-            h ^= u64::from(*b);
-            h = h.wrapping_mul(0x0100_0000_01b3);
-        }
-    };
-    feed(domain);
-    for p in parts {
-        feed(&p.to_le_bytes());
-    }
-    let mut z = h.wrapping_add(0x9e37_79b9_7f4a_7c15);
-    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-    z ^ (z >> 31)
-}
-
-pub fn action_seed(game_seed: u64, seq: i64) -> u64 {
-    stable_hash(b"wartide/action", &[game_seed, seq as u64])
-}
 
 fn acting(st: &GameState) -> Option<Power> {
     match pending_decision(st) {

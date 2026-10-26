@@ -153,7 +153,6 @@ pub fn CreateGameForm(open: RwSignal<bool>) -> impl IntoView {
     let submit = move |_| {
         let req = build_request(
             form.with_untracked(|f| f.to_seats()),
-            mode.get_untracked(),
             &name.get_untracked(),
             opts.settings(),
             &group.get_untracked(),
