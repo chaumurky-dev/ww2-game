@@ -71,3 +71,9 @@
   the rules require. `sub_withdrawal` (default `when_outgunned`): `never` stays, `always` withdraws to
   the first legal zone, `when_outgunned` uses the AI's odds heuristic. The ruleset has no two-hit
   battleship, so there is no free "first hit" to prefer. Attackers still choose their own casualties.
+- 2026-10-26 (engine): The engine's own default casualty pick (used when a battle is auto-resolved) is
+  now `choose_casualties` under `CasualtyPolicy::default()` rather than a separate copy of the
+  algorithm. The only observable difference is the tie-break among equal-cost units: previously by unit
+  id, now by defence value then id (so an AA gun dies before armor, a transport before a submarine).
+  Replays of games recorded before this date that hit such a tie may diverge; the server stores the
+  full state after every action, so only client-side history stepping is affected.

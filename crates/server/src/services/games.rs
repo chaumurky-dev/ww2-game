@@ -30,20 +30,6 @@ pub fn parse_enum<T: DeserializeOwned>(s: &str) -> AppResult<T> {
         .map_err(|_| AppError::Internal(anyhow::anyhow!("bad enum value in db: {s}")))
 }
 
-/// Which powers each seat controls. 2p: seat 0 = Axis, seat 1 = Allies. 5p: one power per seat
-/// in turn order.
-pub fn seat_layout(mode: GameMode) -> Vec<Vec<Power>> {
-    match mode {
-        GameMode::TwoPlayer => vec![
-            vec![Power::Germany, Power::Japan],
-            vec![Power::Ussr, Power::Uk, Power::Usa],
-        ],
-        GameMode::FivePlayer => Power::ALL.iter().map(|p| vec![*p]).collect(),
-        // stored per game in `game_seats`; there is no fixed layout
-        GameMode::Custom => Vec::new(),
-    }
-}
-
 // ---------- rows ----------
 
 #[derive(FromRow, Clone, Debug)]
@@ -425,13 +411,9 @@ fn validate_settings(s: &GameSettings) -> AppResult<()> {
     Ok(())
 }
 
-/// Turn a create request into validated seat specs: either the general `seats` model or the
-/// legacy `mode/bot_seats/human_seats/bot_personas` fields mapped onto it.
+/// Validate the seat specs of a create request (partition, one host, personas) and normalise them.
 pub fn resolve_seats(req: &CreatePrivateGameRequest) -> AppResult<Vec<SeatSpec>> {
-    let mut specs = match &req.seats {
-        Some(seats) => seats.clone(),
-        None => legacy_seats(req)?,
-    };
+    let mut specs = req.seats.clone();
     let layout: Vec<Vec<Power>> = specs.iter().map(|s| s.powers.clone()).collect();
     check_partition(&layout).map_err(AppError::bad)?;
     if specs.iter().filter(|s| s.kind == SeatKind::Host).count() != 1 {
@@ -442,64 +424,11 @@ pub fn resolve_seats(req: &CreatePrivateGameRequest) -> AppResult<Vec<SeatSpec>>
         match (s.kind, s.persona.as_deref()) {
             (SeatKind::Bot, Some(p)) => s.persona = Some(bots::validate_id(p)?.to_string()),
             (SeatKind::Bot, None) => s.persona = Some(bots::default_for_seat(i).to_string()),
-            (_, Some(_)) => return Err(AppError::bad("bot_personas given for a non-bot seat")),
+            (_, Some(_)) => return Err(AppError::bad("a persona was given for a non-bot seat")),
             (_, None) => {}
         }
     }
     Ok(specs)
-}
-
-fn legacy_seats(req: &CreatePrivateGameRequest) -> AppResult<Vec<SeatSpec>> {
-    if req.mode == GameMode::Custom {
-        return Err(AppError::bad("custom games need an explicit seats list"));
-    }
-    let layout = seat_layout(req.mode);
-    let n = layout.len();
-    let mut bots = req.bot_seats.clone();
-    bots.sort_unstable();
-    bots.dedup();
-    if bots.iter().any(|b| *b as usize >= n) {
-        return Err(AppError::bad("bot seat index out of range"));
-    }
-    if req.bot_personas.len() > n {
-        return Err(AppError::bad("bot_personas has more entries than seats"));
-    }
-    for (i, p) in req.bot_personas.iter().enumerate() {
-        if p.is_some() && !bots.contains(&(i as u8)) {
-            return Err(AppError::bad("bot_personas given for a non-bot seat"));
-        }
-    }
-    let humans = n - bots.len();
-    if humans == 0 {
-        return Err(AppError::bad("a game needs at least one human seat"));
-    }
-    if let Some(h) = req.human_seats {
-        if h as usize != humans {
-            return Err(AppError::bad(
-                "human_seats does not match the number of non-bot seats",
-            ));
-        }
-    }
-    let host_seat = (0..n as u8).find(|i| !bots.contains(i)).unwrap_or(0);
-    Ok(layout
-        .into_iter()
-        .enumerate()
-        .map(|(i, powers)| {
-            let i = i as u8;
-            let kind = if bots.contains(&i) {
-                SeatKind::Bot
-            } else if i == host_seat {
-                SeatKind::Host
-            } else {
-                SeatKind::Open
-            };
-            SeatSpec {
-                powers,
-                kind,
-                persona: req.bot_personas.get(i as usize).cloned().flatten(),
-            }
-        })
-        .collect())
 }
 
 pub async fn create_private(
@@ -510,11 +439,7 @@ pub async fn create_private(
     validate_settings(&req.settings)?;
     let specs = resolve_seats(&req)?;
     let layout: Vec<Vec<Power>> = specs.iter().map(|s| s.powers.clone()).collect();
-    let mode = if req.seats.is_some() {
-        GameMode::derive(&layout)
-    } else {
-        req.mode
-    };
+    let mode = GameMode::derive(&layout);
     let name = req
         .name
         .as_deref()
@@ -1184,7 +1109,10 @@ pub async fn abandon(state: &AppState, user: &CurrentUser, id: Uuid) -> AppResul
 
 /// Create and immediately start a public rated game with `players` (already shuffled into seat order).
 pub async fn create_public(state: &AppState, mode: GameMode, players: &[Uuid]) -> AppResult<Uuid> {
-    let layout = seat_layout(mode);
+    if mode == GameMode::Custom {
+        return Err(AppError::bad("public games use a fixed layout"));
+    }
+    let layout = preset_layout(mode.seat_count());
     debug_assert_eq!(layout.len(), players.len());
     let id = Uuid::new_v4();
     let settings = GameSettings {
@@ -1234,18 +1162,18 @@ mod tests {
 
     #[test]
     fn layouts() {
-        assert_eq!(seat_layout(GameMode::TwoPlayer).len(), 2);
-        let five = seat_layout(GameMode::FivePlayer);
+        assert_eq!(preset_layout(GameMode::TwoPlayer.seat_count()).len(), 2);
+        let five = preset_layout(GameMode::FivePlayer.seat_count());
         assert_eq!(five.len(), 5);
         assert_eq!(five[0], vec![Power::Ussr]);
-        let two = seat_layout(GameMode::TwoPlayer);
+        let two = preset_layout(GameMode::TwoPlayer.seat_count());
         let total: usize = two.iter().map(Vec::len).sum();
         assert_eq!(total, 5);
         assert!(two[0].iter().all(|p| p.team() == Team::Axis));
     }
 
     fn seats_for(mode: GameMode) -> Vec<SeatRow> {
-        seat_layout(mode)
+        preset_layout(mode.seat_count())
             .into_iter()
             .enumerate()
             .map(|(i, powers)| SeatRow {

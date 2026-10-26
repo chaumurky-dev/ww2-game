@@ -2,7 +2,7 @@
 
 use leptos::prelude::*;
 use uuid::Uuid;
-use wartide_protocol::game::{CreatePrivateGameRequest, GameMode, GameSettings, SeatSpec};
+use wartide_protocol::game::{CreatePrivateGameRequest, GameSettings, SeatSpec};
 
 /// The game settings section of the form.
 #[derive(Clone, Copy)]
@@ -56,23 +56,17 @@ impl Opts {
     }
 }
 
-/// The one place the create request is assembled. The legacy fields (`mode`, `bot_personas`,
-/// `human_seats`, `bot_seats`) are superseded by `seats` and kept only for older servers.
+/// The one place the create request is assembled.
 pub(super) fn build_request(
     seats: Vec<SeatSpec>,
-    mode: GameMode,
     name: &str,
     settings: GameSettings,
     group: &str,
 ) -> CreatePrivateGameRequest {
     let title = name.trim().to_string();
     CreatePrivateGameRequest {
-        mode,
-        seats: Some(seats),
+        seats,
         name: (!title.is_empty()).then_some(title),
-        bot_personas: Vec::new(),
-        human_seats: None,
-        bot_seats: Vec::new(),
         settings,
         group_id: group.parse::<Uuid>().ok(),
     }

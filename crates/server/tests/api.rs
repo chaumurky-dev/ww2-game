@@ -109,6 +109,40 @@ async fn call_h(
 }
 
 /// A second app over the same database with rate limiting on (and its own mail outbox).
+/// `seats` JSON for a create request: one seat per entry of `layout` (power ids). The first
+/// non-bot seat is the host, other non-bot seats are open; `personas` = (seat index, persona id).
+fn seats_json(layout: &[&[&str]], bots: &[usize], personas: &[(usize, &str)]) -> Value {
+    let host = (0..layout.len()).find(|i| !bots.contains(i));
+    Value::Array(
+        layout
+            .iter()
+            .enumerate()
+            .map(|(i, powers)| {
+                let kind = if bots.contains(&i) {
+                    "bot"
+                } else if Some(i) == host {
+                    "host"
+                } else {
+                    "open"
+                };
+                let persona = personas.iter().find(|(s, _)| *s == i).map(|(_, p)| *p);
+                json!({"powers": powers, "kind": kind, "persona": persona})
+            })
+            .collect(),
+    )
+}
+
+const FIVE: [&[&str]; 5] = [&["ussr"], &["germany"], &["uk"], &["japan"], &["usa"]];
+const TWO: [&[&str]; 2] = [&["germany", "japan"], &["ussr", "uk", "usa"]];
+
+fn five_seats(bots: &[usize]) -> Value {
+    seats_json(&FIVE, bots, &[])
+}
+
+fn two_seats(bots: &[usize]) -> Value {
+    seats_json(&TWO, bots, &[])
+}
+
 fn limited(c: &Ctx, tweak: impl FnOnce(&mut Config)) -> Ctx {
     let (mailer, outbox) = Mailer::capture();
     let mut cfg = Config::for_test(String::new());
@@ -244,7 +278,7 @@ async fn auth_flow_and_unverified_gate() {
         Method::POST,
         "/api/games",
         Some(&u.cookie),
-        Some(json!({"mode": "two_player", "bot_seats": [1]})),
+        Some(json!({"seats": two_seats(&[1])})),
     )
     .await;
     assert_eq!(st, StatusCode::FORBIDDEN);
@@ -412,7 +446,7 @@ async fn group_game_chat_and_ratings() {
         Method::POST,
         "/api/games",
         Some(&a.cookie),
-        Some(json!({"mode": "two_player", "bot_seats": [], "group_id": gid})),
+        Some(json!({"seats": two_seats(&[]), "group_id": gid})),
     )
     .await;
     assert_eq!(st, StatusCode::OK, "{game}");
@@ -627,7 +661,7 @@ async fn group_game_chat_and_ratings() {
         Method::POST,
         "/api/games",
         Some(&a.cookie),
-        Some(json!({"mode": "five_player", "bot_seats": [1,2,3,4]})),
+        Some(json!({"seats": five_seats(&[1, 2, 3, 4])})),
     )
     .await;
     assert_eq!(pg["status"], "in_progress");
@@ -653,8 +687,14 @@ async fn group_game_chat_and_ratings() {
 async fn lobby_start_with_bots_and_timeouts() {
     let Some(c) = setup().await else { return };
     let a = register(&c, true).await;
-    let (st, game, _) = call(&c.app, Method::POST, "/api/games", Some(&a.cookie),
-        Some(json!({"mode": "five_player", "bot_seats": [3], "settings": {"turn_timeout_secs": 3600}}))).await;
+    let (st, game, _) = call(
+        &c.app,
+        Method::POST,
+        "/api/games",
+        Some(&a.cookie),
+        Some(json!({"seats": five_seats(&[3]), "settings": {"turn_timeout_secs": 3600}})),
+    )
+    .await;
     assert_eq!(st, StatusCode::OK, "{game}");
     assert_eq!(game["status"], "lobby");
     let id = game["id"].as_str().unwrap().to_string();
@@ -911,7 +951,7 @@ async fn matchmaking_creates_public_game() {
 }
 
 async fn create_solo_game(c: &Ctx, u: &TestUser, extra: Value) -> Value {
-    let mut body = json!({"mode": "five_player", "bot_seats": [1, 2, 3, 4]});
+    let mut body = json!({"seats": five_seats(&[1, 2, 3, 4])});
     for (k, v) in extra.as_object().unwrap() {
         body[k] = v.clone();
     }
@@ -944,7 +984,10 @@ async fn names_personas_and_turn_emails() {
     let g = create_solo_game(
         &c,
         &a,
-        json!({"name": "  Eastern   Front ", "bot_personas": [null, "thistle", null, "frost"]}),
+        json!({
+            "name": "  Eastern   Front ",
+            "seats": seats_json(&FIVE, &[1, 2, 3, 4], &[(1, "thistle"), (3, "frost")]),
+        }),
     )
     .await;
     assert_eq!(g["name"], "Eastern Front");
@@ -959,11 +1002,17 @@ async fn names_personas_and_turn_emails() {
     assert!(g2["name"].as_str().unwrap().starts_with("Private game #"));
 
     for (extra, what) in [
-        (json!({"bot_personas": [null, "nobody"]}), "unknown persona"),
-        (json!({"bot_personas": ["frost"]}), "persona on human seat"),
+        (
+            json!({"seats": seats_json(&FIVE, &[1, 2, 3, 4], &[(1, "nobody")])}),
+            "unknown persona",
+        ),
+        (
+            json!({"seats": seats_json(&FIVE, &[1, 2, 3, 4], &[(0, "frost")])}),
+            "persona on human seat",
+        ),
         (json!({"name": "x".repeat(61)}), "long name"),
     ] {
-        let mut body = json!({"mode": "five_player", "bot_seats": [1, 2, 3, 4]});
+        let mut body = json!({"seats": five_seats(&[1, 2, 3, 4])});
         for (k, v) in extra.as_object().unwrap() {
             body[k] = v.clone();
         }
@@ -1389,7 +1438,7 @@ async fn rate_limits_return_api_errors() {
             Method::POST,
             "/api/games",
             Some(&a.cookie),
-            Some(json!({"mode": "five_player", "bot_seats": [1, 2, 3, 4]})),
+            Some(json!({"seats": five_seats(&[1, 2, 3, 4])})),
         )
         .await;
         codes.push((st, body["code"].as_str().map(str::to_string)));
@@ -2253,7 +2302,7 @@ async fn finished_group_game_read_access() {
         Method::POST,
         "/api/games",
         Some(&a.cookie),
-        Some(json!({"mode": "two_player", "bot_seats": [], "group_id": group})),
+        Some(json!({"seats": two_seats(&[]), "group_id": group})),
     )
     .await;
     let gid = game["id"].as_str().unwrap().to_string();
