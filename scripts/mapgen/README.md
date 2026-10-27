@@ -38,3 +38,5 @@ Output schema: `{"view_box","projection","locations":{id:{kind,path,label,anchor
 
 ## Data license
 Natural Earth (https://www.naturalearthdata.com) is in the public domain; no attribution required.
+
+`seams.py` post-processes `map_geometry.json`, adding `seam: [[y0, y1], ...]` (spans of each location boundary lying on x=0 / x=W) which the web client paints over so the join between world copies shows no stroke. Re-run it after `build.py`.

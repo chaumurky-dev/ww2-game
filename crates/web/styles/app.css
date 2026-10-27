@@ -400,3 +400,5 @@ td { vertical-align: top; } .games-table td:nth-child(2) { white-space: nowrap; 
 .moved-dest { padding: .2rem 0; }
 .moved-dest .urow { padding-left: .4rem; }
 button.undo-unit { padding: 0 .4rem; }
+
+rect.seam-cover.loc { stroke: none !important; pointer-events: none; filter: none !important; }
