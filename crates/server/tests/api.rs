@@ -2659,3 +2659,58 @@ async fn reset_tokens_are_single_outstanding_and_expired_rows_purged() {
         StatusCode::OK
     );
 }
+
+#[tokio::test]
+async fn human_can_undo_movement_in_combat_move() {
+    use wartide_engine::{query::reachable, GameState, Phase, UnitType};
+    let Some(c) = setup().await else { return };
+    let u = register(&c, true).await;
+    let game = create_solo_game(&c, &u, json!({})).await;
+    let gid = game["id"].as_str().unwrap().to_string();
+    let state_path = format!("/api/games/{gid}/state");
+    let act_path = format!("/api/games/{gid}/actions");
+    let state_of = || async {
+        let (st, sv, _) = call(&c.app, Method::GET, &state_path, Some(&u.cookie), None).await;
+        assert_eq!(st, StatusCode::OK, "{sv}");
+        serde_json::from_value::<GameState>(sv["state"].clone()).expect("engine state")
+    };
+    let post = |action: Value| {
+        let body = json!({ "action": action });
+        let act_path = act_path.clone();
+        let (app, cookie) = (c.app.clone(), u.cookie.clone());
+        async move { call(&app, Method::POST, &act_path, Some(&cookie), Some(body)).await }
+    };
+    // research -> purchase -> combat move
+    while state_of().await.phase != Phase::CombatMove {
+        let (st, env, _) = post(json!({"type": "end_phase"})).await;
+        assert_eq!(st, StatusCode::OK, "{env}");
+    }
+    let before = state_of().await;
+    let (unit, to) = before
+        .units
+        .iter()
+        .filter(|x| x.owner == before.current_power && x.kind == UnitType::Infantry)
+        .find_map(|x| {
+            reachable(&before, x.id)
+                .into_iter()
+                .find(|r| !r.battle)
+                .map(|r| (x.clone(), r.to))
+        })
+        .expect("a movable infantry");
+    let (st, env, _) = post(json!({"type": "move", "units": [unit.id], "path": [to]})).await;
+    assert_eq!(st, StatusCode::OK, "{env}");
+    let moved = state_of().await;
+    assert_eq!(moved.unit(unit.id).unwrap().location, to);
+
+    let (st, env, _) = post(json!({"type": "undo_moves", "scope": {"type": "all"}})).await;
+    assert_eq!(st, StatusCode::OK, "{env}");
+    let after = state_of().await;
+    assert_eq!(after.unit(unit.id).unwrap().location, unit.location);
+    assert_eq!(after.unit(unit.id).unwrap().moves_used, 0);
+    assert_eq!(after.units, before.units);
+
+    // a second undo has nothing to take back and is rejected as an illegal action
+    let (st, env, _) = post(json!({"type": "undo_moves", "scope": {"type": "all"}})).await;
+    assert_eq!(st, StatusCode::BAD_REQUEST, "{env}");
+    assert_eq!(env["code"], "illegal_action");
+}

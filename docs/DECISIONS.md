@@ -88,3 +88,17 @@
   Ukraine spans x 1264-1414 and Russia starts at x 1476 on its 3500-wide map, with Caucasus between), so no
   adjacency or region change was made. Not independently verified against a scan of the printed board: the
   forum threads and fan wikis that discuss it were unreachable (Cloudflare 403/504) from the audit environment.
+- 2026-10-27 (engine): `Action::UndoMoves { scope }` takes back movement within the open Combat Move or
+  Non-Combat Move phase. The engine snapshots units, `next_unit_id`, control and treasuries when such a
+  phase begins (`TurnState.phase_start`) and journals each successful `Move`/`Load`/`Unload`
+  (`TurnState.move_journal`, with an `aa_fired` flag). Undo restores the snapshot and replays the journal
+  entries that were not selected, through the normal validation, with a throwaway RNG and event list; an
+  entry that no longer validates (or would roll dice) is dropped too and reported as `cascaded`. Both
+  fields are cleared when the phase is left, so the stored state carries the snapshot only during movement
+  phases, and old states without them still deserialize (undo then reports nothing to take back).
+  Antiaircraft fire is the only dice in movement. To rule out re-rolling it under a different seed, any
+  journal entry that rolled dice (even a roll with no hit) makes every undo in that phase illegal
+  ("units that were fired on by anti-aircraft guns cannot take back their move"); this is stricter than
+  refusing only the affected entry because the fired entry could not be re-applied faithfully. Scope
+  `into` matches `Move` by last path step, `Unload` by `to`, and `Load` by the transport's current sea
+  zone. Bots and the random policy never emit the action.

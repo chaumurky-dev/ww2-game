@@ -42,6 +42,12 @@ pub enum Action {
         /// Destination territory.
         to: LocationId,
     },
+    /// Take back movement made earlier in the current Combat Move or Non-Combat Move phase.
+    /// Refused once any of the phase's moves drew antiaircraft fire.
+    UndoMoves {
+        /// Which moves to take back.
+        scope: UndoScope,
+    },
     /// End the current phase.
     EndPhase,
     /// Start resolving the battle at a location (Combat phase).
@@ -96,4 +102,22 @@ pub enum Action {
     },
     /// The acting power leaves the game (its seat is taken over by a bot, or the team loses).
     Concede,
+}
+
+/// Which of this phase's moves an [`Action::UndoMoves`] takes back.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum UndoScope {
+    /// Every move, load and unload of the phase.
+    All,
+    /// Everything these units did (a group move keeps its other members moved).
+    Units {
+        /// The units to put back.
+        units: Vec<UnitId>,
+    },
+    /// Every move, load or unload that ended at this location.
+    Into {
+        /// The destination to clear.
+        location: LocationId,
+    },
 }

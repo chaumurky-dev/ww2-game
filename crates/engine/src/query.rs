@@ -14,6 +14,7 @@ pub use crate::bombing::{bombing_targets, rocket_targets};
 pub use crate::decision::{pending_decision, Decision};
 pub use crate::economy::{income, production_level};
 pub use crate::odds::{battle_odds, current_battle_odds, BattleOdds};
+pub use crate::undo::{moved_this_phase, undoable};
 
 /// A reachable destination with the path to take.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
