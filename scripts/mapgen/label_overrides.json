@@ -1,0 +1,9 @@
+{
+  "_comment": "Hand-placed label points [x, y] in viewBox units, keyed by location id. Applied by build.py after the unit-stack anchor is computed, so only the name label moves. Used where the polylabel point sits under the stack anchor of a small territory at the whole-map zoom.",
+  "ukraine_s_s_r": [1142.0, 268.0],
+  "eastern_europe": [1062.0, 248.0],
+  "caucasus": [1180.0, 262.0],
+  "western_europe": [944.0, 250.0],
+  "germany": [1010.0, 248.0],
+  "southern_europe": [1050.0, 308.0]
+}
