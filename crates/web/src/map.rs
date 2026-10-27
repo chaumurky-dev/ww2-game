@@ -29,6 +29,9 @@ pub struct RawLocation {
     pub anchor: Option<(f64, f64)>,
     #[serde(default)]
     pub bbox: Option<[f64; 4]>,
+    /// `[y0, y1]` spans of the boundary lying on the west/east frame edge.
+    #[serde(default)]
+    pub seam: Vec<[f64; 2]>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,6 +51,8 @@ pub struct Location {
     pub anchor: (f64, f64),
     /// `[x0, y0, x1, y1]` in viewBox units.
     pub bbox: [f64; 4],
+    /// `[y0, y1]` spans of the boundary lying on the west/east frame edge (x = 0 or x = W).
+    pub seam: Vec<[f64; 2]>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -83,6 +88,7 @@ impl Geometry {
                     label: l.label.unwrap_or(anchor),
                     anchor,
                     bbox,
+                    seam: l.seam,
                 }
             })
             .collect();
@@ -342,5 +348,20 @@ mod label_tests {
     fn abbrev_fallback() {
         assert_eq!(abbrev("germany", "Germany"), "Germ.");
         assert_eq!(abbrev("ukraine_s_s_r", "Ukraine S.S.R."), "Ukr.");
+    }
+}
+
+#[cfg(test)]
+mod seam_tests {
+    use super::*;
+
+    #[test]
+    fn seam_optional() {
+        let json = r#"{"view_box":"0 0 2000 1000","locations":{
+            "a":{"kind":"land","path":"M0 0 10 0 10 10Z","seam":[[1.5,4.0],[7.0,9.5]]},
+            "b":{"kind":"sea","path":"M5 5 6 5 6 6Z"}}}"#;
+        let g = Geometry::parse(json).unwrap();
+        assert_eq!(g.locations[0].seam, vec![[1.5, 4.0], [7.0, 9.5]]);
+        assert!(g.locations[1].seam.is_empty());
     }
 }

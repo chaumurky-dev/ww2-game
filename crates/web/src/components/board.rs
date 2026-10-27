@@ -453,6 +453,35 @@ pub fn Board(
             .collect_view()
     };
 
+    // Paint over the stroke of polygon edges lying on the frame, where world copies meet.
+    let seams = || {
+        let w = map.geo.view_box[2];
+        map.geo
+            .locations
+            .iter()
+            .filter(|l| !l.seam.is_empty())
+            .flat_map(|l| {
+                let alt = l.kind == LocKind::Sea && sea_shade(&l.id);
+                let kind = l.kind;
+                l.seam.iter().flat_map(move |&[y0, y1]| [(-1.3, y0, y1), (w - 1.3, y0, y1)]).map({
+                    let id = l.id.clone();
+                    move |(x, y0, y1)| {
+                        let id_c = id.clone();
+                        view! {
+                            <rect
+                                class=move || format!("seam-cover {}", model.with(|m| loc_class(kind, alt, &id_c, m)))
+                                x=x
+                                y=y0
+                                width=2.6
+                                height=y1 - y0
+                            />
+                        }
+                    }
+                })
+            })
+            .collect_view()
+    };
+
     let labels = || {
         map
         .geo
@@ -617,6 +646,7 @@ pub fn Board(
                 <g class="world-copy" transform=format!("translate({dx},0)")>
                     {decor.clone().map(|d| view! { <path class="decor" d=d /> })}
                     {locs()}
+                    {seams()}
                     {overlays(vis)}
                     <g style:display=move || if vis.get() { "inline" } else { "none" }>{labels_g}</g>
                 </g>
