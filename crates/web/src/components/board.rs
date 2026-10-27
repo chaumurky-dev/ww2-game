@@ -1,6 +1,6 @@
 //! SVG game board with pan/zoom. Decoupled from the engine through [`BoardModel`].
 use super::unit_icon::{UnitBadge, UnitIcon};
-use super::viewport::ViewBox;
+use super::viewport::{nearest_copy, ViewBox};
 use crate::map::{sea_shade, LocKind, SharedMap};
 use crate::model::{Power, PowerExt, UnitKind};
 use leptos::prelude::*;
@@ -247,12 +247,17 @@ pub fn Board(
                     saved.set_value(Some(view.get_untracked()));
                 }
                 let (w, h) = (base.w * 0.33, base.h * 0.33);
-                view.set(ViewBox {
+                // Nearest world copy of the target, so focusing never spins the globe.
+                let cur = view.get_untracked();
+                let x = nearest_copy(x, cur.x + cur.w / 2.0, base.w);
+                let mut nv = ViewBox {
                     x: x - w / 2.0,
                     y: y - h / 2.0,
                     w,
                     h,
-                });
+                };
+                nv.wrap_x(base.x, base.w);
+                view.set(nv);
             }
         });
     }
@@ -361,7 +366,10 @@ pub fn Board(
                 moved.update_value(|m| *m += dx.abs() + dy.abs());
                 if moved.get_value() > 5.0 {
                     dragging.set(true);
-                    view.update(|v| v.pan(dx, dy, cw, ch));
+                    view.update(|v| {
+                        v.pan(dx, dy, cw, ch);
+                        v.wrap_x(base.x, base.w);
+                    });
                 }
             }
             2 => {
@@ -373,7 +381,10 @@ pub fn Board(
                     .map(|r| (r.0, r.1))
                     .unwrap_or((0.0, 0.0));
                 let (mx, my) = ((x + o.1) / 2.0 - left, (y + o.2) / 2.0 - top);
-                view.update(|v| v.zoom_at(d_old / d_new, mx, my, cw, ch, &base));
+                view.update(|v| {
+                    v.zoom_at(d_old / d_new, mx, my, cw, ch, &base);
+                    v.wrap_x(base.x, base.w);
+                });
             }
             _ => {}
         }
@@ -390,12 +401,18 @@ pub fn Board(
         if let Some((l, t, w, h)) = rect_of(ev.current_target()) {
             let f = (ev.delta_y() / 300.0).exp();
             let (px, py) = (ev.client_x() as f64 - l, ev.client_y() as f64 - t);
-            view.update(|v| v.zoom_at(f, px, py, w, h, &base));
+            view.update(|v| {
+                v.zoom_at(f, px, py, w, h, &base);
+                v.wrap_x(base.x, base.w);
+            });
         }
     };
     let zoom_btn = move |f: f64| {
         let (w, h) = size.get_value();
-        view.update(|v| v.zoom_at(f, w / 2.0, h / 2.0, w, h, &base));
+        view.update(|v| {
+            v.zoom_at(f, w / 2.0, h / 2.0, w, h, &base);
+            v.wrap_x(base.x, base.w);
+        });
     };
 
     // Zoom level: 0 = whole map, 1 = labels for land, 2 = labels for sea zones too.
@@ -410,32 +427,34 @@ pub fn Board(
         }
     });
 
-    let locs = map
-        .geo
-        .locations
-        .iter()
-        .map(|l| {
-            let alt = l.kind == LocKind::Sea && sea_shade(&l.id);
-            let (id, kind) = (l.id.clone(), l.kind);
-            let (id_c, id_h, id_s) = (id.clone(), id.clone(), id.clone());
-            view! {
-                <path
-                    d=l.path.clone()
-                    data-id=id.clone()
-                    class=move || model.with(|m| loc_class(kind, alt, &id_c, m))
-                    on:pointerenter=move |_| hover.set(Some(id_h.clone()))
-                    on:pointerleave=move |_| hover.set(None)
-                    on:click=move |_| {
-                        if moved.get_value() < 6.0 {
-                            on_select.run(Some(id_s.clone()));
+    let locs = || {
+        map.geo
+            .locations
+            .iter()
+            .map(|l| {
+                let alt = l.kind == LocKind::Sea && sea_shade(&l.id);
+                let (id, kind) = (l.id.clone(), l.kind);
+                let (id_c, id_h, id_s) = (id.clone(), id.clone(), id.clone());
+                view! {
+                    <path
+                        d=l.path.clone()
+                        data-id=id.clone()
+                        class=move || model.with(|m| loc_class(kind, alt, &id_c, m))
+                        on:pointerenter=move |_| hover.set(Some(id_h.clone()))
+                        on:pointerleave=move |_| hover.set(None)
+                        on:click=move |_| {
+                            if moved.get_value() < 6.0 {
+                                on_select.run(Some(id_s.clone()));
+                            }
                         }
-                    }
-                />
-            }
-        })
-        .collect_view();
+                    />
+                }
+            })
+            .collect_view()
+    };
 
-    let labels = map
+    let labels = || {
+        map
         .geo
         .locations
         .iter()
@@ -476,9 +495,11 @@ pub fn Board(
                 </g>
             }
         })
-        .collect_view();
+        .collect_view()
+    };
 
-    let overlays = map
+    let overlays = |vis: Memo<bool>| {
+        map
         .geo
         .locations
         .iter()
@@ -488,6 +509,9 @@ pub fn Board(
             view! {
                 <g class="ov" style=format!("transform:translate({}px,{}px) scale(var(--zs))", anchor.0, anchor.1)>
                     {move || {
+                        if !vis.get() {
+                            return None;
+                        }
                         let (stacks, ctrl) = model.with(|m| (m.stacks.get(&id).cloned().unwrap_or_default(), m.owners.get(&id).copied()));
                         if stacks.is_empty() {
                             return None;
@@ -575,10 +599,30 @@ pub fn Board(
                 </g>
             }
         })
-        .collect_view();
+        .collect_view()
+    };
 
     let map_h = map.clone();
     let decor = map.geo.decor.clone();
+    // Three identical copies of the world (west, home, east) make the board east-west
+    // continuous. Paths always render in all three; unit stacks and labels only while
+    // the copy intersects the viewport.
+    let copies = [-1.0_f64, 0.0, 1.0]
+        .into_iter()
+        .map(|k| {
+            let dx = k * base.w;
+            let vis = Memo::new(move |_| view.get().touches_copy(base.x + dx, base.w));
+            let labels_g = labels();
+            view! {
+                <g class="world-copy" transform=format!("translate({dx},0)")>
+                    {decor.clone().map(|d| view! { <path class="decor" d=d /> })}
+                    {locs()}
+                    {overlays(vis)}
+                    <g style:display=move || if vis.get() { "inline" } else { "none" }>{labels_g}</g>
+                </g>
+            }
+        })
+        .collect_view();
 
     view! {
         <div
@@ -598,10 +642,7 @@ pub fn Board(
                 viewBox=move || view.get().attr()
                 style=move || format!("--zs:{:.3}", (view.get().w / base.w * 1.1).clamp(0.2, 1.0))
             >
-                {decor.map(|d| view! { <path class="decor" d=d /> })}
-                {locs}
-                {overlays}
-                {labels}
+                {copies}
                 {move || drag.get().filter(|d| d.active).map(|d| {
                     let (x, y) = d.at;
                     view! {
