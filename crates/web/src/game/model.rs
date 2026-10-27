@@ -48,6 +48,7 @@ pub fn stacks_at(st: &GameState, loc: LocationId, picked: &[UnitId]) -> Vec<Stac
             count: 0,
             cargo: vec![],
             picked: 0,
+            draggable: false,
         });
         e.count += 1;
         if picked.contains(&u.id) {

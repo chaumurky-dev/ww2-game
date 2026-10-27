@@ -366,3 +366,17 @@ td { vertical-align: top; } .games-table td:nth-child(2) { white-space: nowrap; 
   .bb-dicecol .dieface i { width: 4px; height: 4px; }
 }
 .bb-mini span { white-space: nowrap; }
+/* ---- Dragging unit stacks ---- */
+.drag-handle { display: inline-block; }
+.drag-handle.on { pointer-events: auto; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.drag-handle.on:hover .unit-badge { box-shadow: 0 0 0 2px var(--accent); }
+.board-wrap.unit-drag, .board-wrap.unit-drag .loc { cursor: grabbing; }
+.drag-ghost { opacity: .9; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .6)); }
+.board-wrap.unit-drag .loc.hl-move, .board-wrap.unit-drag .loc.hl-attack { animation: dragpulse .9s ease-in-out infinite alternate; }
+@keyframes dragpulse { from { stroke-opacity: .55; } to { stroke-opacity: 1; } }
+.count-picker { position: fixed; z-index: 50; transform: translateX(-50%); width: 250px; padding: .6rem .7rem; display: flex; flex-direction: column; gap: .45rem; background: var(--paper); color: var(--ink); border: 2px solid var(--line); border-radius: 8px; box-shadow: 0 6px 18px rgba(0, 0, 0, .45); }
+.count-picker .cp-title { font-weight: 700; font-size: .9rem; }
+.count-picker .cp-row { display: flex; gap: .35rem; align-items: center; }
+.count-picker .cp-row input[type=range] { flex: 1; min-width: 0; }
+.count-picker .cp-row button { flex: 1; }
+.count-picker .cp-row button.step { flex: 0 0 auto; }
