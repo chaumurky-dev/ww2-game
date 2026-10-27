@@ -1,0 +1,46 @@
+[graph]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "wasm32-unknown-unknown",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+]
+
+[advisories]
+yanked = "deny"
+ignore = [
+    # paste is archived/unmaintained (no vulnerability); transitive via leptos -> tachys, not directly fixable.
+    { id = "RUSTSEC-2024-0436", reason = "unmaintained proc-macro pulled in by leptos/tachys; no known vulnerability" },
+]
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+    "MPL-2.0",
+    "CC0-1.0",
+    "OpenSSL",
+    # Permissive licenses actually present in the tree:
+    "0BSD",                # quoted_printable (lettre)
+    "CDLA-Permissive-2.0", # webpki-roots, webpki-root-certs (CA data; rustls/sqlx/lettre)
+    "BSL-1.0",             # xxhash-rust (leptos server_fn)
+]
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
