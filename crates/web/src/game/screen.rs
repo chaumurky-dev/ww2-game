@@ -147,6 +147,13 @@ fn keyboard(ctx: GameCtx, e: web_sys::KeyboardEvent) {
     let el = e
         .target()
         .and_then(|t| t.dyn_into::<web_sys::Element>().ok());
+    // An open dialog owns the keyboard.
+    if web_sys::window()
+        .and_then(|w| w.document())
+        .is_some_and(|d| matches!(d.query_selector(".modal-back"), Ok(Some(_))))
+    {
+        return;
+    }
     let tag = el
         .as_ref()
         .map(|el| el.tag_name().to_uppercase())
