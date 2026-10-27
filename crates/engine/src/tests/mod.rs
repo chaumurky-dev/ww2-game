@@ -15,6 +15,7 @@ mod movement_tests;
 mod naval_tests;
 mod query_tests;
 mod transport_tests;
+mod undo_tests;
 
 pub fn loc(id: &str) -> LocationId {
     LocationId::from_id(id).unwrap_or_else(|| panic!("no location {id}"))

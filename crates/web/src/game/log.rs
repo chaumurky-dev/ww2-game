@@ -39,6 +39,7 @@ fn level_of(e: &Event) -> LogLevel {
         | Event::SubsWithdrew { .. }
         | Event::UnitsMoved { .. }
         | Event::UnitsLoaded { .. }
+        | Event::MovesUndone { .. }
         | Event::UnitsUnloaded { .. }
         | Event::AircraftLanded { .. }
         | Event::AaFire { .. }
@@ -168,6 +169,19 @@ pub fn format_events(events: &[Event], mut round: u32, acc: &mut BattleAcc) -> V
                     refs(units),
                     l(*from),
                     l(to)
+                ));
+            }
+            Event::MovesUndone {
+                power,
+                units,
+                cascaded,
+            } => {
+                who = Some(*power);
+                let n = units.len() + cascaded.len();
+                text = Some(format!(
+                    "{} took back the move of {n} unit{}",
+                    power.name(),
+                    if n == 1 { "" } else { "s" }
                 ));
             }
             Event::UnitsLoaded {

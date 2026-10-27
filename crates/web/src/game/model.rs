@@ -38,6 +38,25 @@ pub fn event_locations(events: &[wartide_engine::Event]) -> Vec<LocationId> {
     v
 }
 
+/// Where units taken back by `MovesUndone` stand again (the places to flash).
+pub fn undo_locations(
+    after: &wartide_engine::GameState,
+    events: &[wartide_engine::Event],
+) -> Vec<LocationId> {
+    use wartide_engine::Event as E;
+    events
+        .iter()
+        .filter_map(|e| match e {
+            E::MovesUndone {
+                units, cascaded, ..
+            } => Some(units.iter().chain(cascaded)),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(|r| after.unit(r.id).map(|u| u.location))
+        .collect()
+}
+
 /// Unit stacks at a location grouped by (power, unit type); cargo is folded into its ship.
 pub fn stacks_at(st: &GameState, loc: LocationId, picked: &[UnitId]) -> Vec<Stack> {
     let mut m: BTreeMap<(usize, UnitType), Stack> = BTreeMap::new();
