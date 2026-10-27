@@ -168,6 +168,15 @@ pub enum Event {
         /// Locations entered.
         path: Vec<LocationId>,
     },
+    /// The player took back some of this phase's movement.
+    MovesUndone {
+        /// Power.
+        power: Power,
+        /// Units whose moves were taken back as requested.
+        units: Vec<UnitRef>,
+        /// Further units put back because their move depended on a removed one.
+        cascaded: Vec<UnitRef>,
+    },
     /// Units boarded a transport.
     UnitsLoaded {
         /// Power.

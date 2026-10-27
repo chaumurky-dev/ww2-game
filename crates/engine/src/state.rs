@@ -208,6 +208,40 @@ pub struct TurnState {
     pub rocket_fired: bool,
     /// Units placed per complex territory this turn.
     pub placed: Vec<(LocationId, u32)>,
+    /// Board as it stood when the current movement phase began (None outside movement phases);
+    /// the basis of `UndoMoves`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase_start: Option<Box<MoveSnapshot>>,
+    /// Movement actions applied successfully in the current movement phase, in order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub move_journal: Vec<JournalEntry>,
+}
+
+/// The parts of the game a movement phase can change, saved when the phase begins.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MoveSnapshot {
+    /// All units.
+    pub units: Vec<Unit>,
+    /// Next unit id.
+    pub next_unit_id: UnitId,
+    /// Territory control (blitzes, captures and neutral violations change it).
+    pub control: LocMap<Option<Power>>,
+    /// Treasuries (neutral fees, seized capital treasuries).
+    pub treasury: PerPower<u32>,
+}
+
+/// One movement action applied in the current movement phase.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct JournalEntry {
+    /// The `Move`, `Load` or `Unload` as applied.
+    pub action: crate::action::Action,
+    /// Dice were rolled for it (antiaircraft fire), so it can never be taken back.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub aa_fired: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 /// An entry of the purchase list.
