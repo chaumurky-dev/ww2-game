@@ -1,0 +1,6 @@
+# Becomes enforceable (via "Require review from Code Owners") once a second collaborator exists.
+* @Jun-Dai
+/.github/ @Jun-Dai
+/infra/ @Jun-Dai
+/Dockerfile @Jun-Dai
+/scripts/ @Jun-Dai

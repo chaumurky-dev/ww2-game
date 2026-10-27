@@ -134,6 +134,10 @@ owner enforced, 90-day noncurrent-version expiry) are re-applied by re-running `
    If GuardDuty is already enabled in the account, `apply` fails with a duplicate detector error: import it with
    `terraform import aws_guardduty_detector.main $(aws guardduty list-detectors --query 'DetectorIds[0]' --output text)`.
    The same applies to an existing account-level S3 public access block (`terraform import aws_s3_account_public_access_block.main <account-id>`).
+   Cost anomaly monitor: AWS allows one DIMENSIONAL (per-service) monitor per account and often pre-creates
+   `Default-Services-Monitor`; `CreateAnomalyMonitor` then fails with "Limit exceeded on dimensional spend monitor
+   creation". Set `anomaly_monitor_arn` in tfvars to the ARN from `aws ce get-anomaly-monitors` and re-run plan/apply
+   (the subscription attaches to that monitor; nothing else changes).
 4. Click the confirmation link in the email AWS SNS sends to `alert_email` (topic `wartide-prod-alerts`); until then no
    alarm or anomaly mail is delivered. The AWS Budgets emails need no confirmation.
 5. GitHub (done by the repo owner, not Terraform): create the `production` environment
@@ -159,14 +163,16 @@ Account 243963726301, us-east-1, executed 2026-10-24.
 | 11 | 2026-10-25: SES production access requested from the CLI: `aws sesv2 put-account-details --mail-type TRANSACTIONAL --website-url https://ww2.chaumurky.net --production-access-enabled --use-case-description ...` (transactional only: verification, password reset, turn notifications; < 100/day) | `aws sesv2 get-account` shows `Details.ReviewDetails.Status = PENDING`; AWS normally answers within 24 h by email to the account root address. Until approved: sandbox, 200 mails/day, recipients must be verified identities |
 | 12 | 2026-10-25: branch protection on `main` via `gh api -X PUT repos/chaumurky-dev/ww2-game/branches/main/protection` (required status checks `lint`, `test`, `web-build`, strict/up-to-date, enforce for admins, no force-push or deletion, no review requirement); repo settings `allow_auto_merge`, `delete_branch_on_merge` | Direct pushes to `main` are rejected; all changes land through PRs that CI has validated |
 
-| 13 | Hardening rollout step 1: `AWS_PROFILE=default scripts/aws-bootstrap.sh operator-role` (boundary policy + operator policy v2 + boundary on existing principals) | pending (admin) |
-| 14 | Hardening rollout step 2: `AWS_PROFILE=wartide scripts/aws-bootstrap.sh state-bucket` | pending |
-| 15 | `alert_email`/`alert_phone` set in tfvars; `terraform plan` reviewed and `apply` run (guardrails, RDS protection, SG tightening, ALB logs bucket `wartide-prod-alb-logs-243963726301`, OIDC `StringEquals`) | pending (admin) |
-| 16 | SNS subscription for `wartide-prod-alerts` confirmed by email | pending |
-| 17 | GitHub `production` environment created and deploy job moved into it | pending (orchestrator) |
+| 13 | 2026-10-27: hardening rollout step 1, `AWS_PROFILE=default scripts/aws-bootstrap.sh operator-role`, run by the account owner | `wartide-boundary` policy exists; `wartide-terraform` v2; boundary attached to `wartide-prod-github-deploy` (verified with `aws iam get-role`) |
+| 14 | 2026-10-27: hardening rollout step 2, `AWS_PROFILE=wartide scripts/aws-bootstrap.sh state-bucket`, run by the account owner | State bucket TLS-only, owner-enforced, lifecycle set |
+| 15 | 2026-10-27: `alert_email`/`alert_phone` set in tfvars; `terraform apply` run by the account owner. It stopped at `aws_ce_anomaly_monitor.service` ("Limit exceeded on dimensional spend monitor creation": the account already had AWS's `Default-Services-Monitor`); everything else applied. Fix: `anomaly_monitor_arn` tfvar reuses that monitor; the re-plan is 1 to add (`aws_ce_anomaly_subscription.service`) and is applied by the account owner | Trust policy `StringEquals` with both subjects, budget `wartide-prod-monthly`, GuardDuty detector `31926841c4f94de785e21aff3ca59d75`, SG/RDS/ALB hardening live (verified 2026-10-27); anomaly subscription `wartide-prod-anomalies` created 2026-10-27 15:48 UTC as part of the rotation apply (row 18) |
+| 16 | 2026-10-27: SNS email subscription for `wartide-prod-alerts` confirmed by the account owner | `list-subscriptions-by-topic` shows a confirmed subscription ARN |
+| 17 | 2026-10-27: `gh api -X PUT repos/chaumurky-dev/ww2-game/environments/production`; deploy job moved into `environment: production` by PR #5 (also SHA-pins actions, restricts the trigger to pushes of `main` from this repo, verifies the SHA is on `main`) | Deploy tokens now carry the `environment:production` subject accepted by the trust policy |
+
+| 18 | 2026-10-27 incident: `infra/terraform/tfplan` (a binary plan file, which embeds the previous state) was committed to the public repo by mistake in PR #14 (merged 14:25 UTC) and removed from the tree in PR #23 (15:4x UTC). The embedded state held the RDS master password and `DATABASE_URL`, `SESSION_SECRET`, and the SES SMTP IAM access key `AKIATRTK7BHOYOZRARDD` with its secret and SMTP password. Checked at 15:50 UTC: that key was last used 14:04 UTC (before the leak), SES sent 4 mails in 24 h, no bounces/complaints; RDS is reachable only from the task security group. Response, on the owner's instruction ("get all of the credentials out of the github repo and commit history and rotate the secrets"): `terraform apply` of `plan -replace=random_password.db -replace=random_password.session -replace=aws_iam_access_key.ses_smtp` at 15:48-15:50 UTC (RDS password modified in place, new `AWSCURRENT` versions of `DATABASE_URL`/`SESSION_SECRET`/`SMTP_USER`/`SMTP_PASS`, leaked key destroyed, new key `AKIATRTK7BHO3ANAN4PE`), then `aws ecs update-service --force-new-deployment` at 15:52 UTC so the tasks read the new secrets (all user sessions invalidated). History purge: `git filter-repo --invert-paths --path infra/terraform/tfplan` on a mirror clone and force-push of all branches with force-push protection lifted for the duration (procedure in the orchestrator's `purge-tfplan.sh`, dry-run verified: 4 commits rewritten, 0 left). GitHub still serves the old commits through `refs/pull/*` and cached views until GitHub support purges them (owner's ticket). Plan files are now git-ignored | Secrets rotated and live; history purge and support ticket pending |
 
 Pending:
-1. SES production-access review (step 11). Check with `AWS_PROFILE=wartide aws sesv2 get-account --region us-east-1 --query Details.ReviewDetails`. If AWS asks follow-up questions they arrive by email at the account root address.
+1. Incident row 18: purge `infra/terraform/tfplan` from git history (scripted; after the open PRs merge) and ask GitHub support to clear the pull-request refs and cached views.
 
 Note: the record above predates the script's `operator-role` and `profile` subcommands; they reproduce steps 1-2.
 
@@ -217,7 +223,35 @@ CI again on the merge commit and, when green, the Deploy workflow.
   checks out the CI-validated SHA, builds and pushes `:<sha>` and `:latest` with buildx (GHA cache), fetches the
   current task definition, swaps the image, and deploys waiting for service stability. The ECS circuit breaker
   rolls back failed deploys. Terraform ignores task definition and desired-count drift so it does not fight CI.
+- `ci.yml` also runs `audit` (cargo-deny: advisories, bans, licenses, sources; config in `deny.toml`). One advisory is
+  ignored with a reason: RUSTSEC-2024-0436 (`paste` unmaintained, transitive via leptos/tachys). CI has top-level
+  `contents: read`, and its concurrency group is per PR number (or ref for pushes), so a PR run can never cancel a
+  push-to-main run.
 - Database migrations run at server startup.
+
+### Deploy hardening (public repo)
+
+- Deploy runs only when the CI run was a successful `push` from this repository on `main`
+  (`workflow_run.event == 'push'`, `head_repository.full_name == github.repository`, `head_branch == 'main'`).
+  The `branches` filter alone is not enough: for a fork PR `head_branch` is the fork's branch name, so a fork branch
+  called `main` would otherwise trigger a deploy of the fork's commit. `workflow_dispatch` only works from `main`.
+- After checkout (full history) a step fetches `origin/main` and fails unless `git merge-base --is-ancestor "$SHA"
+  origin/main`, so only commits that are on `main` can ever be deployed.
+- Token permissions: workflow level is `permissions: {}`; only the deploy job gets `id-token: write` and
+  `contents: read`.
+- The job uses the GitHub environment `production` (create it under Settings > Environments, deployment branches
+  limited to `main`). The OIDC `sub` claim therefore becomes
+  `repo:<owner>@<id>/<repo>@<id>:environment:production` (numeric-id form; the classic form is
+  `repo:<owner>/<repo>:environment:production`). Before this merges, `github_oidc_subjects` in Terraform must include
+  that subject and be applied, or `configure-aws-credentials` will fail to assume the role.
+- All third-party actions are pinned to full commit SHAs with a `# vX.Y.Z` comment; Dependabot
+  (`.github/dependabot.yml`, weekly, minor/patch grouped, `github-actions` and `cargo`) proposes updates.
+  `dtolnay/rust-toolchain` has no release tags, so it is pinned to the `stable` branch commit with
+  `toolchain: stable` set explicitly.
+- The deploy buildx cache uses `scope=deploy` (read and write), separate from the PR build's default scope, so PR
+  builds cannot poison the production image cache.
+- `.github/CODEOWNERS` names the owner for everything and for `.github/`, `infra/`, `Dockerfile`, `scripts/`; it
+  becomes enforceable once a second collaborator exists.
 
 ## 6. Cost
 
