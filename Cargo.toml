@@ -24,6 +24,13 @@ rand = "0.9"
 rand_chacha = "0.9"
 tracing = "0.1"
 
+# Debug builds run the integration tests; the bot planner and rules engine dominate their
+# runtime, so optimise just those crates (semantics unchanged, tests stay debuggable).
+[profile.dev.package.wartide-ai]
+opt-level = 3
+[profile.dev.package.wartide-engine]
+opt-level = 2
+
 [profile.release]
 opt-level = 3
 lto = "thin"
