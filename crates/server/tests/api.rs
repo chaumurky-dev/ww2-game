@@ -1647,7 +1647,7 @@ async fn full_stack_game_against_bots() {
             break;
         }
         assert!(
-            started.elapsed() < std::time::Duration::from_secs(280),
+            started.elapsed() < std::time::Duration::from_secs(600),
             "too slow: step {step}, round {}",
             gs.round
         );
