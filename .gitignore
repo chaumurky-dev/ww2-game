@@ -13,3 +13,5 @@ node_modules
 
 # Claude Code agent worktrees
 .claude/worktrees/
+/infra/terraform/tfplan
+/infra/terraform/*.tfplan
