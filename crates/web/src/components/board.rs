@@ -1,6 +1,6 @@
 //! SVG game board with pan/zoom. Decoupled from the engine through [`BoardModel`].
 use super::unit_icon::{UnitBadge, UnitIcon};
-use super::viewport::{nearest_copy, ViewBox};
+use super::viewport::{home_view, nearest_copy, ViewBox};
 use crate::map::{sea_shade, LocKind, SharedMap};
 use crate::model::{Power, PowerExt, UnitKind};
 use leptos::prelude::*;
@@ -222,6 +222,28 @@ pub fn Board(
     let moved = StoredValue::new(0.0_f64);
     let size = StoredValue::new((800.0_f64, 600.0_f64));
     let wrap = NodeRef::<leptos::html::Div>::new();
+    // Resting view: whole map, or (portrait phone) the map fitted to the container's height.
+    let home = StoredValue::new(base);
+    let apply_home = move || {
+        let Some(el) = wrap.get_untracked() else {
+            return;
+        };
+        let new = home_view(&base, el.client_width() as f64, el.client_height() as f64);
+        let old = home.get_value();
+        if new != old {
+            home.set_value(new);
+            if view.get_untracked() == old {
+                view.set(new);
+            }
+        }
+    };
+    Effect::new(move |_| {
+        if wrap.get().is_some() {
+            apply_home();
+        }
+    });
+    let h_resize = window_event_listener(leptos::ev::resize, move |_| apply_home());
+    on_cleanup(move || h_resize.remove());
     let drag = RwSignal::new(None::<DragSt>);
     let drag_active = move || drag.with(|d| d.as_ref().is_some_and(|d| d.active));
     if let Some(f) = focus {
@@ -687,7 +709,7 @@ pub fn Board(
             <div class="board-ctl">
                 <button class="secondary small" on:click=move |_| zoom_btn(0.8)>"+"</button>
                 <button class="secondary small" on:click=move |_| zoom_btn(1.25)>"\u{2212}"</button>
-                <button class="secondary small" on:click=move |_| view.set(base)>"Reset"</button>
+                <button class="secondary small" on:click=move |_| view.set(home.get_value())>"Reset"</button>
                 <span class="pill tip">
                     {move || {
                         hover
