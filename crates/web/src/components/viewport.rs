@@ -26,6 +26,13 @@ impl ViewBox {
         (self.w / cw.max(1.0)).max(self.h / ch.max(1.0))
     }
 
+    /// Map a point in container pixels (relative to its top-left) to user (viewBox) units.
+    pub fn to_user(&self, px: f64, py: f64, cw: f64, ch: f64) -> (f64, f64) {
+        let s = self.scale(cw, ch);
+        let (ox, oy) = ((cw - self.w / s) / 2.0, (ch - self.h / s) / 2.0);
+        (self.x + (px - ox) * s, self.y + (py - oy) * s)
+    }
+
     pub fn pan(&mut self, dx_px: f64, dy_px: f64, cw: f64, ch: f64) {
         let s = self.scale(cw, ch);
         self.x -= dx_px * s;
