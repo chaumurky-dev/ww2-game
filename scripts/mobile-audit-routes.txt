@@ -1,0 +1,28 @@
+# Routes for scripts/mobile-audit.py --routes-file. `path::scenario` runs a scripted state first.
+# Logged-in routes need --login USER:PASS; `/game/ID` lines need a real game id (use --game).
+/
+/help
+/leaderboard
+/lobby
+/lobby::menu
+/lobby::create
+/lobby::create-bottom
+/groups
+/groups/audit-club
+/settings
+/profile/audituser
+/sandbox
+/sandbox::topbar-open
+/sandbox::purchase
+/sandbox::combat-move
+/sandbox::select
+/sandbox::drag-picker
+/sandbox::battle
+/sandbox::undo
+/sandbox::mobilize
+/sandbox::chat
+/sandbox::log
+/game/GAME
+/game/GAME::actions
+/game/GAME::chat
+/game/GAME::log
