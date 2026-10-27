@@ -503,3 +503,9 @@ input, select, textarea { max-width: 100%; }
   .side { max-height: 65dvh; }
   .modal, .bb-modal { max-height: 100%; }
 }
+
+/* WebKit (iOS Safari) paints HTML inside an SVG foreignObject at the wrong place -- every unit
+   stack piles up in the top-left corner of the board -- when a descendant is `position: relative`.
+   Keep the counters free of positioned elements; the cargo chip is nudged with margins instead. */
+foreignObject .cbadge, foreignObject .unit-icon { position: static; }
+foreignObject .cbadge .cargo { position: static; align-self: flex-start; margin: -8px -4px 0 -8px; }
