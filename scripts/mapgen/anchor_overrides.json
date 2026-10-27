@@ -1,0 +1,6 @@
+{
+  "_comment": "Hand-placed unit-stack anchors [x, y] in viewBox units, keyed by location id. Applied by build.py after the automatic anchor is computed (label_overrides.json moves only the name label).",
+  "germany": [1006.0, 283.0],
+  "western_europe": [944.0, 297.0],
+  "japan": [1711.4, 371.2]
+}

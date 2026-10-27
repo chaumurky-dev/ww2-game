@@ -15,3 +15,7 @@ node_modules
 .claude/worktrees/
 /infra/terraform/tfplan
 /infra/terraform/*.tfplan
+
+# mapgen: local venv and Natural Earth downloads
+/scripts/mapgen/.venv
+/scripts/mapgen/data/
