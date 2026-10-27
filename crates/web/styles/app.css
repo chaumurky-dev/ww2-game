@@ -485,6 +485,9 @@ input, select, textarea { max-width: 100%; }
   .modal { max-height: 100%; }
   .bb-modal { max-height: 100%; }
   .bb-mini { bottom: calc(56px + env(safe-area-inset-bottom) + .5rem); max-width: calc(100vw - 1.2rem); }
+  a:has(> .btn), a:has(> strong) { display: inline-flex; align-items: center; min-height: 44px; }
+  .bb-cell.pickable { min-width: 44px; min-height: 44px; justify-content: center; }
+  .bb-pick { font-size: .75rem; }
   .bb-side .power-badge { font-size: .75rem; padding-right: .35rem; max-width: 100%; }
   .bb-corner, .bb-hits, .bb-dicelabel { font-size: .8125rem; }
   .loglevel .tab { font-size: .8125rem; }

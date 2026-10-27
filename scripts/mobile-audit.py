@@ -256,7 +256,7 @@ AUDIT = r"""
     if (!p || p.closest('svg, script, style') || !visible(p)) continue;
     const fs = parseFloat(getComputedStyle(p).fontSize);
     // badges / pills may be 12px; everything else needs 13px+
-    const min = p.closest('.pill,.tag,.badge,.unit-badge,.step,.cbadge,.hitnum') ? 11.95 : 12.95;
+    const min = p.closest('.pill,.tag,.badge,.power-badge,.bb-pick,.unit-badge,.step,.cbadge,.hitnum') ? 11.95 : 12.95;
     if (fs < min) {
       const k = sel(p) + ' ' + fs + 'px';
       out.fonts[k] = (out.fonts[k] || 0) + 1;
