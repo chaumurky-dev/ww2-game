@@ -202,6 +202,17 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 /* ---- Interactive game screen ---- */
 .stack-row { display: inline-flex; align-items: center; gap: 3px; pointer-events: none; }
 .stack-row.picked .unit-badge { outline: 2px solid #fff; box-shadow: 0 0 0 4px var(--accent); }
+/* Compact stacks: up to 2 rows of 3 small badges. */
+.cstack { display: grid; grid-auto-rows: 16px; pointer-events: none; }
+.cbadge { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 29px; height: 14px; margin: 1px; box-sizing: border-box; background: rgba(28, 22, 12, .88); color: #fff; border: 1px solid #111; border-radius: 999px; font-size: 9px; line-height: 1; white-space: nowrap; pointer-events: none; }
+.cbadge.ring { box-shadow: 0 0 0 2px var(--pc, #888); }
+.cbadge .drag-handle { display: inline-flex; align-items: center; gap: 1px; }
+.cbadge .unit-icon { width: 12px; height: 12px; color: #fff; }
+.cbadge b { font-weight: 700; }
+.cbadge.more { background: rgba(255, 250, 235, .92); color: #222; pointer-events: auto; }
+.cbadge.picked { outline: 2px solid #fff; box-shadow: 0 0 0 4px var(--accent); }
+.cbadge .cargo { position: absolute; top: -7px; right: -3px; font-size: 8px; padding: 0 2px; border-radius: 6px; }
+.cbadge .cargo .unit-icon { width: 9px; height: 9px; }
 .cargo { display: inline-flex; gap: 2px; background: rgba(20, 15, 5, .75); border-radius: 8px; padding: 0 4px; color: #fff; font-size: .7rem; font-weight: 700; }
 .cargo .cg { display: inline-flex; align-items: center; }
 .cargo .unit-icon { width: .95rem; height: .95rem; color: #fff; }
@@ -374,7 +385,7 @@ td { vertical-align: top; } .games-table td:nth-child(2) { white-space: nowrap; 
 /* ---- Dragging unit stacks ---- */
 .drag-handle { display: inline-block; }
 .drag-handle.on { pointer-events: auto; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
-.drag-handle.on:hover .unit-badge { box-shadow: 0 0 0 2px var(--accent); }
+.drag-handle.on:hover .unit-badge, .cbadge:hover { box-shadow: 0 0 0 2px var(--accent); }
 .board-wrap.unit-drag, .board-wrap.unit-drag .loc { cursor: grabbing; }
 .drag-ghost { opacity: .9; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .6)); }
 .board-wrap.unit-drag .loc.hl-move, .board-wrap.unit-drag .loc.hl-attack { animation: dragpulse .9s ease-in-out infinite alternate; }
