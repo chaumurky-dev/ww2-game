@@ -26,9 +26,15 @@ def project_geom(g):
 def path_d(g, nd=1):
     """SVG path (absolute, implicit lineto) for a (Multi)Polygon in projected coords."""
     def ring(r):
-        cs = list(r.coords)[:-1]
-        s = "M" + " ".join(f"{round(x, nd):g} {round(y, nd):g}" for x, y in cs) + "Z"
-        return s
+        cs = []
+        for x, y in list(r.coords)[:-1]:
+            c = (round(x, nd), round(y, nd))
+            if not cs or cs[-1] != c:      # rounding collapses many near-duplicate nodes
+                cs.append(c)
+        if len(cs) > 1 and cs[0] == cs[-1]:
+            cs.pop()
+        return "M" + " ".join(f"{x:g} {y:g}" for x, y in cs) + "Z"
+
     out = []
     for p in polys(g):
         out.append(ring(p.exterior))

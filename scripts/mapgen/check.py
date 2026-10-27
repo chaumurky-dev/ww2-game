@@ -1,6 +1,6 @@
 """Run stages 1-2 and print adjacency mismatches."""
 import json, os, pickle, sys
-import proj, sea
+import geom, proj, sea
 from shapely.ops import unary_union
 HERE = os.path.dirname(os.path.abspath(__file__))
 MAP = os.path.join(HERE, "..", "..", "crates", "engine", "data", "map.json")
@@ -8,10 +8,10 @@ MAP = os.path.join(HERE, "..", "..", "crates", "engine", "data", "map.json")
 def run(rebuild=False, quiet=False):
     p = os.path.join(HERE, "data", "land.pkl")
     if rebuild or not os.path.exists(p):
-        import geom
         pickle.dump(geom.simplify_all(geom.build(False)), open(p, "wb"))
     land = pickle.load(open(p, "rb"))
     land_px = {k: proj.project_geom(g) for k, g in land.items()}
+    land_px = geom.resolve_overlaps(land_px)
     seeds = sea.load_seeds()
     land_px = sea.fill_gaps(land_px, seeds)
     zones, water = sea.build_sea(land_px, seeds)
