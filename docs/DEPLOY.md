@@ -221,7 +221,35 @@ CI again on the merge commit and, when green, the Deploy workflow.
   checks out the CI-validated SHA, builds and pushes `:<sha>` and `:latest` with buildx (GHA cache), fetches the
   current task definition, swaps the image, and deploys waiting for service stability. The ECS circuit breaker
   rolls back failed deploys. Terraform ignores task definition and desired-count drift so it does not fight CI.
+- `ci.yml` also runs `audit` (cargo-deny: advisories, bans, licenses, sources; config in `deny.toml`). One advisory is
+  ignored with a reason: RUSTSEC-2024-0436 (`paste` unmaintained, transitive via leptos/tachys). CI has top-level
+  `contents: read`, and its concurrency group is per PR number (or ref for pushes), so a PR run can never cancel a
+  push-to-main run.
 - Database migrations run at server startup.
+
+### Deploy hardening (public repo)
+
+- Deploy runs only when the CI run was a successful `push` from this repository on `main`
+  (`workflow_run.event == 'push'`, `head_repository.full_name == github.repository`, `head_branch == 'main'`).
+  The `branches` filter alone is not enough: for a fork PR `head_branch` is the fork's branch name, so a fork branch
+  called `main` would otherwise trigger a deploy of the fork's commit. `workflow_dispatch` only works from `main`.
+- After checkout (full history) a step fetches `origin/main` and fails unless `git merge-base --is-ancestor "$SHA"
+  origin/main`, so only commits that are on `main` can ever be deployed.
+- Token permissions: workflow level is `permissions: {}`; only the deploy job gets `id-token: write` and
+  `contents: read`.
+- The job uses the GitHub environment `production` (create it under Settings > Environments, deployment branches
+  limited to `main`). The OIDC `sub` claim therefore becomes
+  `repo:<owner>@<id>/<repo>@<id>:environment:production` (numeric-id form; the classic form is
+  `repo:<owner>/<repo>:environment:production`). Before this merges, `github_oidc_subjects` in Terraform must include
+  that subject and be applied, or `configure-aws-credentials` will fail to assume the role.
+- All third-party actions are pinned to full commit SHAs with a `# vX.Y.Z` comment; Dependabot
+  (`.github/dependabot.yml`, weekly, minor/patch grouped, `github-actions` and `cargo`) proposes updates.
+  `dtolnay/rust-toolchain` has no release tags, so it is pinned to the `stable` branch commit with
+  `toolchain: stable` set explicitly.
+- The deploy buildx cache uses `scope=deploy` (read and write), separate from the PR build's default scope, so PR
+  builds cannot poison the production image cache.
+- `.github/CODEOWNERS` names the owner for everything and for `.github/`, `infra/`, `Dockerfile`, `scripts/`; it
+  becomes enforceable once a second collaborator exists.
 
 ## 6. Cost
 
