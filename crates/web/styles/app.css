@@ -140,6 +140,11 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .loc.hl-battle { stroke: #000; stroke-width: 3px; stroke-dasharray: 6 3; }
 .loc.selected { stroke: #fff; stroke-width: 4; filter: drop-shadow(0 0 4px #000); }
 .lbl { font-family: var(--font-display); font-size: 20px; fill: var(--ink); pointer-events: none; text-anchor: middle; paint-order: stroke; stroke: rgba(255, 250, 235, .8); stroke-width: 4px; letter-spacing: .05em; }
+/* Whole-map zoom: smaller land labels (see map::LABEL_FONT_L0); hidden on narrow screens. */
+.lbl.l0 { font-size: 14px; stroke-width: 3px; letter-spacing: .03em; }
+@media (max-width: 800px) { .lbl.l0 { display: none !important; } }
+:root[data-theme="dark"] .lbl { stroke: rgba(20, 18, 14, .85); }
+:root[data-theme="dark"] .lbl.sea { fill: #9db8c4; }
 .lbl.sea { font-style: italic; font-family: var(--font-serif); fill: #4a6672; }
 .ipc { font-family: var(--font-display); font-size: 11px; fill: #fff; pointer-events: none; text-anchor: middle; }
 .ipc-bg { fill: var(--ink); stroke: var(--paper); stroke-width: 1; }
