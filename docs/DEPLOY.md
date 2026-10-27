@@ -134,6 +134,10 @@ owner enforced, 90-day noncurrent-version expiry) are re-applied by re-running `
    If GuardDuty is already enabled in the account, `apply` fails with a duplicate detector error: import it with
    `terraform import aws_guardduty_detector.main $(aws guardduty list-detectors --query 'DetectorIds[0]' --output text)`.
    The same applies to an existing account-level S3 public access block (`terraform import aws_s3_account_public_access_block.main <account-id>`).
+   Cost anomaly monitor: AWS allows one DIMENSIONAL (per-service) monitor per account and often pre-creates
+   `Default-Services-Monitor`; `CreateAnomalyMonitor` then fails with "Limit exceeded on dimensional spend monitor
+   creation". Set `anomaly_monitor_arn` in tfvars to the ARN from `aws ce get-anomaly-monitors` and re-run plan/apply
+   (the subscription attaches to that monitor; nothing else changes).
 4. Click the confirmation link in the email AWS SNS sends to `alert_email` (topic `wartide-prod-alerts`); until then no
    alarm or anomaly mail is delivered. The AWS Budgets emails need no confirmation.
 5. GitHub (done by the repo owner, not Terraform): create the `production` environment
@@ -159,14 +163,14 @@ Account 243963726301, us-east-1, executed 2026-10-24.
 | 11 | 2026-10-25: SES production access requested from the CLI: `aws sesv2 put-account-details --mail-type TRANSACTIONAL --website-url https://ww2.chaumurky.net --production-access-enabled --use-case-description ...` (transactional only: verification, password reset, turn notifications; < 100/day) | `aws sesv2 get-account` shows `Details.ReviewDetails.Status = PENDING`; AWS normally answers within 24 h by email to the account root address. Until approved: sandbox, 200 mails/day, recipients must be verified identities |
 | 12 | 2026-10-25: branch protection on `main` via `gh api -X PUT repos/chaumurky-dev/ww2-game/branches/main/protection` (required status checks `lint`, `test`, `web-build`, strict/up-to-date, enforce for admins, no force-push or deletion, no review requirement); repo settings `allow_auto_merge`, `delete_branch_on_merge` | Direct pushes to `main` are rejected; all changes land through PRs that CI has validated |
 
-| 13 | Hardening rollout step 1: `AWS_PROFILE=default scripts/aws-bootstrap.sh operator-role` (boundary policy + operator policy v2 + boundary on existing principals) | pending (admin) |
-| 14 | Hardening rollout step 2: `AWS_PROFILE=wartide scripts/aws-bootstrap.sh state-bucket` | pending |
-| 15 | `alert_email`/`alert_phone` set in tfvars; `terraform plan` reviewed and `apply` run (guardrails, RDS protection, SG tightening, ALB logs bucket `wartide-prod-alb-logs-243963726301`, OIDC `StringEquals`) | pending (admin) |
-| 16 | SNS subscription for `wartide-prod-alerts` confirmed by email | pending |
-| 17 | GitHub `production` environment created and deploy job moved into it | pending (orchestrator) |
+| 13 | 2026-10-27: hardening rollout step 1, `AWS_PROFILE=default scripts/aws-bootstrap.sh operator-role`, run by the account owner | `wartide-boundary` policy exists; `wartide-terraform` v2; boundary attached to `wartide-prod-github-deploy` (verified with `aws iam get-role`) |
+| 14 | 2026-10-27: hardening rollout step 2, `AWS_PROFILE=wartide scripts/aws-bootstrap.sh state-bucket`, run by the account owner | State bucket TLS-only, owner-enforced, lifecycle set |
+| 15 | 2026-10-27: `alert_email`/`alert_phone` set in tfvars; `terraform apply` run by the account owner. It stopped at `aws_ce_anomaly_monitor.service` ("Limit exceeded on dimensional spend monitor creation": the account already had AWS's `Default-Services-Monitor`); everything else applied. Fix: `anomaly_monitor_arn` tfvar reuses that monitor; the re-plan is 1 to add (`aws_ce_anomaly_subscription.service`) and is applied by the account owner | Trust policy `StringEquals` with both subjects, budget `wartide-prod-monthly`, GuardDuty detector `31926841c4f94de785e21aff3ca59d75`, SG/RDS/ALB hardening live (verified 2026-10-27); anomaly subscription pending the 1-resource apply |
+| 16 | 2026-10-27: SNS email subscription for `wartide-prod-alerts` confirmed by the account owner | `list-subscriptions-by-topic` shows a confirmed subscription ARN |
+| 17 | 2026-10-27: `gh api -X PUT repos/chaumurky-dev/ww2-game/environments/production`; deploy job moved into `environment: production` by PR #5 (also SHA-pins actions, restricts the trigger to pushes of `main` from this repo, verifies the SHA is on `main`) | Deploy tokens now carry the `environment:production` subject accepted by the trust policy |
 
 Pending:
-1. SES production-access review (step 11). Check with `AWS_PROFILE=wartide aws sesv2 get-account --region us-east-1 --query Details.ReviewDetails`. If AWS asks follow-up questions they arrive by email at the account root address.
+1. `cd infra/terraform && AWS_PROFILE=wartide terraform plan -out=tfplan && terraform apply tfplan` for the cost-anomaly subscription (row 15).
 
 Note: the record above predates the script's `operator-role` and `profile` subcommands; they reproduce steps 1-2.
 
