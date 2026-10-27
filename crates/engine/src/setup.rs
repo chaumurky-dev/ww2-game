@@ -48,6 +48,8 @@ impl GameState {
                 researched: false,
                 rocket_fired: false,
                 placed: vec![],
+                phase_start: None,
+                move_journal: vec![],
             },
             battle: None,
             conceded: vec![],

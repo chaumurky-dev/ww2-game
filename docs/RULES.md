@@ -201,6 +201,13 @@ too.
   their flight (landing). A unit may be in only one battle per turn.
 * All combat movement is completed before any battle is resolved; no reinforcements join a battle once combat has begun.
 * Every unit that entered a combat space must be listed as part of that battle.
+* **[Decision]** Take-backs: while a Combat Move or Non-Combat Move phase is still open, the player may take
+  back moves, loads and unloads made in that phase (`UndoMoves`: all, particular units, or everything that
+  ended at one location). The phase is restored to its start and the surviving moves are replayed; a move
+  that only made sense because of a taken-back one is taken back with it. This is a convenience of online
+  play, not a tabletop rule. Because the physical dice cannot be re-rolled, once any move of the phase has
+  drawn antiaircraft fire (4.5) nothing in that phase can be taken back: units that were fired on cannot
+  take back their move. Ending the phase makes everything final.
 
 ### 4.3 Land units
 

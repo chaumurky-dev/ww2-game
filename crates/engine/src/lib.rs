@@ -25,6 +25,7 @@ pub mod setup;
 pub mod state;
 pub mod tech;
 pub mod transport;
+pub mod undo;
 pub mod units;
 pub mod victory;
 

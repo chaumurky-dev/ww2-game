@@ -19,7 +19,7 @@ let who = pending_decision(&st);                          // Decision::Phase / S
   rolls dice from `ChaCha8Rng::seed_from_u64(seed)`, never panics on bad input, leaves the state untouched on `Err`.
   The server derives `seed` from `(game_seed, action_seq)`, so a game replays from its action log:
   `replay(settings, &[(Power, Action, u64)]) -> Result<GameState>`.
-* `Action` (tagged `{"type": ...}`): `BuyResearch`, `Purchase`, `Move{units,path}`, `Load`, `Unload`, `EndPhase`,
+* `Action` (tagged `{"type": ...}`): `BuyResearch`, `Purchase`, `Move{units,path}`, `Load`, `Unload`, `UndoMoves{scope}`, `EndPhase`,
   `BeginBattle`, `DeclareStrategicBombing`, `SelectCasualties`, `Retreat`, `PressAttack`, `WithdrawSubs`,
   `FireRocket`, `Place`, `Concede`.
 * `Event` (tagged): every die roll (`DiceRolled{power, context, rolls}`), moves, loads/unloads, AA fire,
@@ -56,6 +56,17 @@ let who = pending_decision(&st);                          // Decision::Phase / S
     or carrier), `NeedsLanding{options}` (landing spots within the remaining moves, avoiding untouched
     neutrals and hostile sea) or `Stranded` (none in range: lost at the end of non-combat). Works in both
     move phases; serialized as `{"type": "safe" | "needs_landing" | "stranded"}`.
+  * Undo movement: `Action::UndoMoves{scope}` (JSON `{"type":"undo_moves","scope":{"type":"all"}}`,
+    `{"type":"units","units":[ids]}` or `{"type":"into","location":"<id>"}`) is legal for the active power in
+    CombatMove / NonCombatMove. The engine keeps `turn.phase_start` (snapshot of units, `next_unit_id`,
+    control, treasuries) and `turn.move_journal` (applied `Move`/`Load`/`Unload`, each with `aa_fired`) for
+    the open movement phase only; both are cleared when the phase ends and absent from the JSON otherwise.
+    Undo restores the snapshot and replays the unselected entries without events or dice; entries that
+    depended on a removed one are dropped too. Emits one `Event::MovesUndone{power, units, cascaded}`
+    (`UnitRef`s). If any move of the phase drew antiaircraft fire, every undo is `Illegal`.
+    `query::moved_this_phase(state) -> Vec<(UnitId, from, to)>` lists units standing away from where the
+    phase began; `query::undoable(state, &scope) -> bool` says whether the undo would succeed now.
+    Bots and `RandomPolicy` never undo.
 * `random_policy::RandomPolicy`: a random legal-move player (fuzzing, bot fallback).
 * `MapData::get()`: static map: lookups by id/name, `neighbours`, `is_sea`, `ipc`, `original_owner`,
   `capital_of`, `canals`. `LocationId` is a small integer internally and its string id in JSON.
