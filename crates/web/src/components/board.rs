@@ -17,7 +17,38 @@ pub struct Stack {
     pub cargo: Vec<(UnitKind, u32)>,
     /// How many units of this stack are currently picked for a move.
     pub picked: u32,
+    /// The viewer may drag this stack's counter to move its units.
+    pub draggable: bool,
 }
+
+/// Result of a unit drag, handed to the game screen when the pointer is released.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DragEnd {
+    pub from: String,
+    pub kind: UnitKind,
+    /// Territory under the pointer on release (`None` when cancelled).
+    pub dest: Option<String>,
+    /// Pointer position in client pixels.
+    pub x: f64,
+    pub y: f64,
+}
+
+/// A unit-stack drag in progress (or a pointerdown on a handle that may still turn into a tap).
+#[derive(Debug, Clone, PartialEq)]
+struct DragSt {
+    from: String,
+    kind: UnitKind,
+    power: Power,
+    count: u32,
+    pointer: i32,
+    start: (f64, f64),
+    active: bool,
+    /// Pointer position in SVG user units.
+    at: (f64, f64),
+}
+
+/// Pointer travel (CSS px) before a press on a counter becomes a drag instead of a tap.
+const DRAG_THRESHOLD: f64 = 6.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Highlight {
@@ -81,6 +112,15 @@ fn rect_of(target: Option<web_sys::EventTarget>) -> Option<(f64, f64, f64, f64)>
     Some((r.left(), r.top(), r.width(), r.height()))
 }
 
+/// The territory (`path[data-id]`) under a client point, ignoring overlays.
+fn territory_at(x: f64, y: f64) -> Option<String> {
+    let doc = web_sys::window()?.document()?;
+    doc.elements_from_point(x as f32, y as f32)
+        .iter()
+        .filter_map(|v| v.dyn_into::<web_sys::Element>().ok())
+        .find_map(|e| e.get_attribute("data-id"))
+}
+
 type Pointers = Vec<(i32, f64, f64)>;
 
 #[component]
@@ -91,6 +131,12 @@ pub fn Board(
     /// When it changes to `Some(id)` the view centres and zooms on that location.
     #[prop(optional, into)]
     focus: Option<Signal<Option<String>>>,
+    /// A unit counter was picked up (after the pointer travelled past the drag threshold).
+    #[prop(optional)]
+    on_drag_start: Option<Callback<(String, UnitKind)>>,
+    /// A unit drag ended (dropped on a territory or cancelled).
+    #[prop(optional)]
+    on_drag_end: Option<Callback<DragEnd>>,
 ) -> impl IntoView {
     let base = ViewBox::new(map.geo.view_box);
     let view = RwSignal::new(base);
@@ -99,6 +145,9 @@ pub fn Board(
     let pts = StoredValue::new(Pointers::new());
     let moved = StoredValue::new(0.0_f64);
     let size = StoredValue::new((800.0_f64, 600.0_f64));
+    let wrap = NodeRef::<leptos::html::Div>::new();
+    let drag = RwSignal::new(None::<DragSt>);
+    let drag_active = move || drag.with(|d| d.as_ref().is_some_and(|d| d.active));
     if let Some(f) = focus {
         let anchors: HashMap<String, (f64, f64)> = map
             .geo
@@ -131,6 +180,86 @@ pub fn Board(
             }
         });
     }
+
+    // Unit drags are tracked on the window so they survive the counter being re-rendered.
+    let end_drag = move |dest: Option<String>, x: f64, y: f64| {
+        let Some(d) = drag.get_untracked() else {
+            return;
+        };
+        drag.set(None);
+        if d.active {
+            if let Some(cb) = on_drag_end {
+                cb.run(DragEnd {
+                    from: d.from,
+                    kind: d.kind,
+                    dest,
+                    x,
+                    y,
+                });
+            }
+        } else if dest.is_some() {
+            // A tap on the counter behaves like a click on its territory.
+            on_select.run(Some(d.from));
+        }
+    };
+    let h_move = window_event_listener(leptos::ev::pointermove, move |ev| {
+        let Some(d) = drag.get_untracked() else {
+            return;
+        };
+        if d.pointer != ev.pointer_id() {
+            return;
+        }
+        let (cx, cy) = (ev.client_x() as f64, ev.client_y() as f64);
+        let mut next = d.clone();
+        if !d.active && (cx - d.start.0).hypot(cy - d.start.1) > DRAG_THRESHOLD {
+            next.active = true;
+            if let Some(cb) = on_drag_start {
+                cb.run((d.from.clone(), d.kind));
+            }
+        }
+        if next.active {
+            if let Some((l, t, w, h)) = rect_of(wrap.get_untracked().map(|e| e.into())) {
+                next.at = view.get_untracked().to_user(cx - l, cy - t, w, h);
+            }
+        }
+        if next != d {
+            drag.set(Some(next));
+        }
+    });
+    let h_up = window_event_listener(leptos::ev::pointerup, move |ev| {
+        let Some(d) = drag.get_untracked() else {
+            return;
+        };
+        if d.pointer != ev.pointer_id() {
+            return;
+        }
+        let (cx, cy) = (ev.client_x() as f64, ev.client_y() as f64);
+        let dest = if d.active {
+            territory_at(cx, cy)
+        } else {
+            Some(d.from.clone())
+        };
+        end_drag(dest, cx, cy);
+    });
+    let h_cancel = window_event_listener(leptos::ev::pointercancel, move |ev| {
+        if drag
+            .get_untracked()
+            .is_some_and(|d| d.pointer == ev.pointer_id())
+        {
+            end_drag(None, ev.client_x() as f64, ev.client_y() as f64);
+        }
+    });
+    let h_key = window_event_listener(leptos::ev::keydown, move |ev| {
+        if ev.key() == "Escape" && drag_active() {
+            end_drag(None, 0.0, 0.0);
+        }
+    });
+    on_cleanup(move || {
+        h_move.remove();
+        h_up.remove();
+        h_cancel.remove();
+        h_key.remove();
+    });
 
     let on_down = move |ev: web_sys::PointerEvent| {
         if let Some((_, _, w, h)) = rect_of(ev.current_target()) {
@@ -246,10 +375,23 @@ pub fn Board(
                 .unwrap_or_else(|| l.id.clone());
             let ipc = info.as_ref().map(|i| i.ipc).filter(|n| !sea && *n > 0);
             let min_level = if sea { 2 } else { 1 };
+            // Whole-map text for land: full name if it fits, else an abbreviation, else none.
+            let l0 = if sea {
+                None
+            } else {
+                crate::map::fit_label(&l.id, &name, l.bbox, crate::map::LABEL_FONT_L0)
+            };
+            let (l0_shown, name_full) = (l0.clone(), name.clone());
             view! {
                 <g class="ov" style=format!("transform:translate({lx}px,{ly}px) scale(var(--zs))")>
-                    <text class={if sea { "lbl sea" } else { "lbl" }} y="-4" style:display={move || if level.get() >= min_level { "inline" } else { "none" }}>
-                        {name}
+                    <text
+                        class="lbl"
+                        class:sea=sea
+                        class:l0=move || level.get() == 0
+                        y="-4"
+                        style:display={move || if level.get() >= min_level || (level.get() == 0 && l0_shown.is_some()) { "inline" } else { "none" }}
+                    >
+                        {move || if level.get() == 0 { l0.clone().unwrap_or_default() } else { name_full.clone() }}
                     </text>
                     {ipc.map(|n| view! {
                         <g class="ipc-g">
@@ -268,6 +410,32 @@ pub fn Board(
                             .enumerate()
                             .map(|(i, s)| {
                                 let is_picked = s.picked > 0;
+                                let (loc_id, kind, power, count) = (id.clone(), s.kind, s.power, s.count);
+                                let can_drag = s.draggable;
+                                let press = move |ev: web_sys::PointerEvent| {
+                                    if !can_drag || (ev.pointer_type() == "mouse" && ev.button() != 0) {
+                                        return;
+                                    }
+                                    // Not a map pan: keep the board-wrap handler from seeing it.
+                                    ev.stop_propagation();
+                                    if let Some(el) = ev.current_target().and_then(|t| t.dyn_into::<web_sys::Element>().ok()) {
+                                        // Touch pointers are captured implicitly; release so the
+                                        // window listeners keep working if this node is re-rendered.
+                                        let _ = el.release_pointer_capture(ev.pointer_id());
+                                    }
+                                    ev.prevent_default();
+                                    let p = (ev.client_x() as f64, ev.client_y() as f64);
+                                    drag.set(Some(DragSt {
+                                        from: loc_id.clone(),
+                                        kind,
+                                        power,
+                                        count,
+                                        pointer: ev.pointer_id(),
+                                        start: p,
+                                        active: false,
+                                        at: (0.0, 0.0),
+                                    }));
+                                };
                                 view! {
                                 <foreignObject
                                     x="-24"
@@ -277,7 +445,9 @@ pub fn Board(
                                     style="pointer-events:none;overflow:visible"
                                 >
                                     <span class="stack-row" class:picked=is_picked>
-                                        <UnitBadge kind=s.kind power=s.power count=s.count />
+                                        <span class="drag-handle" class:on=can_drag on:pointerdown=press title=can_drag.then_some("Drag onto a destination to move")>
+                                            <UnitBadge kind=s.kind power=s.power count=s.count />
+                                        </span>
                                         {(!s.cargo.is_empty()).then(|| view! {
                                             <span class="cargo" title="Cargo">
                                                 {s.cargo.iter().map(|(k, n)| view! { <span class="cg"><UnitIcon kind=*k />{format!("{n}")}</span> }).collect_view()}
@@ -300,6 +470,8 @@ pub fn Board(
         <div
             class="board-wrap"
             class:dragging=move || dragging.get()
+            class:unit-drag=drag_active
+            node_ref=wrap
             on:pointerdown=on_down
             on:pointermove=on_move
             on:pointerup=on_up
@@ -315,6 +487,16 @@ pub fn Board(
                 {decor.map(|d| view! { <path class="decor" d=d /> })}
                 {locs}
                 {overlays}
+                {move || drag.get().filter(|d| d.active).map(|d| {
+                    let (x, y) = d.at;
+                    view! {
+                        <g class="ov drag-ghost" style=format!("transform:translate({x}px,{y}px) scale(var(--zs))")>
+                            <foreignObject x="-14" y="-10" width="150" height="20" style="pointer-events:none;overflow:visible">
+                                <span class="stack-row"><UnitBadge kind=d.kind power=d.power count=d.count /></span>
+                            </foreignObject>
+                        </g>
+                    }
+                })}
             </svg>
             <div class="board-ctl">
                 <button class="secondary small" on:click=move |_| zoom_btn(0.8)>"+"</button>
