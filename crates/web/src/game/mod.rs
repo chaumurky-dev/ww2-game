@@ -1,5 +1,6 @@
 //! Interactive game screen driven by the real rules engine (`wartide_engine::GameState`).
 pub mod battle;
+pub mod battle_board;
 pub mod conv;
 pub mod ctx;
 pub mod dice;
