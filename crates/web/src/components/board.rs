@@ -246,10 +246,23 @@ pub fn Board(
                 .unwrap_or_else(|| l.id.clone());
             let ipc = info.as_ref().map(|i| i.ipc).filter(|n| !sea && *n > 0);
             let min_level = if sea { 2 } else { 1 };
+            // Whole-map text for land: full name if it fits, else an abbreviation, else none.
+            let l0 = if sea {
+                None
+            } else {
+                crate::map::fit_label(&l.id, &name, l.bbox, crate::map::LABEL_FONT_L0)
+            };
+            let (l0_shown, name_full) = (l0.clone(), name.clone());
             view! {
                 <g class="ov" style=format!("transform:translate({lx}px,{ly}px) scale(var(--zs))")>
-                    <text class={if sea { "lbl sea" } else { "lbl" }} y="-4" style:display={move || if level.get() >= min_level { "inline" } else { "none" }}>
-                        {name}
+                    <text
+                        class="lbl"
+                        class:sea=sea
+                        class:l0=move || level.get() == 0
+                        y="-4"
+                        style:display={move || if level.get() >= min_level || (level.get() == 0 && l0_shown.is_some()) { "inline" } else { "none" }}
+                    >
+                        {move || if level.get() == 0 { l0.clone().unwrap_or_default() } else { name_full.clone() }}
                     </text>
                     {ipc.map(|n| view! {
                         <g class="ipc-g">
