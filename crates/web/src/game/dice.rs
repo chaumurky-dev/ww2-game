@@ -10,6 +10,8 @@ use wartide_engine::{Event, GameState, LocationId, Power, Unit, UnitId, UnitType
 pub struct DieFace {
     pub value: u8,
     pub hit: Option<bool>,
+    /// Highest face that hits (the combat value the die was rolled for), when known.
+    pub needs: Option<u8>,
 }
 
 /// A group of dice rolled together (one `DiceRolled` event).
@@ -177,6 +179,10 @@ pub fn dice_shows(
                     DiceContext::Research => Some(v == 6),
                     DiceContext::ResearchTech => None,
                     _ => th.as_ref().and_then(|t| t.get(k)).map(|&n| v <= n),
+                },
+                needs: match context {
+                    DiceContext::Research | DiceContext::ResearchTech => None,
+                    _ => th.as_ref().and_then(|t| t.get(k)).copied(),
                 },
             })
             .collect();

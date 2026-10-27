@@ -1,4 +1,5 @@
 //! The interactive game screen shared by the server-driven game page and the sandbox.
+use super::battle_board::{BattleBoardModal, BoardOpen};
 use super::conv::loc_key;
 use super::ctx::{GameCtx, Sel};
 use super::log::ActionLog;
@@ -78,7 +79,9 @@ fn board_click(ctx: GameCtx, loc: LocationId) {
 /// Click the first enabled primary button of the side panel (Enter shortcut).
 fn click_primary() -> bool {
     let btn = web_sys::window().and_then(|w| w.document()).and_then(|d| {
-        d.query_selector(".sidepanel button.primary:not([disabled])")
+        d.query_selector(
+            ".battle-modal button.primary:not([disabled]), .sidepanel button.primary:not([disabled])",
+        )
             .ok()
             .flatten()
     });
@@ -131,6 +134,7 @@ pub fn GameScreen(
     #[prop(optional)] bottom: Option<ViewFn>,
 ) -> impl IntoView {
     let ctx = expect_context::<GameCtx>();
+    provide_context(BoardOpen(RwSignal::new(true)));
     let model: Memo<BoardModel> = Memo::new(move |_| {
         let ov = overlay(ctx);
         ctx.state.with(|st| board_model(st, &ov))
@@ -194,6 +198,7 @@ pub fn GameScreen(
                     <section class="sec sec-chat">{bottom.map(|t| t.run())}</section>
                 </aside>
             </div>
+            <BattleBoardModal />
             <nav class="mtabs">
                 {tab("board", "Board")} {tab("actions", "Actions")} {tab("chat", "Chat")} {tab("log", "Log")}
             </nav>

@@ -43,7 +43,8 @@ and `trunk serve` here (proxies `/api` and `/ws` to :8080; mails land in Mailpit
   `query::reachable`, unit groups, movable locations, stranded aircraft), `ctx` (`GameCtx`: state, selection,
   log, dice, send backend), `screen` (`GameScreen`: top bar + board + side panel), `topbar`, `panels/*`
   (research, purchase, movement + transport load/unload, combat list with bombing/rockets, mobilize), `battle`
-  (battle board + casualty / retreat / sub-withdrawal controls), `dice` (per-die hit numbers reconstructed from
+  (compact side-panel summary) + `battle_board` (pop-up board by combat value with casualty / retreat /
+  sub-withdrawal controls; Minimise collapses it to a floating bar), `dice` (per-die hit numbers reconstructed from
   the battle roster, animated `Die`), `log` + `logfmt_battle` (event -> text, 200 lines kept), `sandbox`, `live`, `replay`.
 - `/sandbox` - offline mode: `wartide_engine::apply` runs in the browser and you control all five powers
   (`/sandbox?as=ussr,uk` restricts the viewer so other powers show the "waiting" banner). It also installs
