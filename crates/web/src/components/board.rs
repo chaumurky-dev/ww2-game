@@ -2,7 +2,7 @@
 use super::unit_icon::{UnitBadge, UnitIcon};
 use super::viewport::ViewBox;
 use crate::map::{sea_shade, LocKind, SharedMap};
-use crate::model::{Power, UnitKind};
+use crate::model::{Power, PowerExt, UnitKind};
 use leptos::prelude::*;
 use std::collections::HashMap;
 use wasm_bindgen::JsCast;
@@ -76,6 +76,82 @@ pub struct BoardModel {
     pub flash: std::collections::HashSet<String>,
     /// Hover text (multi-line) per location.
     pub tips: HashMap<String, String>,
+}
+
+/// Compact stack block: badges per row, badge cell size (map units at overlay scale 1).
+pub const STACK_COLS: usize = 3;
+pub const STACK_MAX: usize = 6;
+pub const BADGE_W: f64 = 31.0;
+/// Territories narrower than this (map units) use 2 columns instead of 3.
+const NARROW_BBOX: f64 = 115.0;
+pub const BADGE_H: f64 = 16.0;
+/// Half-extent of the area a territory label (plus its IPC dot) is assumed to occupy.
+const LABEL_HALF_W: f64 = 30.0;
+const LABEL_UP: f64 = 18.0;
+const LABEL_DOWN: f64 = 20.0;
+
+/// Placement of the compact stack block, as offsets from the location anchor.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Layout {
+    pub cols: usize,
+    pub rows: usize,
+    /// Top-left of the block relative to the anchor.
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+}
+
+/// Lay out `n_kinds` badges (at most [`STACK_MAX`] cells, the last one being "+n" when more)
+/// in up to 2 rows of 3, centred on `anchor`. If the block would cover the label, it moves
+/// below the label (or above it when that would leave the territory's bbox).
+pub fn stack_layout(
+    n_kinds: usize,
+    bbox: [f64; 4],
+    anchor: (f64, f64),
+    label: (f64, f64),
+) -> Layout {
+    let cells = n_kinds.clamp(1, STACK_MAX);
+    // Narrow territories get 2 columns x up to 3 rows: neighbours sit left/right, so grow downwards.
+    let narrow = bbox != [0.0; 4] && bbox[2] - bbox[0] < NARROW_BBOX && cells > 2;
+    let per_row = if narrow { 2 } else { STACK_COLS };
+    let cols = cells.min(per_row);
+    let rows = cells.div_ceil(per_row);
+    let (w, h) = (cols as f64 * BADGE_W, rows as f64 * BADGE_H);
+    let x = (-w / 2.0).round();
+    let mut y = (-h / 2.0).round();
+    let hits = |y: f64| {
+        anchor.0 + x < label.0 + LABEL_HALF_W
+            && anchor.0 + x + w > label.0 - LABEL_HALF_W
+            && anchor.1 + y < label.1 + LABEL_DOWN
+            && anchor.1 + y + h > label.1 - LABEL_UP
+    };
+    if hits(y) {
+        let down = (label.1 + LABEL_DOWN - anchor.1).round();
+        let up = (label.1 - LABEL_UP - h - anchor.1).round();
+        // Prefer below the label; take above when it leaves the bbox by less.
+        let (down_over, up_over) = if bbox == [0.0; 4] {
+            (0.0, 1.0)
+        } else {
+            (
+                (anchor.1 + down + h - (bbox[3] + 6.0)).max(0.0),
+                ((bbox[1] - 6.0) - (anchor.1 + up)).max(0.0),
+            )
+        };
+        y = if down_over <= up_over { down } else { up };
+    }
+    Layout {
+        cols,
+        rows,
+        x,
+        y,
+        w,
+        h,
+    }
+}
+
+fn short_count(n: u32) -> String {
+    format!("\u{d7}{n}")
 }
 
 fn loc_class(kind: LocKind, sea_alt: bool, id: &str, m: &BoardModel) -> String {
@@ -359,16 +435,14 @@ pub fn Board(
         })
         .collect_view();
 
-    let overlays = map
+    let labels = map
         .geo
         .locations
         .iter()
         .map(|l| {
             let sea = l.kind == LocKind::Sea;
-            let id = l.id.clone();
             let info = map.data.info.get(&l.id).cloned();
             let (lx, ly) = l.label;
-            let (ax, ay) = l.anchor;
             let name = info
                 .as_ref()
                 .map(|i| if sea { i.short.clone() } else { i.name.clone() })
@@ -400,18 +474,46 @@ pub fn Board(
                         </g>
                     })}
                 </g>
-                <g class="ov" style=format!("transform:translate({ax}px,{ay}px) scale(var(--zs))")>
+            }
+        })
+        .collect_view();
+
+    let overlays = map
+        .geo
+        .locations
+        .iter()
+        .map(|l| {
+            let id = l.id.clone();
+            let (bbox, anchor, label) = (l.bbox, l.anchor, l.label);
+            view! {
+                <g class="ov" style=format!("transform:translate({}px,{}px) scale(var(--zs))", anchor.0, anchor.1)>
                     {move || {
-                        let stacks = model.with(|m| m.stacks.get(&id).cloned().unwrap_or_default());
-                        let n = stacks.len().min(6) as f64;
-                        stacks
-                            .into_iter()
-                            .take(6)
-                            .enumerate()
-                            .map(|(i, s)| {
+                        let (stacks, ctrl) = model.with(|m| (m.stacks.get(&id).cloned().unwrap_or_default(), m.owners.get(&id).copied()));
+                        if stacks.is_empty() {
+                            return None;
+                        }
+                        let total = stacks.len();
+                        let overflow = total > STACK_MAX;
+                        let shown = if overflow { STACK_MAX - 1 } else { total };
+                        let lay = stack_layout(total, bbox, anchor, label);
+                        let mixed = stacks.iter().any(|s| s.power != stacks[0].power);
+                        let hidden_tip = overflow.then(|| {
+                            stacks[shown..]
+                                .iter()
+                                .map(|s| format!("{} {}", s.count, s.kind.name()))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        });
+                        let badges = stacks
+                            .iter()
+                            .take(shown)
+                            .map(|s| {
                                 let is_picked = s.picked > 0;
                                 let (loc_id, kind, power, count) = (id.clone(), s.kind, s.power, s.count);
                                 let can_drag = s.draggable;
+                                // Owner ring only where the stack is not the controller's.
+                                let ring = (mixed || ctrl != Some(power)).then(|| format!("--pc:{}", power.color()));
+                                let has_ring = ring.is_some();
                                 let press = move |ev: web_sys::PointerEvent| {
                                     if !can_drag || (ev.pointer_type() == "mouse" && ev.button() != 0) {
                                         return;
@@ -436,27 +538,39 @@ pub fn Board(
                                         at: (0.0, 0.0),
                                     }));
                                 };
+                                let cargo = s.cargo.clone();
                                 view! {
-                                <foreignObject
-                                    x="-24"
-                                    y=-n * 10.5 + i as f64 * 21.0
-                                    width="150"
-                                    height="20"
-                                    style="pointer-events:none;overflow:visible"
-                                >
-                                    <span class="stack-row" class:picked=is_picked>
+                                    <span class="cbadge" class:picked=is_picked class:ring=has_ring style=ring.unwrap_or_default()>
                                         <span class="drag-handle" class:on=can_drag on:pointerdown=press title=can_drag.then_some("Drag onto a destination to move")>
-                                            <UnitBadge kind=s.kind power=s.power count=s.count />
+                                            <UnitIcon kind=kind />
+                                            <b>{short_count(count)}</b>
                                         </span>
-                                        {(!s.cargo.is_empty()).then(|| view! {
+                                        {(!cargo.is_empty()).then(|| view! {
                                             <span class="cargo" title="Cargo">
-                                                {s.cargo.iter().map(|(k, n)| view! { <span class="cg"><UnitIcon kind=*k />{format!("{n}")}</span> }).collect_view()}
+                                                {cargo.iter().map(|(k, n)| view! { <span class="cg"><UnitIcon kind=*k />{format!("{n}")}</span> }).collect_view()}
                                             </span>
                                         })}
                                     </span>
-                                </foreignObject>
-                            }})
-                            .collect_view()
+                                }
+                            })
+                            .collect_view();
+                        let more = hidden_tip.map(|t| view! {
+                            <span class="cbadge more" title=t><b>{format!("+{}", total - shown)}</b></span>
+                        });
+                        Some(view! {
+                            <foreignObject
+                                x=lay.x
+                                y=lay.y
+                                width=lay.w
+                                height=lay.h
+                                style="pointer-events:none;overflow:visible"
+                            >
+                                <div class="cstack" style=format!("grid-template-columns:repeat({},{}px)", lay.cols, BADGE_W)>
+                                    {badges}
+                                    {more}
+                                </div>
+                            </foreignObject>
+                        })
                     }}
                 </g>
             }
@@ -487,6 +601,7 @@ pub fn Board(
                 {decor.map(|d| view! { <path class="decor" d=d /> })}
                 {locs}
                 {overlays}
+                {labels}
                 {move || drag.get().filter(|d| d.active).map(|d| {
                     let (x, y) = d.at;
                     view! {
@@ -548,5 +663,70 @@ pub fn MapPreview(map: SharedMap) -> impl IntoView {
             {decor.map(|d| view! { <path class="decor" d=d /> })}
             {paths}
         </svg>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const BIG: [f64; 4] = [0.0, 0.0, 400.0, 400.0];
+
+    fn overlaps_label(l: &Layout, anchor: (f64, f64), label: (f64, f64)) -> bool {
+        anchor.0 + l.x < label.0 + LABEL_HALF_W
+            && anchor.0 + l.x + l.w > label.0 - LABEL_HALF_W
+            && anchor.1 + l.y < label.1 + LABEL_DOWN
+            && anchor.1 + l.y + l.h > label.1 - LABEL_UP
+    }
+
+    #[test]
+    fn centred_when_label_far() {
+        let l = stack_layout(4, BIG, (200.0, 300.0), (200.0, 100.0));
+        assert_eq!((l.cols, l.rows), (3, 2));
+        assert_eq!(l.x, -47.0);
+        assert_eq!(l.y, -16.0);
+    }
+
+    #[test]
+    fn narrow_territory_uses_two_columns() {
+        let bbox = [100.0, 100.0, 170.0, 300.0];
+        let l = stack_layout(6, bbox, (135.0, 200.0), (135.0, 110.0));
+        assert_eq!((l.cols, l.rows), (2, 3));
+        assert!(l.w < 80.0);
+    }
+
+    #[test]
+    fn single_row_for_few_kinds() {
+        let l = stack_layout(2, BIG, (200.0, 300.0), (200.0, 100.0));
+        assert_eq!((l.cols, l.rows), (2, 1));
+    }
+
+    #[test]
+    fn many_kinds_cap_at_six_cells() {
+        let l = stack_layout(11, BIG, (200.0, 300.0), (200.0, 100.0));
+        assert_eq!((l.cols, l.rows), (3, 2));
+    }
+
+    #[test]
+    fn shifts_below_label() {
+        let (a, lb) = (200.0, (200.0, 190.0));
+        let l = stack_layout(6, BIG, (a, 200.0), lb);
+        assert!(l.y > 0.0);
+        assert!(!overlaps_label(&l, (a, 200.0), lb));
+    }
+
+    #[test]
+    fn shifts_above_when_below_leaves_bbox() {
+        let bbox = [100.0, 100.0, 300.0, 230.0];
+        let (anchor, label) = ((200.0, 200.0), (200.0, 195.0));
+        let l = stack_layout(6, bbox, anchor, label);
+        assert!(l.y < 0.0);
+        assert!(!overlaps_label(&l, anchor, label));
+    }
+
+    #[test]
+    fn untouched_when_label_beside_block() {
+        let l = stack_layout(6, BIG, (200.0, 200.0), (330.0, 200.0));
+        assert_eq!(l.y, -16.0);
     }
 }
