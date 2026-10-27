@@ -5,24 +5,25 @@ Geometry comes from real (modern) geography, so the abstract board topology cann
 Declared virtual links (canals/straits, see `sea_zone_seeds.json`) are treated as satisfied: Suez, Panama, Black Sea straits, Tehuantepec.
 Remaining EXTRA contacts are mostly unavoidable coastlines (Java Sea, Malacca Strait, Gulf of Tonkin, Corsica, Cabinda/Congo mouth, Bering/Okhotsk coasts).
 
-## land-sea: 0 missing, 16 extra
+## land-sea: 0 missing, 17 extra
 
-- EXTRA: angola -- sz_congo (29.7 px)
-- EXTRA: borneo_celebes -- sz_new_guinea (11.7 px)
-- EXTRA: brazil -- sz_east_argentina (9.1 px)
-- EXTRA: east_indies -- sz_borneo (22.8 px)
-- EXTRA: east_indies -- sz_french_indo_china (10.5 px)
-- EXTRA: east_indies -- sz_north_australia (9.1 px)
-- EXTRA: french_indo_china -- sz_east_indies (28.0 px)
-- EXTRA: india -- sz_french_indo_china (14.5 px)
-- EXTRA: kwangtung -- sz_french_indo_china (20.7 px)
-- EXTRA: kwangtung -- sz_japan (23.1 px)
-- EXTRA: manchuria -- sz_kwangtung (11.8 px)
-- EXTRA: manchuria -- sz_soviet_far_east (8.9 px)
-- EXTRA: new_guinea -- sz_solomon_islands (10.9 px)
-- EXTRA: southern_europe -- sz_east_mediterranean (8.3 px)
-- EXTRA: sz_central_mediterranean -- western_europe (24.7 px)
-- EXTRA: sz_soviet_far_east -- yakut_s_s_r (13.1 px)
+- EXTRA: angola -- sz_congo (28.9 px)
+- EXTRA: borneo_celebes -- sz_new_guinea (10.1 px)
+- EXTRA: brazil -- sz_east_argentina (8.6 px)
+- EXTRA: east_indies -- sz_borneo (21.9 px)
+- EXTRA: east_indies -- sz_french_indo_china (11.0 px)
+- EXTRA: east_indies -- sz_north_australia (8.5 px)
+- EXTRA: eastern_usa -- sz_gulf_of_mexico (11.7 px)
+- EXTRA: french_indo_china -- sz_east_indies (26.7 px)
+- EXTRA: india -- sz_french_indo_china (14.4 px)
+- EXTRA: kwangtung -- sz_french_indo_china (20.6 px)
+- EXTRA: kwangtung -- sz_japan (23.3 px)
+- EXTRA: manchuria -- sz_kwangtung (16.6 px)
+- EXTRA: manchuria -- sz_soviet_far_east (9.9 px)
+- EXTRA: new_guinea -- sz_solomon_islands (10.4 px)
+- EXTRA: rio_del_oro -- sz_west_spain (31.5 px)
+- EXTRA: sz_central_mediterranean -- western_europe (23.1 px)
+- EXTRA: sz_soviet_far_east -- yakut_s_s_r (26.3 px)
 
 ## sea-sea: 0 missing, 0 extra
 

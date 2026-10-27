@@ -13,8 +13,11 @@ LON_MAX = CENTER + 180.0     #  190
 LAT_MAX = 80.0
 LAT_MIN = -65.3
 WORLD = box(LON_MIN, LAT_MIN, LON_MAX, LAT_MAX)
-SIMPLIFY_TOL = 0.4
-MIN_AREA = 0.3
+SIMPLIFY_TOL = float(os.environ.get("TOL", 0.2))        # degrees; coverage-preserving, so shared borders stay shared
+MIN_AREA = 0.3            # islands below this (deg2) leave the clickable territory ...
+MIN_DECOR_AREA = 0.04     # ... and become purely visual decor if they are at least this big
+THIN_TOL = float(os.environ.get("THIN", 0.02))   # degrees; DP thinning of smoothed runs (about 0.06 px)
+CHAIKIN_ITER = int(os.environ.get("ITER", 2))          # corner-cutting passes over coastline runs (land-land borders are never touched)
 
 
 def wrap_lon(lon):
@@ -164,14 +167,149 @@ def build(verbose=True):
         terr[pt["to"]] = clean(unary_union([terr[pt["to"]], reg]))
     for k in terr:
         terr[k] = clean(terr[k].intersection(WORLD))
-    # drop tiny islands (keep tiny territories whole)
+    # small islands leave the clickable territory (keep tiny territories whole) and become decor
+    extra_decor = []
     for k, g in terr.items():
         ps = polys(g)
         if not ps:
             continue
         if k == "__decor__" or g.area > 4.0:
             big = [p for p in ps if p.area >= MIN_AREA]
-            terr[k] = unary_union(big or [max(ps, key=lambda p: p.area)])
+            if not big:
+                big = [max(ps, key=lambda p: p.area)]
+            if k != "__decor__":
+                extra_decor += [p for p in ps if p.area < MIN_AREA and p.area >= MIN_DECOR_AREA
+                                and not any(p is b for b in big)]
+            else:
+                big = [p for p in ps if p.area >= MIN_DECOR_AREA] or big
+            terr[k] = unary_union(big)
+    if extra_decor:
+        terr["__decor__"] = unary_union([terr.get("__decor__", Polygon())] + extra_decor)
+    return terr
+
+
+def _key(c):
+    return (round(c[0], 7), round(c[1], 7))
+
+
+def _chaikin_open(pts, n):
+    """Chaikin corner cutting on an open polyline; the two end points stay fixed."""
+    for _ in range(n):
+        if len(pts) < 3:
+            break
+        out = [pts[0]]
+        for a, b in zip(pts, pts[1:]):
+            out.append((0.75 * a[0] + 0.25 * b[0], 0.75 * a[1] + 0.25 * b[1]))
+            out.append((0.25 * a[0] + 0.75 * b[0], 0.25 * a[1] + 0.75 * b[1]))
+        out.append(pts[-1])
+        pts = out
+    if n and len(pts) > 2:
+        # corner cutting multiplies the node count; drop nodes that no longer change the curve
+        pts = [tuple(c) for c in shapely.LineString(pts).simplify(THIN_TOL, preserve_topology=False).coords]
+    return pts
+
+
+def _chaikin_closed(pts, n):
+    for _ in range(n):
+        out = []
+        m = len(pts)
+        for i in range(m):
+            a, b = pts[i], pts[(i + 1) % m]
+            out.append((0.75 * a[0] + 0.25 * b[0], 0.75 * a[1] + 0.25 * b[1]))
+            out.append((0.25 * a[0] + 0.75 * b[0], 0.25 * a[1] + 0.75 * b[1]))
+        pts = out
+    if n and len(pts) > 6:
+        thin = shapely.Polygon(pts).simplify(THIN_TOL, preserve_topology=True)
+        if not thin.is_empty and thin.geom_type == "Polygon":
+            pts = [tuple(c) for c in thin.exterior.coords][:-1]
+    return pts
+
+
+def _smooth_ring(coords, shared, n):
+    """Smooth a closed ring: runs of consecutive unshared edges are Chaikin-cut with fixed ends;
+    shared edges (land-land borders, world frame) are copied verbatim, so neighbours still match."""
+    pts = [tuple(c) for c in coords[:-1]]
+    m = len(pts)
+    pin = [shared(pts[i], pts[(i + 1) % m]) for i in range(m)]   # edge i = pts[i] -> pts[i+1]
+    if not any(pin):
+        return _chaikin_closed(pts, n) if m >= 3 else pts
+    if all(pin):
+        return pts
+    start = next(i for i in range(m) if pin[i])      # rotate so edge `start` (shared) is first
+    pts = pts[start:] + pts[:start]
+    pin = pin[start:] + pin[:start]
+    out = []
+    i = 0
+    while i < m:
+        if pin[i]:
+            out.append(pts[i])
+            i += 1
+            continue
+        j = i
+        while j < m and not pin[j]:
+            j += 1
+        run = pts[i:j] + [pts[j % m]]
+        out.extend(_chaikin_open(run, n)[:-1])
+        i = j
+    return out
+
+
+def smooth_all(terr, n=CHAIKIN_ITER):
+    """Chaikin smoothing of coastlines only. An edge is 'shared' when another geometry also has it
+    (either direction) or when it lies on the world frame."""
+    count = {}
+    for g in terr.values():
+        seen = set()
+        for p in polys(g):
+            for r in [p.exterior] + list(p.interiors):
+                c = [_key(x) for x in r.coords]
+                for a, b in zip(c, c[1:]):
+                    seen.add((a, b) if a <= b else (b, a))
+        for e in seen:
+            count[e] = count.get(e, 0) + 1
+    eps = 1e-6
+
+    def shared(a, b):
+        e = (_key(a), _key(b))
+        e = e if e[0] <= e[1] else (e[1], e[0])
+        if count.get(e, 0) > 1:
+            return True
+        for v in (LON_MIN, LON_MAX):
+            if abs(a[0] - v) < eps and abs(b[0] - v) < eps:
+                return True
+        for v in (LAT_MIN, LAT_MAX):
+            if abs(a[1] - v) < eps and abs(b[1] - v) < eps:
+                return True
+        return False
+
+    out = {}
+    for k, g in terr.items():
+        res = []
+        for p in polys(g):
+            ext = _smooth_ring(list(p.exterior.coords), shared, n)
+            holes = [_smooth_ring(list(i.coords), shared, n) for i in p.interiors]
+            q = Polygon(ext, holes)
+            res.append(q if q.is_valid else shapely.make_valid(q))
+        out[k] = clean(unary_union(res)) if res else g
+    return out
+
+
+def resolve_overlaps(terr):
+    """Smoothing can nudge two coastlines across a sliver gap left by the source data; carve any such
+    overlap out of the larger geometry (decor always yields), so the result is again a disjoint coverage.
+    Run in projected space: nodes made by an overlay in lon/lat would not lie on the projected neighbour edge."""
+    keys = [k for k in terr if not terr[k].is_empty]
+    for k in keys:
+        terr[k] = clean(terr[k])
+    tree = shapely.STRtree([terr[k] for k in keys])
+    rank = lambda k: (0 if k == "__decor__" else 1, -terr[k].area)   # yields first = decor, then biggest
+    for i, k in enumerate(keys):
+        for j in tree.query(terr[k]):
+            o = keys[j]
+            if o == k or rank(k) > rank(o):
+                continue            # handle each pair once, from the side that yields
+            if shapely.intersection(terr[k], terr[o], grid_size=1e-6).area > 1e-9:
+                terr[k] = clean(shapely.difference(terr[k], terr[o], grid_size=1e-6))
     return terr
 
 
@@ -181,9 +319,8 @@ def simplify_all(terr, tol=SIMPLIFY_TOL):
     simp = shapely.coverage_simplify(geoms, tol)
     out = {}
     for k, g in zip(keys, simp):
-        g = clean(g)
-        out[k] = g
-    return out
+        out[k] = clean(g)
+    return smooth_all(out)
 
 
 if __name__ == "__main__":

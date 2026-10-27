@@ -23,7 +23,13 @@ def load_label_overrides():
     d = json.load(open(f)) if os.path.exists(f) else {}
     return {k: v for k, v in d.items() if not k.startswith("_")}
 
+def load_anchor_overrides():
+    f = os.path.join(HERE, "anchor_overrides.json")
+    d = json.load(open(f)) if os.path.exists(f) else {}
+    return {k: v for k, v in d.items() if not k.startswith("_")}
+
 def main():
+    anchors = load_anchor_overrides()
     overrides = load_label_overrides()
     land_px, zones, water, m, found, exp, res = check.run(rebuild="--rebuild" in sys.argv)
     locs = {}
@@ -39,6 +45,8 @@ def main():
                 ax, ay = lx, ly
             if k in overrides:
                 lx, ly = overrides[k]
+            if k in anchors:
+                ax, ay = anchors[k]
             b = g.bounds
             locs[k] = {"kind": kind, "path": proj.path_d(g), "label": [lx, ly], "anchor": [round(ax, 1), round(ay, 1)],
                        "bbox": [round(v, 1) for v in b]}
