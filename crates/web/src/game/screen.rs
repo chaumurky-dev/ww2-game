@@ -401,7 +401,15 @@ pub fn GameScreen(
                     .and_then(|w| w.inner_width().ok())
                     .and_then(|v| v.as_f64())
                     .unwrap_or(800.0);
-                let left = p.x.clamp(130.0, (vw - 130.0).max(130.0));
+                let vh = web_sys::window()
+                    .and_then(|w| w.inner_height().ok())
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(600.0);
+                // Keep the whole card on screen on both axes (it is ~250px wide, ~230px tall;
+                // the CSS caps its width at the viewport and scrolls it if the screen is shorter).
+                let half_w = 125.0_f64.min((vw - 16.0) / 2.0).max(60.0);
+                let left = p.x.clamp(half_w + 8.0, (vw - half_w - 8.0).max(half_w + 8.0));
+                let top = (p.y + 14.0).min(vh - 250.0).max(8.0);
                 let n = p.n;
                 let set = move |v: usize| picker.update(|q| {
                     if let Some(q) = q {
@@ -409,7 +417,7 @@ pub fn GameScreen(
                     }
                 });
                 view! {
-                    <div class="count-picker" style=format!("left:{left}px;top:{}px", p.y + 14.0)>
+                    <div class="count-picker" style=format!("left:{left}px;top:{top}px")>
                         <div class="cp-title">
                             {format!("Move {n} of {} {} to {}", p.total, unit_name(p.kind, p.total as u32), loc_name(p.dest))}
                         </div>
