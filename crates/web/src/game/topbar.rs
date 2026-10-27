@@ -10,16 +10,24 @@ use wartide_engine::{production_level, Phase, Power};
 #[component]
 pub fn TopBar(#[prop(into)] deadline_ms: Signal<Option<f64>>) -> impl IntoView {
     let ctx = expect_context::<GameCtx>();
+    // Phone: the stepper and the treasury strip fold away behind the summary line.
+    let open = RwSignal::new(false);
     view! {
-        <div class="topbar">
+        <div class="topbar" class:open=move || open.get()>
             <h3 style="margin:0">{move || format!("Round {}", ctx.state.with(|s| s.round))}</h3>
             {move || view! { <PowerBadge power=ctx.state.with(|s| s.current_power) /> }}
+            <span class="phase-now">{move || phase_label(ctx.state.with(|s| s.phase))}</span>
             {move || deadline_ms.get().map(|d| view! {
                 <span class="deadline" title="Time left to act">
-                    <span class="muted">{format!("Deadline: {} ", crate::tz::deadline_text(d))}</span>
-                    "(" <Countdown deadline_ms=d />")"
+                    <span class="muted dl-text">{format!("Deadline: {} ", crate::tz::deadline_text(d))}</span>
+                    <span class="dl-count">"(" <Countdown deadline_ms=d />")"</span>
                 </span>
             })}
+            <button class="topbar-toggle secondary small" aria-label="Show phases and treasuries"
+                aria-expanded=move || open.get().to_string()
+                on:click=move |_| open.update(|o| *o = !*o)>
+                {move || if open.get() { "\u{25B4}" } else { "\u{25BE}" }}
+            </button>
             <div class="stepper">
                 {move || {
                     let cur = ctx.state.with(|s| s.phase);

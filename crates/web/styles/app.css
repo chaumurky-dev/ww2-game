@@ -142,7 +142,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .lbl { font-family: var(--font-display); font-size: 20px; fill: var(--ink); pointer-events: none; text-anchor: middle; paint-order: stroke; stroke: rgba(255, 250, 235, .8); stroke-width: 4px; letter-spacing: .05em; }
 /* Whole-map zoom: smaller land labels (see map::LABEL_FONT_L0); hidden on narrow screens. */
 .lbl.l0 { font-size: 14px; stroke-width: 3px; letter-spacing: .03em; }
-@media (max-width: 800px) { .lbl.l0 { display: none !important; } }
+@media (max-width: 800px), (max-height: 500px) and (pointer: coarse) { .lbl.l0 { display: none !important; } }
 :root[data-theme="dark"] .lbl { stroke: rgba(20, 18, 14, .85); }
 :root[data-theme="dark"] .lbl.sea { fill: #9db8c4; }
 .lbl.sea { font-style: italic; font-family: var(--font-serif); fill: #4a6672; }
@@ -298,11 +298,11 @@ button.danger { background: var(--bad); }
 .mtabs { display: none; }
 
 /* Mobile: the side panel becomes a bottom sheet with tabs Board / Actions / Chat / Log. */
-@media (max-width: 800px) {
+@media (max-width: 800px), (max-height: 500px) and (pointer: coarse) {
   .hero h1 { font-size: 2.6rem; }
   .page { padding: .6rem; }
   .nav { gap: .5rem .8rem; padding: .4rem .6rem; }
-  .game { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; height: calc(100dvh - 92px); min-height: 0; }
+  .game { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; height: calc(100dvh - var(--nav-h)); min-height: 0; }
   .topbar { gap: .3rem .5rem; padding: .3rem .5rem; max-height: 5.2rem; overflow-y: auto; }
   .topbar h3 { font-size: 1rem; }
   .stepper .step { font-size: .58rem; padding: .08rem .25rem; }
@@ -334,12 +334,12 @@ button.danger { background: var(--bad); }
 .seat-cfg > .row { flex-wrap: nowrap; }
 .seat-cfg select { flex: 1 1 8rem; min-width: 0; width: auto; }
 .seat-label { flex: 0 0 11rem; }
-@media (max-width: 800px) { .seat-cfg > .row { flex-wrap: wrap; } .seat-label { flex-basis: 100%; } }
+@media (max-width: 800px), (max-height: 500px) and (pointer: coarse) { .seat-cfg > .row { flex-wrap: wrap; } .seat-label { flex-basis: 100%; } }
 td { vertical-align: top; } .games-table td:nth-child(2) { white-space: nowrap; }
 .loc.flash { animation: locflash 1.6s ease-out; }
 @keyframes locflash { 0% { filter: brightness(1.8) drop-shadow(0 0 8px #fff); } 100% { filter: none; } }
-@media (max-width: 800px) { button.small { min-height: 1.9rem; } }
-@media (max-width: 800px) { .games-table th:nth-child(2), .games-table td:nth-child(2), .games-table th:nth-child(5), .games-table td:nth-child(5) { display: none; } .games-table .pill { white-space: normal; } }
+@media (max-width: 800px), (max-height: 500px) and (pointer: coarse) { button.small { min-height: 1.9rem; } }
+@media (max-width: 800px), (max-height: 500px) and (pointer: coarse) { .games-table th:nth-child(2), .games-table td:nth-child(2), .games-table th:nth-child(5), .games-table td:nth-child(5) { display: none; } .games-table .pill { white-space: normal; } }
 .power-picks { display: flex; flex-wrap: wrap; gap: .3rem .8rem; }
 .power-pick { display: inline-flex; flex-direction: row; align-items: center; gap: .3rem; }
 .power-pick select { width: auto; }
@@ -371,8 +371,8 @@ td { vertical-align: top; } .games-table td:nth-child(2) { white-space: nowrap; 
 .bb-dicecol .dieface { width: 24px; height: 24px; padding: 3px; }
 .bb-mini { position: fixed; left: 50%; bottom: 3.6rem; transform: translateX(-50%); z-index: 60; display: flex; align-items: center; gap: .6rem; background: var(--paper); color: var(--ink); border: 2px solid var(--accent); border-radius: 999px; box-shadow: var(--shadow); padding: .3rem .4rem .3rem .9rem; font-size: .88rem; }
 .bb-mini .dot { width: .6rem; height: .6rem; border-radius: 50%; background: var(--bad); }
-@media (min-width: 801px) { .bb-mini { bottom: 1rem; } }
-@media (max-width: 800px) {
+@media (min-width: 801px) and (min-height: 501px) { .bb-mini { bottom: 1rem; } }
+@media (max-width: 800px), (max-height: 500px) and (pointer: coarse) {
   .bb-modal { padding: .6rem .7rem; }
   .bb-grid, .bb-dicegrid { grid-template-columns: 4.2rem repeat(var(--n), minmax(2.9rem, 1fr)); }
   .bb-grid { min-width: 21rem; }
@@ -402,3 +402,113 @@ td { vertical-align: top; } .games-table td:nth-child(2) { white-space: nowrap; 
 button.undo-unit { padding: 0 .4rem; }
 
 rect.seam-cover.loc { stroke: none !important; pointer-events: none; filter: none !important; }
+
+/* ================= Phone pass =================
+   Everything below the "Phone pass" marker is either size-independent hardening or lives inside
+   the phone media query; desktop (> 800px wide, or a mouse-driven short window) is unchanged. */
+:root { --nav-h: 52px; }
+body {
+  padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right);
+  -webkit-text-size-adjust: 100%; text-size-adjust: 100%;
+}
+.hero h1 { font-size: clamp(2rem, 11vw, 4rem); overflow-wrap: anywhere; }
+.grid2 { grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); }
+.card, .msg, .modal, td, th { overflow-wrap: break-word; }
+.card, .grid2 > *, .page > *, .col > * { min-width: 0; }
+input, select, textarea { max-width: 100%; }
+.count-picker { width: min(250px, calc(100vw - 16px)); max-height: calc(100dvh - 16px); overflow: auto; }
+.nav-toggle, .m-only { display: none; }
+.nav-links { display: contents; }
+.topbar-toggle, .phase-now { display: none; }
+
+@media (max-width: 800px), (max-height: 500px) and (pointer: coarse) {
+  /* --- nav: brand + menu button + user chip; the links drop down --- */
+  .nav { flex-wrap: nowrap; gap: .4rem; height: var(--nav-h); padding: 0 .6rem; }
+  .brand { font-size: 1.3rem; min-height: 44px; }
+  .brand .logo { width: 30px; height: 30px; }
+  .nav a { display: inline-flex; align-items: center; min-height: 44px; }
+  .nav-toggle { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; padding: 0 .8rem; }
+  .nav-links {
+    display: none; position: absolute; top: 100%; left: 0; right: 0; flex-direction: column; gap: 0;
+    padding: .2rem .8rem .6rem; background: var(--ink); border-top: 1px solid var(--line);
+    box-shadow: var(--shadow); max-height: calc(100dvh - var(--nav-h)); overflow-y: auto;
+  }
+  .nav-links.open { display: flex; }
+  .nav-links a, .nav-links button { font-size: 1.05rem; justify-content: flex-start; }
+  .nav-links button.m-only { align-self: flex-start; margin-top: .3rem; }
+  .m-only { display: inline-flex; }
+  .d-only { display: none !important; }
+  .nav .user { min-width: 0; }
+  .nav .user a { max-width: 8.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .banner { font-size: .9rem; }
+
+  /* --- type, forms, tap targets --- */
+  body { font-size: 16px; }
+  input, select, textarea { font-size: 16px; min-height: 44px; }
+  input[type="checkbox"], input[type="radio"] { width: 1.5rem; height: 1.5rem; min-height: 0; flex: none; }
+  input[type="range"] { min-height: 44px; }
+  .check, .power-pick { min-height: 44px; }
+  button, .btn, button.small, .btn.small, button.undo-unit { min-height: 44px; }
+  button.small, .btn.small { min-width: 44px; display: inline-flex; align-items: center; justify-content: center; }
+  .tab, .loglevel .tab, .big-tabs .tab { min-height: 44px; display: inline-flex; align-items: center; }
+  td a, .games-table a, .pager a { display: inline-flex; align-items: center; min-height: 44px; }
+  .small-text, .hint, .log, .msg, .msg.system, .warn, .pending-note, .income-note, .sandbox-note,
+  .preview, .urow, .brow, .invite, .seat, .error, .count-picker .cp-title { font-size: .9rem; }
+  .pill, .tag, .econ-pill { font-size: .75rem; }
+  .page { padding: .6rem max(.6rem, env(safe-area-inset-left)) .6rem max(.6rem, env(safe-area-inset-right)); }
+  .card { padding: .8rem; }
+
+  /* --- game screen --- */
+  .game { grid-template-rows: auto minmax(0, 1fr) auto; }
+  .topbar { flex-wrap: wrap; align-items: center; gap: .1rem .5rem; padding: .15rem .5rem; position: relative; }
+  .topbar h3 { font-size: 1.05rem; white-space: nowrap; }
+  .phase-now { display: block; flex: 1 1 0; min-width: 0; font-family: var(--font-display); letter-spacing: .05em; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .topbar .deadline .dl-text { display: none; }
+  .topbar-toggle { display: inline-flex; margin-left: auto; font-size: 1rem; }
+  .topbar .stepper, .topbar .econ { display: none; }
+  .topbar.open .stepper { display: flex; flex: 1 0 100%; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; }
+  .topbar.open .econ { display: flex; flex: 1 0 100%; padding-bottom: 4px; }
+  .topbar .stepper .step { font-size: .75rem; padding: .25rem .5rem; flex: 0 0 auto; white-space: nowrap; }
+  .topbar .econ .econ-pill { font-size: .75rem; padding: .1rem .5rem; flex: 0 0 auto; }
+  .mtabs { padding-bottom: env(safe-area-inset-bottom); background: var(--parchment-2); }
+  .mtab { min-height: 48px; font-size: 1rem; }
+  .board-ctl { left: max(.6rem, env(safe-area-inset-left)); right: .6rem; bottom: .6rem; flex-wrap: wrap-reverse; align-items: flex-end; pointer-events: none; }
+  .board-ctl > * { pointer-events: auto; }
+  .board-ctl button { min-width: 44px; }
+  .pill.tip { font-size: .8rem; max-width: 100%; }
+  .side { padding-bottom: max(.6rem, env(safe-area-inset-bottom)); max-height: 60dvh; overscroll-behavior: contain; }
+  .sec-log .log, .actionlog .log { font-size: .875rem; }
+
+  /* --- toasts, dialogs --- */
+  .toasts { top: calc(var(--nav-h) + .5rem); left: max(.6rem, env(safe-area-inset-left)); right: max(.6rem, env(safe-area-inset-right)); }
+  .modal-back, .bb-back { padding: max(.6rem, env(safe-area-inset-top)) max(.6rem, env(safe-area-inset-right)) max(.6rem, env(safe-area-inset-bottom)) max(.6rem, env(safe-area-inset-left)); }
+  .modal { max-height: 100%; }
+  .bb-modal { max-height: 100%; }
+  .bb-mini { bottom: calc(56px + env(safe-area-inset-bottom) + .5rem); max-width: calc(100vw - 1.2rem); }
+  a:has(> .btn), a:has(> strong) { display: inline-flex; align-items: center; min-height: 44px; }
+  .bb-cell.pickable { min-width: 44px; min-height: 44px; justify-content: center; }
+  .bb-pick { font-size: .75rem; }
+  .bb-side .power-badge { font-size: .75rem; padding-right: .35rem; max-width: 100%; }
+  .bb-corner, .bb-hits, .bb-dicelabel { font-size: .8125rem; }
+  .loglevel .tab { font-size: .8125rem; }
+  .count-picker .cp-row { gap: .45rem; }
+  .count-picker .cp-row button { min-width: 44px; }
+}
+
+/* Phone held sideways: the tab bar becomes a rail at the right edge so the map keeps the height. */
+@media (max-height: 500px) and (pointer: coarse) {
+  :root { --nav-h: 48px; }
+  .game { grid-template-columns: minmax(0, 1fr) 4.6rem; grid-template-rows: auto minmax(0, 1fr); }
+  .topbar { grid-column: 1; }
+  .game-body { grid-column: 1; grid-row: 2; }
+  .mtabs { grid-column: 2; grid-row: 1 / 3; grid-template-columns: 1fr; grid-template-rows: repeat(4, 1fr); border-top: 0; border-left: 2px solid var(--line); padding-bottom: 0; padding-right: env(safe-area-inset-right); }
+  .mtab { border-right: 0; border-bottom: 1px solid var(--line); }
+  .side { max-height: 65dvh; }
+  .modal, .bb-modal { max-height: 100%; }
+}
+
+/* WebKit (iOS Safari) paints HTML inside an SVG foreignObject at the wrong place -- every unit
+   stack piles up in the top-left corner of the board -- when a descendant is `position: relative`.
+   Keep the counters free of positioned elements; the cargo chip is nudged with margins instead. */
+foreignObject .cbadge, foreignObject .unit-icon { position: static; }
+foreignObject .cbadge .cargo { position: static; align-self: flex-start; margin: -8px -4px 0 -8px; }

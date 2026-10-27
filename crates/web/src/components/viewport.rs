@@ -18,6 +18,22 @@ pub fn nearest_copy(anchor_x: f64, centre_x: f64, world_w: f64) -> f64 {
         .unwrap_or(anchor_x)
 }
 
+/// The resting view for a `cw` x `ch` container. A wide container shows the whole map; a
+/// portrait one (a phone) fits the map's height instead and is panned sideways (the world wraps
+/// east-west), so the map fills the screen rather than a letterboxed strip.
+pub fn home_view(base: &ViewBox, cw: f64, ch: f64) -> ViewBox {
+    if cw <= 0.0 || ch <= 0.0 || ch <= cw * 0.9 {
+        return *base;
+    }
+    let w = (base.h * cw / ch).min(base.w);
+    ViewBox {
+        x: base.x + (base.w - w) / 2.0,
+        y: base.y,
+        w,
+        h: base.h,
+    }
+}
+
 impl ViewBox {
     pub fn new(v: [f64; 4]) -> Self {
         Self {
@@ -92,6 +108,17 @@ mod tests {
             w,
             h: w / 2.0,
         }
+    }
+
+    #[test]
+    fn home_view_fits_height_on_portrait_only() {
+        let base = vb(0.0, 2000.0); // 2000 x 1000
+        assert_eq!(home_view(&base, 800.0, 400.0), base);
+        assert_eq!(home_view(&base, 800.0, 0.0), base);
+        let h = home_view(&base, 390.0, 520.0);
+        assert_eq!((h.y, h.h), (0.0, 1000.0));
+        assert!((h.w - 750.0).abs() < 1e-9);
+        assert!((h.x - 625.0).abs() < 1e-9); // centred
     }
 
     #[test]
