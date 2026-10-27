@@ -1,13 +1,22 @@
 use super::common::EndPhase;
 use super::transport::TransportSection;
+use super::undo::{undo_button, MovedSection, UndoAll};
 use crate::components::unit_icon::UnitIcon;
 use crate::game::conv::*;
 use crate::game::ctx::GameCtx;
 use crate::game::moves::{stranded_air, unit_groups, UnitGroup};
 use leptos::prelude::*;
-use wartide_engine::{Action, Power};
+use wartide_engine::action::UndoScope;
+use wartide_engine::undo::moved_this_phase;
+use wartide_engine::{Action, Power, UnitId};
 
-fn group_row(ctx: GameCtx, power: Power, g: UnitGroup, picked: usize) -> impl IntoView {
+fn group_row(
+    ctx: GameCtx,
+    power: Power,
+    g: UnitGroup,
+    picked: usize,
+    arrived: Vec<UnitId>,
+) -> impl IntoView {
     let n = g.ids.len();
     let (ids_a, ids_s, ids_all) = (g.ids.clone(), g.ids.clone(), g.ids.clone());
     let add = move |_| {
@@ -49,6 +58,7 @@ fn group_row(ctx: GameCtx, power: Power, g: UnitGroup, picked: usize) -> impl In
             <strong class="stepval">{picked}</strong>
             <button class="secondary small" disabled=!can || (picked >= n) on:click=add>"+"</button>
             <button class="secondary small" disabled=!can on:click=all>"All"</button>
+            {(!arrived.is_empty()).then(|| undo_button(ctx, UndoScope::Units { units: arrived }, "\u{21b6}", "secondary small undo-unit"))}
         </div>
     }
 }
@@ -66,11 +76,22 @@ pub fn MovePanel(power: Power, combat: bool) -> impl IntoView {
             .into_any();
         };
         let groups = unit_groups(&st, from, power);
+        let moved: Vec<UnitId> = moved_this_phase(&st)
+            .into_iter()
+            .filter(|m| m.2 == from)
+            .map(|m| m.0)
+            .collect();
         let rows = groups
             .into_iter()
             .map(|g| {
                 let picked = g.ids.iter().filter(|i| sel.units.contains(i)).count();
-                group_row(ctx, power, g, picked)
+                let arrived: Vec<UnitId> = g
+                    .ids
+                    .iter()
+                    .copied()
+                    .filter(|i| moved.contains(i))
+                    .collect();
+                group_row(ctx, power, g, picked, arrived)
             })
             .collect_view();
         view! {
@@ -147,6 +168,10 @@ pub fn MovePanel(power: Power, combat: bool) -> impl IntoView {
         {picker}
         {preview}
         {warn}
-        <div class="row"><EndPhase label=if combat { "End combat move" } else { "End non-combat move" } secondary=true /></div>
+        <MovedSection />
+        <div class="row">
+            <EndPhase label=if combat { "End combat move" } else { "End non-combat move" } secondary=true />
+            <UndoAll />
+        </div>
     }
 }

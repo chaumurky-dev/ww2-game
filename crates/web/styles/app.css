@@ -385,3 +385,7 @@ td { vertical-align: top; } .games-table td:nth-child(2) { white-space: nowrap; 
 .count-picker .cp-row input[type=range] { flex: 1; min-width: 0; }
 .count-picker .cp-row button { flex: 1; }
 .count-picker .cp-row button.step { flex: 0 0 auto; }
+.moved-section { gap: .2rem; }
+.moved-dest { padding: .2rem 0; }
+.moved-dest .urow { padding-left: .4rem; }
+button.undo-unit { padding: 0 .4rem; }
