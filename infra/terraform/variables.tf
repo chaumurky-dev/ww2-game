@@ -140,6 +140,12 @@ variable "alert_email" {
   type        = string
 }
 
+variable "anomaly_monitor_arn" {
+  description = "ARN of an existing Cost Explorer anomaly monitor to subscribe to. AWS allows one DIMENSIONAL (service) monitor per account and creates \"Default-Services-Monitor\" itself in many accounts; set this to its ARN (aws ce get-anomaly-monitors) instead of creating a second one. null = create our own."
+  type        = string
+  default     = null
+}
+
 variable "alert_phone" {
   description = "Phone number (E.164, e.g. +14155550123) for the account alternate contacts. The default is a placeholder: replace it."
   type        = string

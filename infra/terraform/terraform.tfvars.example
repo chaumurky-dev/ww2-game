@@ -19,3 +19,5 @@ github_oidc_subjects = [
 alert_email = "you@example.com"
 alert_phone = "+10000000000" # replace with a real E.164 number for the account alternate contacts
 # monthly_budget_usd = 60
+# Reuse the account's existing service anomaly monitor (one per account; see `aws ce get-anomaly-monitors`)
+# anomaly_monitor_arn = "arn:aws:ce::123456789012:anomalymonitor/00000000-0000-0000-0000-000000000000"

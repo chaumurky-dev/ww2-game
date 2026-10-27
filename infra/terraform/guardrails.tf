@@ -84,10 +84,17 @@ resource "aws_budgets_budget" "monthly" {
 }
 
 # ------------------------------------------------------ Cost anomalies
+# Only one DIMENSIONAL monitor may exist per account ("Limit exceeded on dimensional spend
+# monitor creation"); reuse an existing one through var.anomaly_monitor_arn.
 resource "aws_ce_anomaly_monitor" "service" {
+  count             = var.anomaly_monitor_arn == null ? 1 : 0
   name              = "${local.name}-services"
   monitor_type      = "DIMENSIONAL"
   monitor_dimension = "SERVICE"
+}
+
+locals {
+  anomaly_monitor_arn = coalesce(var.anomaly_monitor_arn, one(aws_ce_anomaly_monitor.service[*].arn))
 }
 
 # IMMEDIATE frequency only supports SNS subscribers (EMAIL needs DAILY/WEEKLY), so the
@@ -95,7 +102,7 @@ resource "aws_ce_anomaly_monitor" "service" {
 resource "aws_ce_anomaly_subscription" "service" {
   name             = "${local.name}-anomalies"
   frequency        = "IMMEDIATE"
-  monitor_arn_list = [aws_ce_anomaly_monitor.service.arn]
+  monitor_arn_list = [local.anomaly_monitor_arn]
 
   subscriber {
     type    = "SNS"
