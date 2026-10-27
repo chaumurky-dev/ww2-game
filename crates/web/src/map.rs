@@ -46,6 +46,8 @@ pub struct Location {
     pub path: String,
     pub label: (f64, f64),
     pub anchor: (f64, f64),
+    /// `[x0, y0, x1, y1]` in viewBox units.
+    pub bbox: [f64; 4],
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -68,6 +70,7 @@ impl Geometry {
             .locations
             .into_iter()
             .map(|(id, l)| {
+                let bbox = l.bbox.unwrap_or([0.0; 4]);
                 let centre = l
                     .bbox
                     .map(|b| ((b[0] + b[2]) / 2.0, (b[1] + b[3]) / 2.0))
@@ -79,6 +82,7 @@ impl Geometry {
                     path: l.path,
                     label: l.label.unwrap_or(anchor),
                     anchor,
+                    bbox,
                 }
             })
             .collect();
@@ -222,6 +226,74 @@ pub fn sea_shade(id: &str) -> bool {
     (h >> 7) & 1 == 1
 }
 
+/// Abbreviations for land labels that do not fit their territory at the whole-map zoom.
+/// Anything not listed falls back to the first four letters plus a dot.
+const ABBREVS: &[(&str, &str)] = &[
+    ("ukraine_s_s_r", "Ukr."),
+    ("eastern_europe", "E. Eur."),
+    ("western_europe", "W. Eur."),
+    ("southern_europe", "S. Eur."),
+    ("karelia_s_s_r", "Kar."),
+    ("kazakh_s_s_r", "Kaz."),
+    ("yakut_s_s_r", "Yak."),
+    ("evenki_national_okrug", "Evenki"),
+    ("soviet_far_east", "Far East"),
+    ("finland_norway", "Fin./Nor."),
+    ("united_kingdom", "U.K."),
+    ("anglo_egypt_sudan", "Egypt"),
+    ("french_west_africa", "Fr. W. Afr."),
+    ("french_equatorial_africa", "Fr. Eq. Afr."),
+    ("italian_east_africa", "It. E. Afr."),
+    ("south_africa", "S. Afr."),
+    ("kenya_rhodesia", "Kenya"),
+    ("french_indo_china", "Indo-China"),
+    ("east_indies", "E. Indies"),
+    ("borneo_celebes", "Borneo"),
+    ("new_guinea", "N. Guinea"),
+    ("new_zealand", "N.Z."),
+    ("solomon_islands", "Solomon"),
+    ("caroline_islands", "Caroline"),
+    ("hawaiian_islands", "Hawaii"),
+    ("wake_island", "Wake"),
+    ("western_canada", "W. Canada"),
+    ("eastern_canada", "E. Canada"),
+    ("western_usa", "W. USA"),
+    ("eastern_usa", "E. USA"),
+    ("argentina_chile", "Arg./Chile"),
+    ("rio_del_oro", "Rio d. Oro"),
+    ("saudi_arabia", "Saudi"),
+    ("syria_iraq", "Syria-Iraq"),
+];
+
+/// Label font size (viewBox units, before the `--zs` overlay scale) at the whole-map zoom.
+pub const LABEL_FONT_L0: f64 = 14.0;
+/// Average glyph advance in em, including the CSS letter-spacing.
+const GLYPH_EM: f64 = 0.6;
+
+pub fn abbrev(id: &str, name: &str) -> String {
+    if let Some((_, a)) = ABBREVS.iter().find(|(k, _)| *k == id) {
+        return (*a).to_string();
+    }
+    let head: String = name.chars().take(4).collect();
+    format!("{head}.")
+}
+
+fn text_width(text: &str, font: f64) -> f64 {
+    text.chars().count() as f64 * GLYPH_EM * font
+}
+
+/// What to draw for a land territory at the whole-map zoom: the full name if it fits inside
+/// `bbox` (at overlay scale 1, the widest it ever gets at that zoom), else the abbreviation if
+/// that fits, else nothing.
+pub fn fit_label(id: &str, name: &str, bbox: [f64; 4], font: f64) -> Option<String> {
+    let avail = (bbox[2] - bbox[0]) * 0.95;
+    if text_width(name, font) <= avail {
+        return Some(name.to_string());
+    }
+    let short = abbrev(id, name);
+    (text_width(&short, font) <= avail).then_some(short)
+}
+
 async fn fetch_text(url: &str) -> Result<String, String> {
     let resp = Request::get(url).send().await.map_err(|e| e.to_string())?;
     if !resp.ok() {
@@ -236,4 +308,39 @@ pub async fn load() -> Result<SharedMap, String> {
     let data = MapData::parse(&fetch_text("/assets/map.json").await?)
         .map_err(|e| format!("map.json: {e}"))?;
     Ok(Arc::new(MapInfo { geo, data }))
+}
+
+#[cfg(test)]
+mod label_tests {
+    use super::*;
+
+    #[test]
+    fn fit_and_abbreviate() {
+        // Wide territory: full name.
+        let canada = [160.0, 0.0, 600.0, 290.0];
+        assert_eq!(
+            fit_label("western_canada", "Western Canada", canada, LABEL_FONT_L0).as_deref(),
+            Some("Western Canada")
+        );
+        // Ukraine is ~100 wide: the full name does not fit, the abbreviation does.
+        let ukr = [1067.4, 259.8, 1167.4, 316.0];
+        assert_eq!(
+            fit_label("ukraine_s_s_r", "Ukraine S.S.R.", ukr, LABEL_FONT_L0).as_deref(),
+            Some("Ukr.")
+        );
+        let ee = [1013.6, 241.1, 1109.5, 336.9];
+        assert_eq!(
+            fit_label("eastern_europe", "Eastern Europe", ee, LABEL_FONT_L0).as_deref(),
+            Some("E. Eur.")
+        );
+        // A speck of an island gets nothing.
+        let dot = [100.0, 100.0, 106.0, 104.0];
+        assert_eq!(fit_label("midway", "Midway", dot, LABEL_FONT_L0), None);
+    }
+
+    #[test]
+    fn abbrev_fallback() {
+        assert_eq!(abbrev("germany", "Germany"), "Germ.");
+        assert_eq!(abbrev("ukraine_s_s_r", "Ukraine S.S.R."), "Ukr.");
+    }
 }

@@ -4,25 +4,11 @@
 pub use wartide_protocol::game::{Power, Team};
 
 pub trait PowerExt {
-    fn id(self) -> &'static str;
-    fn name(self) -> &'static str;
     /// CSS value (a custom property reference) holding the power colour.
     fn color(self) -> String;
 }
 
 impl PowerExt for Power {
-    fn id(self) -> &'static str {
-        self.as_str()
-    }
-    fn name(self) -> &'static str {
-        match self {
-            Power::Ussr => "Soviet Union",
-            Power::Germany => "Germany",
-            Power::Uk => "United Kingdom",
-            Power::Japan => "Japan",
-            Power::Usa => "United States",
-        }
-    }
     fn color(self) -> String {
         format!("var(--{})", self.as_str())
     }

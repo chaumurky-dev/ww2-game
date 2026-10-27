@@ -9,4 +9,5 @@ pub mod notify;
 pub mod ratings;
 pub mod rules;
 pub mod timeouts;
+pub mod transition;
 pub mod users;

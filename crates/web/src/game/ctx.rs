@@ -1,5 +1,4 @@
 //! Shared game-screen context: engine state, UI selection, log, dice and the send backend.
-use super::conv::ui_power;
 use super::dice::{dice_shows, DiceShow};
 use super::log::{format_events, push_lines, BattleAcc, LogLine};
 use super::moves::{group_reach, movable_locations};
@@ -179,7 +178,10 @@ impl GameCtx {
         let base = self.counter.get_value();
         self.counter.set_value(base + events.len() as u64 + 1);
         if animate {
-            let locs = super::model::event_locations(events);
+            let mut locs = super::model::event_locations(events);
+            locs.extend(super::model::undo_locations(&after, events));
+            locs.sort_by_key(|l| l.0);
+            locs.dedup();
             if !locs.is_empty() {
                 self.flash.set(locs);
                 let flash = self.flash;
@@ -207,7 +209,10 @@ impl GameCtx {
         {
             self.income.set(Some((*power, *amount, *treasury)));
         }
-        if before.phase != after.phase || before.current_power != after.current_power {
+        let undone = events
+            .iter()
+            .any(|e| matches!(e, Event::MovesUndone { .. }));
+        if undone || before.phase != after.phase || before.current_power != after.current_power {
             self.sel.set(Sel::default());
         } else {
             self.sel.update(|s| *s = s.sanitized(&after));
@@ -222,6 +227,6 @@ impl GameCtx {
     }
 
     pub fn power_ui(p: Power) -> crate::model::Power {
-        ui_power(p)
+        p
     }
 }

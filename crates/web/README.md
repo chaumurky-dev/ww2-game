@@ -43,7 +43,8 @@ and `trunk serve` here (proxies `/api` and `/ws` to :8080; mails land in Mailpit
   `query::reachable`, unit groups, movable locations, stranded aircraft), `ctx` (`GameCtx`: state, selection,
   log, dice, send backend), `screen` (`GameScreen`: top bar + board + side panel), `topbar`, `panels/*`
   (research, purchase, movement + transport load/unload, combat list with bombing/rockets, mobilize), `battle`
-  (battle board + casualty / retreat / sub-withdrawal controls), `dice` (per-die hit numbers reconstructed from
+  (compact side-panel summary) + `battle_board` (pop-up board by combat value with casualty / retreat /
+  sub-withdrawal controls; Minimise collapses it to a floating bar), `dice` (per-die hit numbers reconstructed from
   the battle roster, animated `Die`), `log` + `logfmt_battle` (event -> text, 200 lines kept), `sandbox`, `live`, `replay`.
 - `/sandbox` - offline mode: `wartide_engine::apply` runs in the browser and you control all five powers
   (`/sandbox?as=ussr,uk` restricts the viewer so other powers show the "waiting" banner). It also installs
@@ -89,8 +90,8 @@ Visual checks: `trunk serve`, then drive headless Chrome over CDP; screenshots a
 
 - Server: `your_turn` carries no hint whether the toast is for a defender decision (casualties) or a normal turn, so the
   toast text is generic. `GameSummary.winner` has no reason (economic / military); the in-game panel reads it from the state.
-- Engine/protocol: `GameStateView` and actions/events are still untyped JSON; the replay depends on `GameState.settings.seed`
-  being the game seed and on the seed derivation staying stable (duplicated in `game/replay.rs`).
+- Engine/protocol: the replay depends on `GameState.settings.seed` being the game seed and on
+  `wartide_protocol::seed::action_seed` staying stable (its output is pinned by a test).
 - Spectators get 403 on team/power chat by design; the UI only offers the all-chat to them.
 
 ## Private game seats and time zones

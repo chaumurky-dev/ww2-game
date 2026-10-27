@@ -1,8 +1,6 @@
 //! Human-readable action log built from engine events (formatting is pure and unit-tested).
 use super::conv::*;
 use super::logfmt_battle::battle_arm;
-use crate::model::Power as UiPower;
-use crate::model::PowerExt;
 use leptos::prelude::*;
 use wartide_engine::event::DiceContext;
 use wartide_engine::units::UnitRef;
@@ -25,7 +23,7 @@ pub enum LogLevel {
 #[derive(Clone, Debug, PartialEq)]
 pub struct LogLine {
     pub round: u32,
-    pub power: Option<UiPower>,
+    pub power: Option<Power>,
     pub text: String,
     pub level: LogLevel,
 }
@@ -41,6 +39,7 @@ fn level_of(e: &Event) -> LogLevel {
         | Event::SubsWithdrew { .. }
         | Event::UnitsMoved { .. }
         | Event::UnitsLoaded { .. }
+        | Event::MovesUndone { .. }
         | Event::UnitsUnloaded { .. }
         | Event::AircraftLanded { .. }
         | Event::AaFire { .. }
@@ -172,6 +171,19 @@ pub fn format_events(events: &[Event], mut round: u32, acc: &mut BattleAcc) -> V
                     l(to)
                 ));
             }
+            Event::MovesUndone {
+                power,
+                units,
+                cascaded,
+            } => {
+                who = Some(*power);
+                let n = units.len() + cascaded.len();
+                text = Some(format!(
+                    "{} took back the move of {n} unit{}",
+                    power.name(),
+                    if n == 1 { "" } else { "s" }
+                ));
+            }
             Event::UnitsLoaded {
                 power, units, at, ..
             } => {
@@ -276,7 +288,7 @@ pub fn format_events(events: &[Event], mut round: u32, acc: &mut BattleAcc) -> V
                 if let Some(t) = text.take() {
                     out.push(LogLine {
                         round,
-                        power: who.map(ui_power),
+                        power: who,
                         text: t,
                         level: LogLevel::Detail,
                     });
@@ -339,7 +351,7 @@ pub fn format_events(events: &[Event], mut round: u32, acc: &mut BattleAcc) -> V
         if let Some(text) = text {
             out.push(LogLine {
                 round,
-                power: who.map(ui_power),
+                power: who,
                 text,
                 level,
             });

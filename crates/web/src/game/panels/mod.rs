@@ -6,6 +6,7 @@ mod movement;
 mod purchase;
 mod research;
 mod transport;
+mod undo;
 
 pub use mobilize::place_at;
 
@@ -21,7 +22,7 @@ fn waiting(power: Power, what: &str) -> impl IntoView {
     let what = what.to_string();
     view! {
         <div class="wait">
-            <PowerBadge power=ui_power(power) />
+            <PowerBadge power=power />
             <span>{format!(" is deciding ({what}) - waiting for them.")}</span>
         </div>
     }

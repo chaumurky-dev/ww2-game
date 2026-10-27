@@ -137,8 +137,11 @@ pub async fn change_password(current: &str, new: &str) -> ApiResult<()> {
     unit(Method::POST, "/me/password", Some(to_value(&body))).await
 }
 
-pub async fn delete_account() -> ApiResult<()> {
-    unit(Method::DELETE, "/me", None).await
+pub async fn delete_account(password: &str) -> ApiResult<()> {
+    let body = DeleteAccountRequest {
+        password: password.into(),
+    };
+    unit(Method::DELETE, "/me", Some(to_value(&body))).await
 }
 
 pub async fn bot_personas() -> ApiResult<Vec<BotPersona>> {
@@ -274,7 +277,10 @@ pub async fn game_actions(id: GameId, since: i64) -> ApiResult<Vec<GameActionEnv
     .await
 }
 
-pub async fn submit_action(id: GameId, action: serde_json::Value) -> ApiResult<GameActionEnvelope> {
+pub async fn submit_action(
+    id: GameId,
+    action: wartide_engine::Action,
+) -> ApiResult<GameActionEnvelope> {
     let body = SubmitActionRequest { action };
     json(
         Method::POST,

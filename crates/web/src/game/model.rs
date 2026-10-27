@@ -38,16 +38,36 @@ pub fn event_locations(events: &[wartide_engine::Event]) -> Vec<LocationId> {
     v
 }
 
+/// Where units taken back by `MovesUndone` stand again (the places to flash).
+pub fn undo_locations(
+    after: &wartide_engine::GameState,
+    events: &[wartide_engine::Event],
+) -> Vec<LocationId> {
+    use wartide_engine::Event as E;
+    events
+        .iter()
+        .filter_map(|e| match e {
+            E::MovesUndone {
+                units, cascaded, ..
+            } => Some(units.iter().chain(cascaded)),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(|r| after.unit(r.id).map(|u| u.location))
+        .collect()
+}
+
 /// Unit stacks at a location grouped by (power, unit type); cargo is folded into its ship.
 pub fn stacks_at(st: &GameState, loc: LocationId, picked: &[UnitId]) -> Vec<Stack> {
     let mut m: BTreeMap<(usize, UnitType), Stack> = BTreeMap::new();
     for u in st.units_at(loc).filter(|u| u.loaded_on.is_none()) {
         let e = m.entry((u.owner.index(), u.kind)).or_insert_with(|| Stack {
-            power: ui_power(u.owner),
+            power: u.owner,
             kind: ui_kind(u.kind),
             count: 0,
             cargo: vec![],
             picked: 0,
+            draggable: false,
         });
         e.count += 1;
         if picked.contains(&u.id) {
@@ -106,7 +126,7 @@ pub fn board_model(st: &GameState, ov: &Overlay) -> BoardModel {
         let key = loc_key(l);
         if !map.is_sea(l) {
             if let Some(c) = st.controller(l) {
-                b.owners.insert(key.clone(), ui_power(c));
+                b.owners.insert(key.clone(), c);
             }
         }
         let stacks = stacks_at(st, l, &ov.picked);
@@ -151,7 +171,7 @@ mod tests {
         let st = start();
         let b = board_model(&st, &Overlay::default());
         let g = LocationId::from_id("germany").unwrap();
-        assert_eq!(b.owners.get("germany"), Some(&ui_power(Power::Germany)));
+        assert_eq!(b.owners.get("germany"), Some(&Power::Germany));
         let stacks = b.stacks.get(&loc_key(g)).expect("units in germany");
         let total: u32 = stacks.iter().map(|s| s.count).sum();
         let real = st.units_at(g).filter(|u| u.loaded_on.is_none()).count() as u32;
@@ -177,8 +197,7 @@ mod tests {
         assert_eq!(tr.cargo, vec![(crate::model::UnitKind::Infantry, 1)]);
         assert!(!stacks
             .iter()
-            .any(|s| s.kind == crate::model::UnitKind::Infantry
-                && s.power == ui_power(Power::Germany)));
+            .any(|s| s.kind == crate::model::UnitKind::Infantry && s.power == Power::Germany));
         assert!(tooltip(&st, sz).contains("aboard: 1 infantry"));
     }
 

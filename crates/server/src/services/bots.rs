@@ -7,7 +7,7 @@ use wartide_ai::{Bot, Commentary, Persona, Style, Verbosity};
 use wartide_engine as engine;
 use wartide_protocol::bots::{BotPersona, PersonaStyle, PersonaVerbosity};
 use wartide_protocol::chat::ChatChannel;
-use wartide_protocol::game::Power;
+use wartide_protocol::game::{GameStatus, Power};
 use wartide_protocol::user::UserSettings;
 
 use crate::error::{AppError, AppResult};
@@ -132,7 +132,8 @@ const RANDOM_ATTEMPTS: u32 = 20;
 /// restart (a bot mid-turn, or a defender decision awaiting automatic resolution) resume at once
 /// instead of waiting for a deadline to expire. Cheap: a pass with nothing to do returns quickly.
 pub async fn resume_all(state: &AppState) -> AppResult<usize> {
-    let ids: Vec<(Uuid,)> = sqlx::query_as("SELECT id FROM games WHERE status='in_progress'")
+    let ids: Vec<(Uuid,)> = sqlx::query_as("SELECT id FROM games WHERE status=$1")
+        .bind(GameStatus::InProgress)
         .fetch_all(&state.db)
         .await?;
     for (id,) in &ids {
@@ -181,7 +182,12 @@ pub fn spawn_driver(state: &AppState, game: Uuid, takeover: Option<Power>) {
             };
             let mut drivers = state.runtime.drivers.lock().unwrap();
             let slot = drivers.get_mut(&game).expect("driver slot");
-            slot.takeover = keep;
+            // A takeover requested while this pass ran (timeout sweep) wins over the pass's own
+            // verdict; otherwise the stale `keep` would silently drop it and leave the game stuck
+            // until the next sweep.
+            if slot.takeover == takeover {
+                slot.takeover = keep;
+            }
             if slot.rerun {
                 slot.rerun = false;
                 continue;
@@ -214,15 +220,14 @@ async fn run_pass(
             return Ok(takeover);
         }
         let g = games::load_game(state, game).await?;
-        if g.status != "in_progress" {
+        if g.status != GameStatus::InProgress {
             return Ok(None);
         }
-        let (seq, st): (i64, serde_json::Value) =
+        let (seq, sqlx::types::Json(gs)): (i64, sqlx::types::Json<engine::GameState>) =
             sqlx::query_as("SELECT seq, state FROM game_states WHERE game_id=$1")
                 .bind(game)
                 .fetch_one(&state.db)
                 .await?;
-        let gs = rules::parse_state(&st)?;
         let pending = rules::pending_of(&gs);
         let Some(power) = pending.power else {
             if let Some(w) = pending.game_over {
@@ -245,10 +250,9 @@ async fn run_pass(
             let Some(action) = defender_action(&gs, &settings, g.seed, seq) else {
                 return Ok(takeover);
             };
-            let value = rules::to_json(&action)?;
             let res = {
                 let _guard = state.runtime.lock(game).await;
-                games::apply_locked(state, game, Actor::Auto, value, Some(seq)).await
+                games::apply_locked(state, game, Actor::Auto, action, Some(seq)).await
             };
             match res {
                 Ok(_) => applied += 1,
@@ -288,11 +292,11 @@ async fn run_pass(
                 }
             }
         } else if attempt < BOT_ATTEMPTS + RANDOM_ATTEMPTS {
-            let mut rp = engine::random_policy::RandomPolicy::new(rules::fallback_seed(
-                g.seed, seq, attempt,
-            ));
+            let mut rp = engine::random_policy::RandomPolicy::new(
+                wartide_protocol::seed::fallback_seed(g.seed as u64, seq, attempt),
+            );
             match rp.next_action(&gs) {
-                Some((p, a)) if rules::power_from_engine(p) == power => (a, Vec::new()),
+                Some((p, a)) if p == power => (a, Vec::new()),
                 _ => {
                     failures.1 += 1;
                     continue;
@@ -313,10 +317,9 @@ async fn run_pass(
             (last, Vec::new())
         };
 
-        let value = rules::to_json(&action)?;
         let res = {
             let _guard = state.runtime.lock(game).await;
-            games::apply_locked(state, game, Actor::Bot, value, Some(seq)).await
+            games::apply_locked(state, game, Actor::Bot, action.clone(), Some(seq)).await
         };
         match res {
             Ok(_) => {
@@ -327,7 +330,7 @@ async fn run_pass(
                         game,
                         &bot_name,
                         ChatChannel::Team,
-                        Some(games::enum_str(&team)),
+                        Some(team.as_str().to_string()),
                         &c.text,
                     )
                     .await
@@ -384,7 +387,7 @@ fn defender_action(
                         gs,
                         power,
                         &subs,
-                        rules::fallback_seed(game_seed, seq, 0),
+                        wartide_protocol::seed::fallback_seed(game_seed as u64, seq, 0),
                     )
                 }
             })
@@ -415,8 +418,8 @@ async fn plan(
     let mut bot = cached.unwrap_or_else(|| {
         Bot::new(
             persona,
-            rules::power_to_engine(power),
-            rules::bot_seed(game_seed, power),
+            power,
+            wartide_protocol::seed::bot_seed(game_seed as u64, power),
         )
     });
     let (bot, out) = tokio::task::spawn_blocking(move || {

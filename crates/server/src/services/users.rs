@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 use uuid::Uuid;
-use wartide_protocol::game::{GameKind, GameSummary};
+use wartide_protocol::game::{GameKind, GameStatus, GameSummary};
 use wartide_protocol::user::*;
 
 use crate::error::{AppError, AppResult};
@@ -106,10 +106,11 @@ async fn win_streaks(state: &AppState, user: Uuid) -> AppResult<HashMap<String, 
         "SELECT g.ladder,
                 (g.winner_team = CASE WHEN s.powers[1] IN ('germany','japan') THEN 'axis' ELSE 'allies' END) AS won
          FROM games g JOIN game_seats s ON s.game_id = g.id AND s.user_id = $1 AND NOT s.is_bot
-         WHERE g.status='finished' AND g.winner_team IS NOT NULL AND g.ladder LIKE 'public:%'
+         WHERE g.status=$2 AND g.winner_team IS NOT NULL AND g.ladder LIKE 'public:%'
          ORDER BY g.updated_at ASC, g.id",
     )
     .bind(user)
+    .bind(GameStatus::Finished)
     .fetch_all(&state.db)
     .await?;
     let mut by: HashMap<String, Vec<bool>> = HashMap::new();
@@ -119,17 +120,20 @@ async fn win_streaks(state: &AppState, user: Uuid) -> AppResult<HashMap<String, 
     Ok(by.into_iter().map(|(l, r)| (l, streaks(&r))).collect())
 }
 
-/// Last 10 finished or active public/group games of a user. Group games are redacted so the
-/// public profile only reveals name, mode, status and result.
+/// Last 10 finished or active public games of a user. The profile is world-readable, so private
+/// and group games (which not everyone may open) are never listed.
 async fn recent_games(state: &AppState, user: Uuid) -> AppResult<Vec<GameSummary>> {
     let ids: Vec<(Uuid,)> = sqlx::query_as(
         "SELECT g.id FROM games g
-         WHERE g.status IN ('in_progress','finished')
-           AND (g.kind='public' OR g.group_id IS NOT NULL)
+         WHERE g.status IN ($2,$3)
+           AND g.kind=$4
            AND EXISTS (SELECT 1 FROM game_seats s WHERE s.game_id=g.id AND s.user_id=$1)
          ORDER BY g.updated_at DESC LIMIT 10",
     )
     .bind(user)
+    .bind(GameStatus::InProgress)
+    .bind(GameStatus::Finished)
+    .bind(GameKind::Public)
     .fetch_all(&state.db)
     .await?;
     let mut out = Vec::new();
@@ -161,6 +165,18 @@ pub async fn update_profile(
     if matches!(&display_name, Some(d) if d.is_empty()) {
         return Err(AppError::bad("display name cannot be empty"));
     }
+    if let Some(d) = &display_name {
+        check_display_name(d)?;
+        if is_reserved_name(d) {
+            let (is_admin,): (bool,) = sqlx::query_as("SELECT is_admin FROM users WHERE id=$1")
+                .bind(user_id)
+                .fetch_one(&state.db)
+                .await?;
+            if !is_admin {
+                return Err(AppError::bad("that display name is reserved"));
+            }
+        }
+    }
     let timezone = clean(req.timezone, 64)?;
     if let Some(tz) = timezone.as_deref().filter(|t| !t.is_empty()) {
         if !valid_timezone(tz) {
@@ -187,6 +203,35 @@ pub async fn update_profile(
     .bind(timezone)
     .execute(&state.db)
     .await?;
+    Ok(())
+}
+
+const RESERVED_NAMES: [&str; 6] = [
+    "admin",
+    "administrator",
+    "moderator",
+    "support",
+    "wartide",
+    "system",
+];
+
+/// Names that could be mistaken for staff (compared case-insensitively).
+pub fn is_reserved_name(name: &str) -> bool {
+    let n = name.trim().to_lowercase();
+    RESERVED_NAMES.contains(&n.as_str())
+}
+
+/// Reject control characters, bidi overrides/isolates and zero-width characters, which allow
+/// spoofed or invisible names.
+pub fn check_display_name(name: &str) -> AppResult<()> {
+    let bad = |c: char| {
+        c.is_control()
+            || matches!(c, '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2060}'
+                | '\u{2066}'..='\u{2069}' | '\u{FEFF}')
+    };
+    if name.chars().any(bad) {
+        return Err(AppError::bad("display name contains invalid characters"));
+    }
     Ok(())
 }
 

@@ -6,7 +6,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 use wartide_protocol::game::*;
 
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::extract::{AuthUser, VerifiedUser};
 use crate::services::games as svc;
 use crate::state::AppState;
@@ -85,8 +85,20 @@ pub async fn submit_action(
     State(s): State<AppState>,
     VerifiedUser(u): VerifiedUser,
     Path(id): Path<Uuid>,
-    Json(req): Json<SubmitActionRequest>,
+    Json(body): Json<serde_json::Value>,
 ) -> AppResult<Json<GameActionEnvelope>> {
+    // Parsed by hand so a malformed action is a 400 `illegal_action` (axum's own rejection would
+    // be a 422), and only after the caller is known to be a player (403 first).
+    let req: SubmitActionRequest = match serde_json::from_value(body) {
+        Ok(r) => r,
+        Err(e) => {
+            svc::require_seat(&s, &u, id).await?;
+            return Err(AppError::BadRequest(
+                "illegal_action",
+                format!("invalid action: {e}"),
+            ));
+        }
+    };
     Ok(Json(svc::submit_action(&s, &u, id, req.action).await?))
 }
 

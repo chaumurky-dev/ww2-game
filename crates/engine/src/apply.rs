@@ -11,9 +11,10 @@ use crate::event::Event;
 use crate::map::LocationId;
 use crate::movement::{execute_move, resolve_landings, validate_move};
 use crate::power::{Power, Team};
-use crate::state::{GameState, Phase, TurnState, VictoryReason, Winner};
+use crate::state::{GameState, JournalEntry, Phase, TurnState, VictoryReason, Winner};
 use crate::tech;
 use crate::transport::{execute_load, execute_unload, validate_load, validate_unload};
+use crate::undo;
 use crate::victory;
 
 /// Apply `action` by `actor`. On success the state is updated and the events returned; on
@@ -100,27 +101,22 @@ fn dispatch(
             tech::research(state, p, *dice, rng, ev)
         }
         (Phase::Purchase, Action::Purchase { items }) => economy::purchase(state, p, items, ev),
-        (Phase::CombatMove | Phase::NonCombatMove, Action::Move { units, path }) => {
-            let plan = validate_move(state, p, units, path)?;
-            execute_move(state, p, units, path, &plan, rng, ev);
-            Ok(())
-        }
-        (Phase::CombatMove | Phase::NonCombatMove, Action::Load { units, transport }) => {
-            validate_load(state, p, units, *transport)?;
-            execute_load(state, p, units, *transport, ev);
-            Ok(())
-        }
         (
             Phase::CombatMove | Phase::NonCombatMove,
-            Action::Unload {
-                transport,
-                units,
-                to,
-            },
+            Action::Move { .. } | Action::Load { .. } | Action::Unload { .. },
         ) => {
-            let mode = validate_unload(state, p, *transport, units, *to)?;
-            execute_unload(state, p, *transport, units, *to, mode, ev);
+            let start = ev.len();
+            exec_movement(state, p, action, rng, ev)?;
+            if state.turn.phase_start.is_some() {
+                state.turn.move_journal.push(JournalEntry {
+                    action: action.clone(),
+                    aa_fired: undo::rolled_dice(&ev[start..]),
+                });
+            }
             Ok(())
+        }
+        (Phase::CombatMove | Phase::NonCombatMove, Action::UndoMoves { scope }) => {
+            undo::undo_moves(state, p, scope, ev)
         }
         (Phase::Combat, Action::BeginBattle { location }) => {
             begin_battle(state, *location, ev)?;
@@ -146,6 +142,36 @@ fn dispatch(
         ) => economy::place(state, p, *unit, *location, *count, *from, ev),
         _ => wrong_phase(state, "that action is not available in this phase"),
     }
+}
+
+/// Validate and execute one `Move`, `Load` or `Unload` (shared by `dispatch` and undo replay).
+pub(crate) fn exec_movement(
+    state: &mut GameState,
+    p: Power,
+    action: &Action,
+    rng: &mut Rng,
+    ev: &mut Vec<Event>,
+) -> Result<()> {
+    match action {
+        Action::Move { units, path } => {
+            let plan = validate_move(state, p, units, path)?;
+            execute_move(state, p, units, path, &plan, rng, ev);
+        }
+        Action::Load { units, transport } => {
+            validate_load(state, p, units, *transport)?;
+            execute_load(state, p, units, *transport, ev);
+        }
+        Action::Unload {
+            transport,
+            units,
+            to,
+        } => {
+            let mode = validate_unload(state, p, *transport, units, *to)?;
+            execute_unload(state, p, *transport, units, *to, mode, ev);
+        }
+        _ => return illegal("not a movement action"),
+    }
+    Ok(())
 }
 
 fn concede(state: &mut GameState, actor: Power, ev: &mut Vec<Event>) -> Result<()> {
@@ -183,6 +209,7 @@ fn finish_game(state: &mut GameState, w: Winner, ev: &mut Vec<Event>) {
 
 fn set_phase(state: &mut GameState, phase: Phase, ev: &mut Vec<Event>) {
     state.phase = phase;
+    undo::phase_entered(state);
     ev.push(Event::PhaseChanged {
         power: state.current_power,
         phase,
@@ -296,6 +323,8 @@ fn start_next_turn(state: &mut GameState, ev: &mut Vec<Event>) {
         researched: false,
         rocket_fired: false,
         placed: vec![],
+        phase_start: None,
+        move_journal: vec![],
     };
     state.purchases.clear();
     for u in state.units.iter_mut().filter(|u| u.owner == next) {

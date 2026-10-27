@@ -71,3 +71,34 @@
   the rules require. `sub_withdrawal` (default `when_outgunned`): `never` stays, `always` withdraws to
   the first legal zone, `when_outgunned` uses the AI's odds heuristic. The ruleset has no two-hit
   battleship, so there is no free "first hit" to prefer. Attackers still choose their own casualties.
+- 2026-10-26 (engine): The engine's own default casualty pick (used when a battle is auto-resolved) is
+  now `choose_casualties` under `CasualtyPolicy::default()` rather than a separate copy of the
+  algorithm. The only observable difference is the tie-break among equal-cost units: previously by unit
+  id, now by defence value then id (so an AA gun dies before armor, a transport before a submarine).
+  Replays of games recorded before this date that hit such a tie may diverge; the server stores the
+  full state after every action, so only client-side history stepping is affected.
+- 2026-10-27 (map audit): Audited `crates/engine/data/map.json` against the community "World War II Classic" setup file
+  (triplea-maps/world_war_ii_classic, `map/games/classic.xml`, the file the TripleA forum lists as the map matching
+  the 1986 classic board) with the reusable `scripts/audit_map.py`: 70 land territories, 58 sea zones, every
+  IPC value, original owner, capital, complex, neutral flag, land/sea/sea adjacency, the Suez and Panama canals
+  and all starting units match. The only difference is the deliberate Gulf of Mexico - Mexico sea-zone edge
+  (RULES 14). Name variants are intentional (rulebook names, RULES 18; spelling fixes such as
+  Mediterranean/Caribbean). Ukraine S.S.R. borders Eastern Europe, Karelia S.S.R., Caucasus and the Black
+  Sea only; it does **not** border Russia or Southern Europe on the classic board (the file's polygons agree:
+  Ukraine spans x 1264-1414 and Russia starts at x 1476 on its 3500-wide map, with Caucasus between), so no
+  adjacency or region change was made. Not independently verified against a scan of the printed board: the
+  forum threads and fan wikis that discuss it were unreachable (Cloudflare 403/504) from the audit environment.
+- 2026-10-27 (engine): `Action::UndoMoves { scope }` takes back movement within the open Combat Move or
+  Non-Combat Move phase. The engine snapshots units, `next_unit_id`, control and treasuries when such a
+  phase begins (`TurnState.phase_start`) and journals each successful `Move`/`Load`/`Unload`
+  (`TurnState.move_journal`, with an `aa_fired` flag). Undo restores the snapshot and replays the journal
+  entries that were not selected, through the normal validation, with a throwaway RNG and event list; an
+  entry that no longer validates (or would roll dice) is dropped too and reported as `cascaded`. Both
+  fields are cleared when the phase is left, so the stored state carries the snapshot only during movement
+  phases, and old states without them still deserialize (undo then reports nothing to take back).
+  Antiaircraft fire is the only dice in movement. To rule out re-rolling it under a different seed, any
+  journal entry that rolled dice (even a roll with no hit) makes every undo in that phase illegal
+  ("units that were fired on by anti-aircraft guns cannot take back their move"); this is stricter than
+  refusing only the affected entry because the fired entry could not be re-applied faithfully. Scope
+  `into` matches `Move` by last path step, `Unload` by `to`, and `Load` by the transport's current sea
+  zone. Bots and the random policy never emit the action.

@@ -78,7 +78,7 @@ pub async fn enqueue(state: &AppState, user: Uuid, mode: GameMode) -> AppResult<
         "INSERT INTO matchmaking_queue (user_id, mode, rating) VALUES ($1,$2,$3) ON CONFLICT (user_id) DO NOTHING",
     )
     .bind(user)
-    .bind(games::enum_str(&mode))
+    .bind(mode)
     .bind(rating)
     .execute(&state.db)
     .await?;
@@ -100,12 +100,12 @@ pub async fn dequeue(state: &AppState, user: Uuid) -> AppResult<()> {
 }
 
 pub async fn status(state: &AppState, user: Uuid) -> AppResult<Option<GameMode>> {
-    let r: Option<(String,)> =
+    let r: Option<(GameMode,)> =
         sqlx::query_as("SELECT mode FROM matchmaking_queue WHERE user_id=$1")
             .bind(user)
             .fetch_optional(&state.db)
             .await?;
-    r.map(|(m,)| games::parse_enum(&m)).transpose()
+    Ok(r.map(|(m,)| m))
 }
 
 /// One matching pass for both modes. Returns the created game ids.
@@ -116,7 +116,7 @@ pub async fn run_once(state: &AppState) -> AppResult<Vec<Uuid>> {
             "SELECT q.user_id, q.rating, q.enqueued_at FROM matchmaking_queue q
              JOIN users u ON u.id=q.user_id WHERE q.mode=$1 AND u.email_verified",
         )
-        .bind(games::enum_str(&mode))
+        .bind(mode)
         .fetch_all(&state.db)
         .await?;
         let entries: Vec<QueueEntry> = rows

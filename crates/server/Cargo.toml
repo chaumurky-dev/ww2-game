@@ -13,14 +13,14 @@ name = "wartide-server"
 path = "src/main.rs"
 
 [dependencies]
-wartide-protocol = { path = "../protocol" }
+wartide-protocol = { path = "../protocol", features = ["sqlx"] }
 wartide-engine = { path = "../engine" }
 wartide-ai = { path = "../ai" }
 axum = { version = "0.8", features = ["ws", "macros"] }
 tokio = { version = "1", features = ["full"] }
 sqlx = { version = "0.8", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls", "uuid", "chrono", "json", "migrate", "macros"] }
-tower = "0.5"
-tower-http = { version = "0.6", features = ["trace", "compression-full", "fs", "request-id", "util"] }
+tower = { version = "0.5", features = ["limit"] }
+tower-http = { version = "0.6", features = ["trace", "compression-full", "fs", "request-id", "util", "timeout"] }
 tower_governor = "0.8"
 argon2 = "0.5"
 rand = { workspace = true }

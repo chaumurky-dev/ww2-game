@@ -53,3 +53,9 @@ pub struct ChangePasswordRequest {
     pub current_password: String,
     pub new_password: String,
 }
+
+/// `DELETE /api/me`: the account password is required to confirm.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteAccountRequest {
+    pub password: String,
+}

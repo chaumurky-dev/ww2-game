@@ -71,6 +71,91 @@ async fn call(
     (status, json, set_cookie)
 }
 
+/// Like [`call`] with extra request headers.
+async fn call_h(
+    app: &Router,
+    method: Method,
+    uri: &str,
+    cookie: Option<&str>,
+    body: Option<Value>,
+    headers: &[(&str, &str)],
+) -> (StatusCode, Value, Option<String>) {
+    let mut b = Request::builder().method(method).uri(uri);
+    if let Some(c) = cookie {
+        b = b.header(header::COOKIE, format!("wt_session={c}"));
+    }
+    for (k, v) in headers {
+        b = b.header(*k, *v);
+    }
+    let req = if let Some(body) = body {
+        b.header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap()
+    } else {
+        b.body(Body::empty()).unwrap()
+    };
+    let res = app.clone().oneshot(req).await.unwrap();
+    let status = res.status();
+    let set_cookie = res
+        .headers()
+        .get(header::SET_COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    let bytes = axum::body::to_bytes(res.into_body(), 1 << 20)
+        .await
+        .unwrap();
+    let json = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    (status, json, set_cookie)
+}
+
+/// A second app over the same database with rate limiting on (and its own mail outbox).
+/// `seats` JSON for a create request: one seat per entry of `layout` (power ids). The first
+/// non-bot seat is the host, other non-bot seats are open; `personas` = (seat index, persona id).
+fn seats_json(layout: &[&[&str]], bots: &[usize], personas: &[(usize, &str)]) -> Value {
+    let host = (0..layout.len()).find(|i| !bots.contains(i));
+    Value::Array(
+        layout
+            .iter()
+            .enumerate()
+            .map(|(i, powers)| {
+                let kind = if bots.contains(&i) {
+                    "bot"
+                } else if Some(i) == host {
+                    "host"
+                } else {
+                    "open"
+                };
+                let persona = personas.iter().find(|(s, _)| *s == i).map(|(_, p)| *p);
+                json!({"powers": powers, "kind": kind, "persona": persona})
+            })
+            .collect(),
+    )
+}
+
+const FIVE: [&[&str]; 5] = [&["ussr"], &["germany"], &["uk"], &["japan"], &["usa"]];
+const TWO: [&[&str]; 2] = [&["germany", "japan"], &["ussr", "uk", "usa"]];
+
+fn five_seats(bots: &[usize]) -> Value {
+    seats_json(&FIVE, bots, &[])
+}
+
+fn two_seats(bots: &[usize]) -> Value {
+    seats_json(&TWO, bots, &[])
+}
+
+fn limited(c: &Ctx, tweak: impl FnOnce(&mut Config)) -> Ctx {
+    let (mailer, outbox) = Mailer::capture();
+    let mut cfg = Config::for_test(String::new());
+    cfg.rate_limit = true;
+    tweak(&mut cfg);
+    let state = build_state(c.state.db.clone(), cfg, mailer);
+    Ctx {
+        app: build_router(state.clone()),
+        state,
+        outbox,
+    }
+}
+
 fn token_from_mail(outbox: &Arc<Mutex<Vec<Email>>>, to: &str, marker: &str) -> String {
     let o = outbox.lock().unwrap();
     let mail = o
@@ -193,7 +278,7 @@ async fn auth_flow_and_unverified_gate() {
         Method::POST,
         "/api/games",
         Some(&u.cookie),
-        Some(json!({"mode": "two_player", "bot_seats": [1]})),
+        Some(json!({"seats": two_seats(&[1])})),
     )
     .await;
     assert_eq!(st, StatusCode::FORBIDDEN);
@@ -361,7 +446,7 @@ async fn group_game_chat_and_ratings() {
         Method::POST,
         "/api/games",
         Some(&a.cookie),
-        Some(json!({"mode": "two_player", "bot_seats": [], "group_id": gid})),
+        Some(json!({"seats": two_seats(&[]), "group_id": gid})),
     )
     .await;
     assert_eq!(st, StatusCode::OK, "{game}");
@@ -576,7 +661,7 @@ async fn group_game_chat_and_ratings() {
         Method::POST,
         "/api/games",
         Some(&a.cookie),
-        Some(json!({"mode": "five_player", "bot_seats": [1,2,3,4]})),
+        Some(json!({"seats": five_seats(&[1, 2, 3, 4])})),
     )
     .await;
     assert_eq!(pg["status"], "in_progress");
@@ -602,8 +687,14 @@ async fn group_game_chat_and_ratings() {
 async fn lobby_start_with_bots_and_timeouts() {
     let Some(c) = setup().await else { return };
     let a = register(&c, true).await;
-    let (st, game, _) = call(&c.app, Method::POST, "/api/games", Some(&a.cookie),
-        Some(json!({"mode": "five_player", "bot_seats": [3], "settings": {"turn_timeout_secs": 3600}}))).await;
+    let (st, game, _) = call(
+        &c.app,
+        Method::POST,
+        "/api/games",
+        Some(&a.cookie),
+        Some(json!({"seats": five_seats(&[3]), "settings": {"turn_timeout_secs": 3600}})),
+    )
+    .await;
     assert_eq!(st, StatusCode::OK, "{game}");
     assert_eq!(game["status"], "lobby");
     let id = game["id"].as_str().unwrap().to_string();
@@ -860,7 +951,7 @@ async fn matchmaking_creates_public_game() {
 }
 
 async fn create_solo_game(c: &Ctx, u: &TestUser, extra: Value) -> Value {
-    let mut body = json!({"mode": "five_player", "bot_seats": [1, 2, 3, 4]});
+    let mut body = json!({"seats": five_seats(&[1, 2, 3, 4])});
     for (k, v) in extra.as_object().unwrap() {
         body[k] = v.clone();
     }
@@ -893,7 +984,10 @@ async fn names_personas_and_turn_emails() {
     let g = create_solo_game(
         &c,
         &a,
-        json!({"name": "  Eastern   Front ", "bot_personas": [null, "thistle", null, "frost"]}),
+        json!({
+            "name": "  Eastern   Front ",
+            "seats": seats_json(&FIVE, &[1, 2, 3, 4], &[(1, "thistle"), (3, "frost")]),
+        }),
     )
     .await;
     assert_eq!(g["name"], "Eastern Front");
@@ -908,11 +1002,17 @@ async fn names_personas_and_turn_emails() {
     assert!(g2["name"].as_str().unwrap().starts_with("Private game #"));
 
     for (extra, what) in [
-        (json!({"bot_personas": [null, "nobody"]}), "unknown persona"),
-        (json!({"bot_personas": ["frost"]}), "persona on human seat"),
+        (
+            json!({"seats": seats_json(&FIVE, &[1, 2, 3, 4], &[(1, "nobody")])}),
+            "unknown persona",
+        ),
+        (
+            json!({"seats": seats_json(&FIVE, &[1, 2, 3, 4], &[(0, "frost")])}),
+            "persona on human seat",
+        ),
         (json!({"name": "x".repeat(61)}), "long name"),
     ] {
-        let mut body = json!({"mode": "five_player", "bot_seats": [1, 2, 3, 4]});
+        let mut body = json!({"seats": five_seats(&[1, 2, 3, 4])});
         for (k, v) in extra.as_object().unwrap() {
             body[k] = v.clone();
         }
@@ -1047,7 +1147,35 @@ async fn password_change_and_account_deletion() {
     // deletion keeps games intact
     let game = create_solo_game(&c, &a, json!({})).await;
     let gid: Uuid = game["id"].as_str().unwrap().parse().unwrap();
-    let (st, _, cleared) = call(&c.app, Method::DELETE, "/api/me", Some(&a.cookie), None).await;
+    let (st, err, _) = call(
+        &c.app,
+        Method::DELETE,
+        "/api/me",
+        Some(&a.cookie),
+        Some(json!({"password": "not-my-password"})),
+    )
+    .await;
+    assert_eq!(
+        (st, err["code"].as_str()),
+        (StatusCode::FORBIDDEN, Some("invalid_credentials"))
+    );
+    let (st, _, _) = call(&c.app, Method::DELETE, "/api/me", Some(&a.cookie), None).await;
+    assert!(st.is_client_error(), "a body is required: {st}");
+    assert_eq!(
+        call(&c.app, Method::GET, "/api/me", Some(&a.cookie), None)
+            .await
+            .0,
+        StatusCode::OK,
+        "failed deletions must not log out"
+    );
+    let (st, _, cleared) = call(
+        &c.app,
+        Method::DELETE,
+        "/api/me",
+        Some(&a.cookie),
+        Some(json!({"password": "brand-new-pass"})),
+    )
+    .await;
     assert_eq!(st, StatusCode::NO_CONTENT);
     assert!(cleared.unwrap().contains("Max-Age=0"));
     assert_eq!(
@@ -1226,11 +1354,23 @@ async fn spectating_and_public_listing() {
     )
     .await;
     assert_eq!(st, StatusCode::OK);
-    assert_eq!(get(format!("/api/games/{pid}")).await.0, StatusCode::OK);
-    assert_eq!(
-        get(format!("/api/games/{pid}/chat?channel=all")).await.0,
-        StatusCode::OK
-    );
+    // ... and a finished private game stays private to its players
+    for suffix in ["", "/state", "/actions", "/chat?channel=all"] {
+        assert_eq!(
+            get(format!("/api/games/{pid}{suffix}")).await.0,
+            StatusCode::FORBIDDEN,
+            "{suffix}"
+        );
+    }
+    let (st, _, _) = call(
+        &c.app,
+        Method::GET,
+        &format!("/api/games/{pid}"),
+        Some(&a.cookie),
+        None,
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
 
     // profile redacts group/private details, shows public games
     let (_, prof, _) = call(
@@ -1250,7 +1390,7 @@ async fn spectating_and_public_listing() {
         .as_array()
         .unwrap()
         .iter()
-        .all(|g| g["kind"] == "public" || g["group_id"].is_null()));
+        .all(|g| g["kind"] == "public" && g["id"] != pid.as_str()));
 }
 
 #[tokio::test]
@@ -1298,7 +1438,7 @@ async fn rate_limits_return_api_errors() {
             Method::POST,
             "/api/games",
             Some(&a.cookie),
-            Some(json!({"mode": "five_player", "bot_seats": [1, 2, 3, 4]})),
+            Some(json!({"seats": five_seats(&[1, 2, 3, 4])})),
         )
         .await;
         codes.push((st, body["code"].as_str().map(str::to_string)));
@@ -1437,8 +1577,29 @@ async fn hardening_headers_and_body_limit() {
     let csp = res.headers()[header::CONTENT_SECURITY_POLICY]
         .to_str()
         .unwrap();
-    assert!(csp.contains("fonts.googleapis.com") && csp.contains("connect-src 'self' ws: wss:"));
+    assert!(csp.contains("fonts.googleapis.com") && csp.contains("connect-src 'self';"));
+    assert!(!csp.contains("ws:"));
+    assert_eq!(res.headers()["cross-origin-opener-policy"], "same-origin");
+    assert!(
+        !res.headers().contains_key("strict-transport-security"),
+        "no HSTS when cookies are not Secure (plain-http dev)"
+    );
     assert!(!res.headers().contains_key(header::CACHE_CONTROL));
+    // production (COOKIE_SECURE on): HSTS on every response
+    let prod = limited(&c, |cfg| cfg.cookie_secure = true);
+    for uri in ["/api/me", "/some/spa/route", "/healthz"] {
+        let res = prod
+            .app
+            .clone()
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(
+            res.headers()["strict-transport-security"],
+            "max-age=63072000; includeSubDomains",
+            "{uri}"
+        );
+    }
     // > 1 MB bodies are rejected
     let big = "x".repeat(1_100_000);
     let req = Request::builder()
@@ -1468,6 +1629,7 @@ async fn full_stack_game_against_bots() {
     let mut posted = 0;
     let mut rejected = 0;
     let mut final_round = 0;
+    let mut over = false;
     for step in 0..20_000 {
         let (st, sv, _) = call(
             &c.app,
@@ -1480,7 +1642,8 @@ async fn full_stack_game_against_bots() {
         assert_eq!(st, StatusCode::OK, "{sv}");
         let gs: GameState = serde_json::from_value(sv["state"].clone()).expect("engine state");
         final_round = gs.round;
-        if gs.round >= 3 || gs.is_over() {
+        over = gs.is_over();
+        if gs.round >= 3 || over {
             break;
         }
         assert!(
@@ -1525,8 +1688,12 @@ async fn full_stack_game_against_bots() {
         "full game: reached round {final_round} in {:?} ({posted} human actions, {rejected} rejected)",
         started.elapsed()
     );
-    assert!(final_round >= 3, "game stalled at round {final_round}");
-    assert!(posted > 10);
+    // (the dice seed is random per game, so a lucky bot can end it early)
+    assert!(
+        final_round >= 3 || over,
+        "game stalled at round {final_round}"
+    );
+    assert!(posted > 10 || over);
 
     // team chat: bot commentary lands in the Allies channel (empty while the AI is silent)
     let (_, chat, _) = call(
@@ -1589,7 +1756,7 @@ async fn full_stack_game_against_bots() {
             | wartide_engine::Decision::SubWithdrawal { power, .. } => power,
             other => panic!("log continues after {other:?}"),
         };
-        let seed = wartide_server::services::rules::action_seed(seed, seq);
+        let seed = wartide_protocol::seed::action_seed(seed as u64, seq);
         wartide_engine::apply(&mut stepper, power, &action, seed).unwrap();
         entries.push((power, action, seed));
     }
@@ -1891,4 +2058,659 @@ async fn seat_layout_validation_and_open_seats() {
     }
     let (_, me, _) = call(&c.app, Method::GET, "/api/me", Some(&a.cookie), None).await;
     assert_eq!(me["timezone"], "Etc/GMT+5");
+}
+
+// ---------------------------------------------------------------------------------------------
+// Security hardening
+// ---------------------------------------------------------------------------------------------
+
+#[tokio::test]
+async fn rate_limit_key_ignores_spoofed_forwarded_for() {
+    let Some(c) = setup().await else { return };
+    // one trusted proxy: only the LAST X-Forwarded-For entry counts
+    let l = limited(&c, |_| {});
+    let mut codes = Vec::new();
+    for i in 0..40 {
+        let xff = format!("1.2.{i}.4, 9.9.9.9");
+        let (st, _, _) = call_h(
+            &l.app,
+            Method::POST,
+            "/api/auth/verify-email",
+            None,
+            Some(json!({"token": format!("nope{i}")})),
+            &[
+                ("x-forwarded-for", &xff),
+                ("x-real-ip", &format!("5.5.5.{i}")),
+            ],
+        )
+        .await;
+        codes.push(st);
+    }
+    assert!(
+        codes.contains(&StatusCode::TOO_MANY_REQUESTS),
+        "rotating the leftmost entry must not dodge the limiter: {codes:?}"
+    );
+    // a different real client (last entry) has its own bucket
+    let (st, _, _) = call_h(
+        &l.app,
+        Method::POST,
+        "/api/auth/verify-email",
+        None,
+        Some(json!({"token": "nope"})),
+        &[("x-forwarded-for", "1.2.3.4, 8.8.8.8")],
+    )
+    .await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+
+    // no trusted proxy: the header is ignored, and without a peer address there is no key
+    let l0 = limited(&c, |cfg| cfg.trusted_proxy_hops = 0);
+    let (st, body, _) = call_h(
+        &l0.app,
+        Method::POST,
+        "/api/auth/verify-email",
+        None,
+        Some(json!({"token": "nope"})),
+        &[("x-forwarded-for", "1.2.3.4")],
+    )
+    .await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+    assert_eq!(body["code"], "bad_request");
+}
+
+#[tokio::test]
+async fn per_account_limits_and_uniform_responses() {
+    let Some(c) = setup().await else { return };
+    let u = register(&c, false).await;
+    let email = format!("{}@example.com", u.username);
+    let l = limited(&c, |_| {});
+    let n = std::sync::atomic::AtomicU32::new(0);
+    let post = |uri: &'static str, body: Value, cookie: Option<String>| {
+        let app = l.app.clone();
+        let ip = format!(
+            "10.1.0.{}",
+            n.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        );
+        async move {
+            call_h(
+                &app,
+                Method::POST,
+                uri,
+                cookie.as_deref(),
+                Some(body),
+                &[("x-forwarded-for", &ip)],
+            )
+            .await
+        }
+    };
+
+    // register: 3 per address per hour (the 4th is limited before touching the database)
+    let mut codes = Vec::new();
+    for i in 0..4 {
+        let (st, _, _) = post(
+            "/api/auth/register",
+            json!({"email": email.to_uppercase(), "username": format!("dup{i}{}", &u.username[1..8]), "password": "hunter2hunter2"}),
+            None,
+        )
+        .await;
+        codes.push(st);
+    }
+    assert_eq!(
+        codes,
+        [
+            StatusCode::CONFLICT,
+            StatusCode::CONFLICT,
+            StatusCode::CONFLICT,
+            StatusCode::TOO_MANY_REQUESTS
+        ]
+    );
+
+    // forgot-password: always 204, but only 3 mails per address per hour
+    for _ in 0..5 {
+        let (st, _, _) = post("/api/auth/forgot-password", json!({"email": email}), None).await;
+        assert_eq!(st, StatusCode::NO_CONTENT);
+    }
+    let resets = |l: &Ctx| {
+        l.outbox
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|m| m.to == email && m.body.contains("/reset-password?token="))
+            .count()
+    };
+    assert_eq!(resets(&l), 3);
+    // unknown addresses get the same answer
+    let (st, _, _) = post(
+        "/api/auth/forgot-password",
+        json!({"email": "nobody-here@example.com"}),
+        None,
+    )
+    .await;
+    assert_eq!(st, StatusCode::NO_CONTENT);
+
+    // resend-verification: uniform 204, 3 mails per address per hour
+    for _ in 0..5 {
+        let (st, _, _) = post(
+            "/api/auth/resend-verification",
+            json!({}),
+            Some(u.cookie.clone()),
+        )
+        .await;
+        assert_eq!(st, StatusCode::NO_CONTENT);
+    }
+    let verifies = l
+        .outbox
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|m| m.to == email && m.body.contains("/verify?token="))
+        .count();
+    assert_eq!(verifies, 3);
+
+    // login failures: 10 per identifier per 15 minutes, then even the right password is refused
+    for i in 0..10 {
+        let (st, body, _) = post(
+            "/api/auth/login",
+            json!({"login": u.username.to_uppercase(), "password": format!("wrong-{i}")}),
+            None,
+        )
+        .await;
+        assert_eq!(st, StatusCode::BAD_REQUEST, "{body}");
+        assert_eq!(body["code"], "invalid_credentials");
+    }
+    let (st, body, _) = post(
+        "/api/auth/login",
+        json!({"login": u.username, "password": "hunter2hunter2"}),
+        None,
+    )
+    .await;
+    assert_eq!(st, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(body["code"], "rate_limited");
+    // other accounts are unaffected, and unknown identifiers fail identically (and are limited too)
+    let (st, body, _) = post(
+        "/api/auth/login",
+        json!({"login": "no-such-person", "password": "whatever1"}),
+        None,
+    )
+    .await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+    assert_eq!(body["code"], "invalid_credentials");
+}
+
+#[tokio::test]
+async fn state_endpoint_hides_dice_seed() {
+    let Some(c) = setup().await else { return };
+    let u = register(&c, true).await;
+    let game = create_solo_game(&c, &u, json!({})).await;
+    let gid: Uuid = game["id"].as_str().unwrap().parse().unwrap();
+    let (st, sv, _) = call(
+        &c.app,
+        Method::GET,
+        &format!("/api/games/{gid}/state"),
+        Some(&u.cookie),
+        None,
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(sv["state"]["settings"]["seed"], 0);
+    let (seed,): (i64,) = sqlx::query_as("SELECT seed FROM games WHERE id=$1")
+        .bind(gid)
+        .fetch_one(&c.state.db)
+        .await
+        .unwrap();
+    assert_ne!(seed, 0);
+    // the stored state (used for replay) still carries the real seed
+    let (stored,): (String,) =
+        sqlx::query_as("SELECT state->'settings'->>'seed' FROM game_states WHERE game_id=$1")
+            .bind(gid)
+            .fetch_one(&c.state.db)
+            .await
+            .unwrap();
+    assert_eq!(stored, (seed as u64).to_string());
+}
+
+#[tokio::test]
+async fn finished_group_game_read_access() {
+    let Some(c) = setup().await else { return };
+    let a = register(&c, true).await;
+    let b = register(&c, true).await;
+    let member = register(&c, true).await;
+    let outsider = register(&c, true).await;
+    let (st, g, _) = call(
+        &c.app,
+        Method::POST,
+        "/api/groups",
+        Some(&a.cookie),
+        Some(json!({"name": "Readers Club", "description": "x"})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED, "{g}");
+    let group = g["id"].as_str().unwrap().to_string();
+    let code = g["invite_code"].as_str().unwrap().to_string();
+    for u in [&b, &member] {
+        let (st, _, _) = call(
+            &c.app,
+            Method::POST,
+            "/api/groups/join",
+            Some(&u.cookie),
+            Some(json!({"invite_code": code})),
+        )
+        .await;
+        assert_eq!(st, StatusCode::OK);
+    }
+    let (_, game, _) = call(
+        &c.app,
+        Method::POST,
+        "/api/games",
+        Some(&a.cookie),
+        Some(json!({"seats": two_seats(&[]), "group_id": group})),
+    )
+    .await;
+    let gid = game["id"].as_str().unwrap().to_string();
+    let (st, _, _) = call(
+        &c.app,
+        Method::POST,
+        "/api/games/join",
+        Some(&b.cookie),
+        Some(json!({"code": game["invite_code"]})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+    let (st, _, _) = call(
+        &c.app,
+        Method::POST,
+        &format!("/api/games/{gid}/resign"),
+        Some(&a.cookie),
+        None,
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+    // a 2-human game does not end on one resignation; finish it directly
+    sqlx::query("UPDATE games SET status='finished' WHERE id=$1")
+        .bind(gid.parse::<Uuid>().unwrap())
+        .execute(&c.state.db)
+        .await
+        .unwrap();
+
+    for suffix in ["", "/state", "/actions", "/chat?channel=all"] {
+        let uri = format!("/api/games/{gid}{suffix}");
+        for reader in [&a, &b, &member] {
+            let (st, _, _) = call(&c.app, Method::GET, &uri, Some(&reader.cookie), None).await;
+            assert_eq!(st, StatusCode::OK, "{uri}");
+        }
+        let (st, _, _) = call(&c.app, Method::GET, &uri, Some(&outsider.cookie), None).await;
+        assert_eq!(st, StatusCode::FORBIDDEN, "{uri}");
+    }
+    // the game id is not advertised on the players' public profiles
+    for p in [&a, &b] {
+        let (_, prof, _) = call(
+            &c.app,
+            Method::GET,
+            &format!("/api/users/{}", p.username),
+            Some(&outsider.cookie),
+            None,
+        )
+        .await;
+        assert!(prof["recent_games"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|x| x["id"] != gid.as_str()));
+    }
+}
+
+#[tokio::test]
+async fn verification_revokes_sessions() {
+    let Some(c) = setup().await else { return };
+    // the (attacker) registrant holds a live session before the mailbox owner verifies
+    let u = register(&c, false).await;
+    let email = format!("{}@example.com", u.username);
+    assert_eq!(
+        call(&c.app, Method::GET, "/api/me", Some(&u.cookie), None)
+            .await
+            .0,
+        StatusCode::OK
+    );
+    let t = token_from_mail(&c.outbox, &email, "/verify?token=");
+    let (st, _, _) = call(
+        &c.app,
+        Method::POST,
+        "/api/auth/verify-email",
+        None,
+        Some(json!({"token": t})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::NO_CONTENT);
+    assert_eq!(
+        call(&c.app, Method::GET, "/api/me", Some(&u.cookie), None)
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    // logging in again works and shows a verified account
+    let (st, me, _) = call(
+        &c.app,
+        Method::POST,
+        "/api/auth/login",
+        None,
+        Some(json!({"login": email, "password": "hunter2hunter2"})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(me["email_verified"], true);
+}
+
+#[tokio::test]
+async fn websocket_requires_matching_origin() {
+    let Some(c) = setup().await else { return };
+    let u = register(&c, true).await;
+    let ws = |origin: Option<&str>, cookie: Option<&str>| {
+        let app = c.app.clone();
+        let mut b = Request::builder()
+            .uri("/ws")
+            .header(header::CONNECTION, "upgrade")
+            .header(header::UPGRADE, "websocket")
+            .header("sec-websocket-version", "13")
+            .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==");
+        if let Some(o) = origin {
+            b = b.header(header::ORIGIN, o);
+        }
+        if let Some(k) = cookie {
+            b = b.header(header::COOKIE, format!("wt_session={k}"));
+        }
+        let req = b.body(Body::empty()).unwrap();
+        async move { app.oneshot(req).await.unwrap().status() }
+    };
+    for bad in [
+        Some("http://evil.example"),
+        Some("http://localhost:8081"),
+        Some("https://localhost:8080"),
+        Some("null"),
+        None,
+    ] {
+        assert_eq!(
+            ws(bad, Some(&u.cookie)).await,
+            StatusCode::FORBIDDEN,
+            "{bad:?}"
+        );
+    }
+    // matching origin: still needs a session ...
+    assert_eq!(
+        ws(Some("http://localhost:8080"), None).await,
+        StatusCode::UNAUTHORIZED
+    );
+    // ... and with one the origin gate no longer blocks (the oneshot harness cannot complete the
+    // protocol upgrade itself, so anything but 403/401 means we got past our checks)
+    let st = ws(Some("HTTP://LOCALHOST:8080"), Some(&u.cookie)).await;
+    assert!(
+        st != StatusCode::FORBIDDEN && st != StatusCode::UNAUTHORIZED,
+        "{st}"
+    );
+}
+
+#[tokio::test]
+async fn display_name_and_description_hygiene() {
+    let Some(c) = setup().await else { return };
+    let u = register(&c, true).await;
+    let patch = |cookie: String, name: String| {
+        let app = c.app.clone();
+        async move {
+            call(
+                &app,
+                Method::PATCH,
+                "/api/me/profile",
+                Some(&cookie),
+                Some(json!({"display_name": name})),
+            )
+            .await
+            .0
+        }
+    };
+    for bad in [
+        "Ad\u{202E}min",
+        "zero\u{200B}width",
+        "a\u{2066}b",
+        "bell\u{7}",
+        "tab\there",
+        "joiner\u{200D}x",
+        "word\u{2060}joiner",
+        "bom\u{FEFF}",
+        "Admin",
+        " WARTIDE ",
+        "Support",
+        "system",
+        "Moderator",
+        "administrator",
+    ] {
+        assert_eq!(
+            patch(u.cookie.clone(), bad.to_string()).await,
+            StatusCode::BAD_REQUEST,
+            "{bad:?}"
+        );
+    }
+    assert_eq!(
+        patch(u.cookie.clone(), "Général Ünïcode 将军".into()).await,
+        StatusCode::OK
+    );
+    // admins may use the reserved names
+    sqlx::query("UPDATE users SET is_admin=TRUE WHERE id=$1")
+        .bind(u.id)
+        .execute(&c.state.db)
+        .await
+        .unwrap();
+    assert_eq!(
+        patch(u.cookie.clone(), "Admin".into()).await,
+        StatusCode::OK
+    );
+    // nobody can register a reserved username
+    let (st, body, _) = call(
+        &c.app,
+        Method::POST,
+        "/api/auth/register",
+        None,
+        Some(json!({"email": format!("{}@example.org", u.username), "username": "Admin", "password": "hunter2hunter2"})),
+    )
+    .await;
+    assert_eq!(
+        (st, body["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("invalid_username"))
+    );
+
+    // group description: 500 characters max
+    let mk = |desc: String, name: &'static str| {
+        let app = c.app.clone();
+        let ck = u.cookie.clone();
+        async move {
+            call(
+                &app,
+                Method::POST,
+                "/api/groups",
+                Some(&ck),
+                Some(json!({"name": name, "description": desc})),
+            )
+            .await
+            .0
+        }
+    };
+    assert_eq!(
+        mk("é".repeat(501), "Long Desc One").await,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        mk("é".repeat(500), "Long Desc Two").await,
+        StatusCode::CREATED
+    );
+}
+
+#[tokio::test]
+async fn reset_tokens_are_single_outstanding_and_expired_rows_purged() {
+    let Some(c) = setup().await else { return };
+    let u = register(&c, true).await;
+    let email = format!("{}@example.com", u.username);
+    let forgot = || async {
+        let (st, _, _) = call(
+            &c.app,
+            Method::POST,
+            "/api/auth/forgot-password",
+            None,
+            Some(json!({"email": email})),
+        )
+        .await;
+        assert_eq!(st, StatusCode::NO_CONTENT);
+        token_from_mail(&c.outbox, &email, "/reset-password?token=")
+    };
+    let count = || async {
+        let (n,): (i64,) = sqlx::query_as(
+            "SELECT count(*) FROM email_tokens WHERE user_id=$1 AND purpose='reset'",
+        )
+        .bind(u.id)
+        .fetch_one(&c.state.db)
+        .await
+        .unwrap();
+        n
+    };
+    let t1 = forgot().await;
+    let t2 = forgot().await;
+    assert_ne!(t1, t2);
+    assert_eq!(
+        count().await,
+        1,
+        "issuing a new token drops the earlier one"
+    );
+    let app = c.app.clone();
+    let reset = |t: String| {
+        let app = app.clone();
+        async move {
+            call(
+                &app,
+                Method::POST,
+                "/api/auth/reset-password",
+                None,
+                Some(json!({"token": t, "new_password": "another-pass-1"})),
+            )
+            .await
+            .0
+        }
+    };
+    assert_eq!(reset(t1).await, StatusCode::BAD_REQUEST);
+    assert_eq!(reset(t2).await, StatusCode::NO_CONTENT);
+    assert_eq!(
+        count().await,
+        0,
+        "a successful reset clears all reset tokens"
+    );
+
+    // a password change also clears any outstanding reset link
+    let _t3 = forgot().await;
+    assert_eq!(count().await, 1);
+    let (st, _, ck) = call(
+        &c.app,
+        Method::POST,
+        "/api/auth/login",
+        None,
+        Some(json!({"login": email, "password": "another-pass-1"})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+    let cookie = ck
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .trim_start_matches("wt_session=")
+        .to_string();
+    let (st, _, _) = call(
+        &c.app,
+        Method::POST,
+        "/api/me/password",
+        Some(&cookie),
+        Some(json!({"current_password": "another-pass-1", "new_password": "yet-another-1"})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::NO_CONTENT);
+    assert_eq!(count().await, 0);
+
+    // expired sessions / tokens are purged
+    sqlx::query("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ('stale-session', $1, now() - interval '1 day')")
+        .bind(u.id)
+        .execute(&c.state.db)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO email_tokens (token_hash, user_id, purpose, expires_at) VALUES ('stale-token', $1, 'verify', now() - interval '1 day')")
+        .bind(u.id)
+        .execute(&c.state.db)
+        .await
+        .unwrap();
+    let n = wartide_server::services::timeouts::purge_expired(&c.state)
+        .await
+        .unwrap();
+    assert!(n >= 2);
+    let (left,): (i64,) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM sessions WHERE token_hash='stale-session') + (SELECT count(*) FROM email_tokens WHERE token_hash='stale-token')",
+    )
+    .fetch_one(&c.state.db)
+    .await
+    .unwrap();
+    assert_eq!(left, 0);
+    // live rows survive
+    assert_eq!(
+        call(&c.app, Method::GET, "/api/me", Some(&cookie), None)
+            .await
+            .0,
+        StatusCode::OK
+    );
+}
+
+#[tokio::test]
+async fn human_can_undo_movement_in_combat_move() {
+    use wartide_engine::{query::reachable, GameState, Phase, UnitType};
+    let Some(c) = setup().await else { return };
+    let u = register(&c, true).await;
+    let game = create_solo_game(&c, &u, json!({})).await;
+    let gid = game["id"].as_str().unwrap().to_string();
+    let state_path = format!("/api/games/{gid}/state");
+    let act_path = format!("/api/games/{gid}/actions");
+    let state_of = || async {
+        let (st, sv, _) = call(&c.app, Method::GET, &state_path, Some(&u.cookie), None).await;
+        assert_eq!(st, StatusCode::OK, "{sv}");
+        serde_json::from_value::<GameState>(sv["state"].clone()).expect("engine state")
+    };
+    let post = |action: Value| {
+        let body = json!({ "action": action });
+        let act_path = act_path.clone();
+        let (app, cookie) = (c.app.clone(), u.cookie.clone());
+        async move { call(&app, Method::POST, &act_path, Some(&cookie), Some(body)).await }
+    };
+    // research -> purchase -> combat move
+    while state_of().await.phase != Phase::CombatMove {
+        let (st, env, _) = post(json!({"type": "end_phase"})).await;
+        assert_eq!(st, StatusCode::OK, "{env}");
+    }
+    let before = state_of().await;
+    let (unit, to) = before
+        .units
+        .iter()
+        .filter(|x| x.owner == before.current_power && x.kind == UnitType::Infantry)
+        .find_map(|x| {
+            reachable(&before, x.id)
+                .into_iter()
+                .find(|r| !r.battle)
+                .map(|r| (x.clone(), r.to))
+        })
+        .expect("a movable infantry");
+    let (st, env, _) = post(json!({"type": "move", "units": [unit.id], "path": [to]})).await;
+    assert_eq!(st, StatusCode::OK, "{env}");
+    let moved = state_of().await;
+    assert_eq!(moved.unit(unit.id).unwrap().location, to);
+
+    let (st, env, _) = post(json!({"type": "undo_moves", "scope": {"type": "all"}})).await;
+    assert_eq!(st, StatusCode::OK, "{env}");
+    let after = state_of().await;
+    assert_eq!(after.unit(unit.id).unwrap().location, unit.location);
+    assert_eq!(after.unit(unit.id).unwrap().moves_used, 0);
+    assert_eq!(after.units, before.units);
+
+    // a second undo has nothing to take back and is rejected as an illegal action
+    let (st, env, _) = post(json!({"type": "undo_moves", "scope": {"type": "all"}})).await;
+    assert_eq!(st, StatusCode::BAD_REQUEST, "{env}");
+    assert_eq!(env["code"], "illegal_action");
 }
