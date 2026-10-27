@@ -34,7 +34,7 @@ chrono = { workspace = true }
 thiserror = { workspace = true }
 anyhow = "1"
 dotenvy = "0.15"
-skillratings = "0.28"
+skillratings = "0.29"
 async-trait = "0.1"
 sha2 = "0.10"
 base64 = "0.22"
