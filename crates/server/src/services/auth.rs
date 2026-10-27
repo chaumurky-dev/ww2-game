@@ -1,6 +1,5 @@
-use argon2::password_hash::{
-    rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString,
-};
+use argon2::password_hash::phc::PasswordHash;
+use argon2::password_hash::{PasswordHasher, PasswordVerifier};
 use argon2::Argon2;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration as StdDuration;
@@ -68,15 +67,15 @@ fn dummy_hash() -> &'static str {
 }
 
 pub fn hash_password(password: &str) -> AppResult<String> {
-    let salt = SaltString::generate(&mut OsRng);
+    // argon2 0.6 generates the salt itself (getrandom); output stays standard PHC `$argon2id$...`.
     Argon2::default()
-        .hash_password(password.as_bytes(), &salt)
+        .hash_password(password.as_bytes())
         .map(|h| h.to_string())
         .map_err(|e| AppError::Internal(anyhow::anyhow!("hash error: {e}")))
 }
 
 pub fn verify_password(password: &str, hash: &str) -> bool {
-    PasswordHash::new(hash)
+    hash.parse::<PasswordHash>()
         .map(|p| {
             Argon2::default()
                 .verify_password(password.as_bytes(), &p)
@@ -440,6 +439,15 @@ mod tests {
         assert!(verify_password("correct horse", &h));
         assert!(!verify_password("wrong", &h));
         assert!(!verify_password("x", "garbage"));
+    }
+
+    /// Hash produced by argon2 0.5.3 with the same parameters (m=19456,t=2,p=1): existing stored
+    /// hashes must keep verifying after the 0.6 upgrade.
+    #[test]
+    fn hash_from_argon2_0_5_still_verifies() {
+        let legacy = "$argon2id$v=19$m=19456,t=2,p=1$yKHPgcOGg5l0pfpv/rGd4w$nD70fsMt9LSzEAcOIQ95w7yyliVH5rNNNQMBOYy9/b0";
+        assert!(verify_password("correct horse", legacy));
+        assert!(!verify_password("wrong horse", legacy));
     }
 
     #[test]
