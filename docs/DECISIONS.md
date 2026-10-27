@@ -77,3 +77,14 @@
   id, now by defence value then id (so an AA gun dies before armor, a transport before a submarine).
   Replays of games recorded before this date that hit such a tie may diverge; the server stores the
   full state after every action, so only client-side history stepping is affected.
+- 2026-10-27 (map audit): Audited `crates/engine/data/map.json` against the community "World War II Classic" setup file
+  (triplea-maps/world_war_ii_classic, `map/games/classic.xml`, the file the TripleA forum lists as the map matching
+  the 1986 classic board) with the reusable `scripts/audit_map.py`: 70 land territories, 58 sea zones, every
+  IPC value, original owner, capital, complex, neutral flag, land/sea/sea adjacency, the Suez and Panama canals
+  and all starting units match. The only difference is the deliberate Gulf of Mexico - Mexico sea-zone edge
+  (RULES 14). Name variants are intentional (rulebook names, RULES 18; spelling fixes such as
+  Mediterranean/Caribbean). Ukraine S.S.R. borders Eastern Europe, Karelia S.S.R., Caucasus and the Black
+  Sea only; it does **not** border Russia or Southern Europe on the classic board (the file's polygons agree:
+  Ukraine spans x 1264-1414 and Russia starts at x 1476 on its 3500-wide map, with Caucasus between), so no
+  adjacency or region change was made. Not independently verified against a scan of the printed board: the
+  forum threads and fan wikis that discuss it were unreachable (Cloudflare 403/504) from the audit environment.

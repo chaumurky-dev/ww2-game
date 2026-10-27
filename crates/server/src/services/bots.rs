@@ -182,7 +182,12 @@ pub fn spawn_driver(state: &AppState, game: Uuid, takeover: Option<Power>) {
             };
             let mut drivers = state.runtime.drivers.lock().unwrap();
             let slot = drivers.get_mut(&game).expect("driver slot");
-            slot.takeover = keep;
+            // A takeover requested while this pass ran (timeout sweep) wins over the pass's own
+            // verdict; otherwise the stale `keep` would silently drop it and leave the game stuck
+            // until the next sweep.
+            if slot.takeover == takeover {
+                slot.takeover = keep;
+            }
             if slot.rerun {
                 slot.rerun = false;
                 continue;
