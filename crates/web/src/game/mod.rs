@@ -4,6 +4,7 @@ pub mod battle_board;
 pub mod conv;
 pub mod ctx;
 pub mod dice;
+pub mod drag;
 #[cfg(test)]
 mod fuzz_tests;
 pub mod live;
