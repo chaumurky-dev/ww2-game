@@ -18,7 +18,13 @@ def best_label(g):
             best = (r, pt, p)
     return best
 
+def load_label_overrides():
+    f = os.path.join(HERE, "label_overrides.json")
+    d = json.load(open(f)) if os.path.exists(f) else {}
+    return {k: v for k, v in d.items() if not k.startswith("_")}
+
 def main():
+    overrides = load_label_overrides()
     land_px, zones, water, m, found, exp, res = check.run(rebuild="--rebuild" in sys.argv)
     locs = {}
     labels = {}
@@ -31,6 +37,8 @@ def main():
             ax, ay = lx, ly + 12
             if not poly.contains(Point(ax, ay)) or poly.exterior.distance(Point(ax, ay)) < 4:
                 ax, ay = lx, ly
+            if k in overrides:
+                lx, ly = overrides[k]
             b = g.bounds
             locs[k] = {"kind": kind, "path": proj.path_d(g), "label": [lx, ly], "anchor": [round(ax, 1), round(ay, 1)],
                        "bbox": [round(v, 1) for v in b]}
