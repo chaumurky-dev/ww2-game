@@ -45,10 +45,11 @@ pub fn transition(
     let next_seat = seat_for_power(seats, next);
     let bot = next_seat.is_some_and(|s| s.is_bot);
     // A human's defender decision is resolved by the driver within moments: no clock and no
-    // "your turn" mail. Handing control back after one keeps the turn owner's running clock.
+    // "your turn" mail. Handing control back to the turn owner after any defender decision
+    // (human or bot) keeps the owner's running clock and must not mail them mid-turn.
     let human_defender_next = after.defender && !bot;
-    let human_defender_done = before.defender && !power_seat.is_bot;
-    if human_defender_next || human_defender_done {
+    let defender_done = before.defender && !after.defender;
+    if human_defender_next || defender_done {
         return Transition::Same;
     }
     let notice = if bot {
@@ -200,6 +201,20 @@ mod tests {
                 notice: Notice::None
             }
         );
+    }
+
+    #[test]
+    fn bot_defender_decision_resolved_keeps_running_clock() {
+        // The bot seat (UK) chose casualties; control returns to the human attacker (Germany):
+        // no new clock, no "your turn" mail in the middle of their own turn.
+        let s = seats();
+        let t = transition(
+            &pend(Power::Uk, true),
+            &pend(Power::Germany, false),
+            &s[2],
+            &s,
+        );
+        assert_eq!(t, Transition::Same);
     }
 
     #[test]
