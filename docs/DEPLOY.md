@@ -189,15 +189,14 @@ Note: the record above predates the script's `operator-role` and `profile` subco
   `success@simulator.amazonses.com`.
 - Posture: Fargate Spot (about 70% cheaper; reclaim means a brief outage and dropped WebSockets), 0.25 vCPU / 512 MB,
   no NAT, ALB access logs to S3 (30 days), log retention 7 days, ECR keeps 5 images, scan on push. RDS `db.t4g.micro`,
-  gp3 20 GB, single AZ, 7 days of backups, deletion protection on, final snapshot on destroy, `prevent_destroy`.
+  gp3 20 GB, single AZ, 7 days of backups, deletion protection on, final snapshot on destroy (no `prevent_destroy`; see section 7).
 - Harden RDS further: the safe settings are already the defaults (`db_deletion_protection = true`,
   `db_skip_final_snapshot = false`, `db_backup_retention_days = 7`). Optional extras in `terraform.tfvars`:
   `db_multi_az = true` (doubles RDS cost), `use_fargate_spot = false`.
 - Destroy (deliberately takes several steps): (1) in `terraform.tfvars` set `db_deletion_protection = false`
-  (and `db_skip_final_snapshot = true` only if you do not want a final snapshot) and `terraform apply`; (2) delete the
-  `lifecycle { prevent_destroy = true }` block of `aws_db_instance.main` in `main.tf`; (3) set
-  `enable_deletion_protection = false` on `aws_lb.main` and apply; (4) empty the ECR repo if Terraform refuses;
-  (5) `AWS_PROFILE=wartide terraform destroy`. The state bucket and IAM role are outside Terraform; remove them
+  (and `db_skip_final_snapshot = true` only if you do not want a final snapshot) and `terraform apply`; (2) set
+  `alb_deletion_protection = false` and apply; (3) empty the ECR repo if Terraform refuses;
+  (4) `AWS_PROFILE=wartide terraform destroy`. The state bucket and IAM role are outside Terraform; remove them
   manually if wanted. GuardDuty, the budget and the account contacts are destroyed with everything else.
 - Alerts: budget mail (50% / 100% actual, 100% forecast of `monthly_budget_usd`), cost anomalies of 10 USD or more
   (via the SNS topic), and CloudWatch alarms for log ingest over 200 MB/hour and over 50000 ALB requests per 5 minutes
@@ -270,3 +269,61 @@ CI again on the merge commit and, when green, the Deploy workflow.
 | Total | about $47-58 |
 
 Numbers are rough list prices and vary with usage.
+
+Measured: the October 2026 bill was about $6.50 for 1-28 Oct, mostly covered by the free tier (RDS, ALB hours),
+so expect the table above once the free tier is used up. To pay almost nothing while the game is idle, see
+section 7.
+
+## 7. Hibernate and wake
+
+`scripts/aws-hibernate.sh` shuts down everything that is billed by the hour and brings it back with one command,
+keeping all data. Use it for a week or more away; for a few days the saving is small.
+
+**Torn down:** ECS service (and autoscaling), ALB with listeners and target group, Route53 app record, the ALB
+request alarm, the `DATABASE_URL` secret version, and the RDS instance (a final snapshot is taken first).
+
+**Kept:** VPC, subnets, security groups, ECR repository and images, secrets (the secret objects, session/SMTP values),
+SES identity, ACM certificate, Route53 zone and its SES/ACM records, S3 buckets, SNS, budget, anomaly subscription,
+GuardDuty, log group, ECS cluster and task definition, IAM and OIDC. Names are unchanged, so the GitHub repository
+variables stay valid.
+
+### Why two applies
+
+RDS and the ALB have deletion protection on. Terraform's destroy uses the values recorded in state, so protection
+must be switched off, and the final snapshot name recorded, by a normal apply before the destroy. `down` therefore
+runs `terraform apply` twice: (1) `hibernate=false` with `db_deletion_protection=false`,
+`alb_deletion_protection=false` and `db_final_snapshot_tag=<UTC date-time>`; (2) `hibernate=true`, which destroys the
+resources above and creates snapshot `wartide-prod-final-<tag>`. The earlier `prevent_destroy = true` on the RDS
+instance was dropped because a lifecycle flag cannot be conditional and would make `hibernate=true` fail at plan time;
+AWS-side `deletion_protection` (default on) is the guard instead, see DECISIONS.md. Each apply asks for confirmation.
+
+### Commands
+
+```
+export AWS_PROFILE=wartide
+scripts/aws-hibernate.sh down              # snapshot, destroy, wait for the snapshot to be available
+scripts/aws-hibernate.sh status            # state file, RDS, ALB, ECS count, WARTIDE_HIBERNATED, snapshots
+scripts/aws-hibernate.sh up                # newest wartide-prod-final-* snapshot; or: up wartide-prod-final-<tag>
+```
+
+`down` refuses to run if any open PR has auto-merge enabled or a workflow run is in progress on `main`, then sets the
+repository variable `WARTIDE_HIBERNATED=true`. `up` restores the database from the snapshot (same identifier, so the
+endpoint and the `DATABASE_URL` value are unchanged; the password is reapplied from Terraform state), recreates the
+ALB and service, deletes the variable, dispatches the Deploy workflow, and polls `/healthz` for up to 10 minutes.
+The script keeps its choice in the gitignored `infra/terraform/hibernate.auto.tfvars`, so a plain `terraform apply`
+later keeps the same state; never edit it by hand.
+
+### Cost while hibernated
+
+Route53 zone $0.50, four secrets $1.60, the 20 GB manual snapshot about $1.90, ECR/S3/CloudWatch a few cents:
+about $4/month. GuardDuty is also still on (cents at idle).
+
+### Caveats
+
+- `ww2.chaumurky.net` does not resolve while down (the app record is removed); expect a few minutes of DNS lag after wake.
+- While `WARTIDE_HIBERNATED` is set the Deploy workflow skips, so Dependabot and merges to `main` do not deploy.
+  CI still runs. The wake dispatches a deploy so the newest image goes out.
+- The restore uses the snapshot's engine version (not `engine_version` in Terraform); a later minor upgrade is not undone.
+- Automated backups of the old instance are deleted with it; only the final (manual) snapshot remains. Do not delete it
+  until the wake has been verified.
+- Manual snapshots are not rotated; delete old `wartide-prod-final-*` snapshots yourself once a newer one is verified.

@@ -21,8 +21,9 @@ jobs:
     # Skips cleanly until the AWS repository variables/secret from docs/DEPLOY.md are configured.
     # workflow_run fires for fork PRs too (head_branch is the fork's branch name), so require a
     # successful *push* CI run from this repository on main. workflow_dispatch must be run from main.
+    # scripts/aws-hibernate.sh sets WARTIDE_HIBERNATED=true while the stack is torn down.
     if: >-
-      vars.AWS_REGION != '' && (
+      vars.WARTIDE_HIBERNATED != 'true' && vars.AWS_REGION != '' && (
         (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
         (github.event_name == 'workflow_run' &&
           github.event.workflow_run.conclusion == 'success' &&

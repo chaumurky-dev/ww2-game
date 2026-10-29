@@ -157,3 +157,27 @@ variable "monthly_budget_usd" {
   type        = number
   default     = 60
 }
+
+variable "hibernate" {
+  description = "Tear down everything billed by the hour (ECS service, ALB, RDS) and keep the data (final RDS snapshot), network, secrets, ECR, S3, DNS zone, guardrails. Managed by scripts/aws-hibernate.sh."
+  type        = bool
+  default     = false
+}
+
+variable "alb_deletion_protection" {
+  description = "ALB deletion protection. Set false (and apply) before hibernating."
+  type        = bool
+  default     = true
+}
+
+variable "db_final_snapshot_tag" {
+  description = "Suffix of the final RDS snapshot name (<name>-final-<tag>); scripts/aws-hibernate.sh sets it to the date."
+  type        = string
+  default     = "manual"
+}
+
+variable "db_restore_snapshot" {
+  description = "RDS snapshot identifier to restore from when waking (see scripts/aws-hibernate.sh)."
+  type        = string
+  default     = null
+}
