@@ -109,7 +109,13 @@ db_deletion_protection  = false
 alb_deletion_protection = false
 db_final_snapshot_tag   = "$tag"
 EOF
-  tf apply
+  # Nothing is destroyed yet: if this apply fails or is declined, put everything back (protection on,
+  # deploys unpaused) so the stack is exactly as before.
+  if ! tf apply; then
+    rm -f "$AUTO_VARS"
+    run gh variable delete WARTIDE_HIBERNATED --repo "$GITHUB_REPO" || true
+    die "step 1 apply failed or was declined; nothing was torn down. Run 'terraform apply' to confirm protection is back on, then retry."
+  fi
   echo ">>> Step 2/2: destroy ECS service, autoscaling, ALB, Route53 app record, alarm, DATABASE_URL version and RDS."
   cat >"$AUTO_VARS" <<EOF
 # Written by scripts/aws-hibernate.sh; gitignored. Do not edit by hand.
