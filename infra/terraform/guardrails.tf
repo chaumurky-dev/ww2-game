@@ -168,11 +168,12 @@ resource "aws_cloudwatch_metric_alarm" "log_ingest" {
 
 # Traffic flood: more than 50000 requests in 5 minutes.
 resource "aws_cloudwatch_metric_alarm" "alb_requests" {
+  count               = var.hibernate ? 0 : 1
   alarm_name          = "${local.name}-alb-request-count"
   alarm_description   = "ALB served more than 50000 requests in 5 minutes (flood or abuse)."
   namespace           = "AWS/ApplicationELB"
   metric_name         = "RequestCount"
-  dimensions          = { LoadBalancer = aws_lb.main.arn_suffix }
+  dimensions          = { LoadBalancer = aws_lb.main[0].arn_suffix }
   statistic           = "Sum"
   period              = 300
   evaluation_periods  = 1
@@ -180,4 +181,9 @@ resource "aws_cloudwatch_metric_alarm" "alb_requests" {
   comparison_operator = "GreaterThanThreshold"
   treat_missing_data  = "notBreaching"
   alarm_actions       = [aws_sns_topic.alerts.arn]
+}
+
+moved {
+  from = aws_cloudwatch_metric_alarm.alb_requests
+  to   = aws_cloudwatch_metric_alarm.alb_requests[0]
 }

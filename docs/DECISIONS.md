@@ -102,3 +102,13 @@
   refusing only the affected entry because the fired entry could not be re-applied faithfully. Scope
   `into` matches `Move` by last path step, `Unload` by `to`, and `Load` by the transport's current sea
   zone. Bots and the random policy never emit the action.
+- 2026-10-29 (infra): RDS `prevent_destroy` replaced by `deletion_protection` + a hibernate switch.
+  `lifecycle.prevent_destroy` must be a literal, so it would make any plan with `hibernate = true` (which sets
+  the instance's `count` to 0) fail, and removing it by hand for each teardown was the only way to destroy. The
+  data-loss guard is now AWS-side `deletion_protection` (`db_deletion_protection`, default true), which is
+  enforced by RDS itself and also covers console and CLI deletes, plus the final snapshot
+  (`wartide-prod-final-<tag>`). `scripts/aws-hibernate.sh down` turns protection off in a separate apply first
+  (destroy uses the recorded state values), so an accidental `terraform destroy` still fails unless protection was
+  deliberately turned off. `ignore_changes = [snapshot_identifier]` keeps later applies from replacing a database
+  that was restored from a snapshot. ALB deletion protection became `alb_deletion_protection` for the same reason.
+

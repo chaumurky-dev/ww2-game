@@ -1,5 +1,5 @@
 output "alb_dns_name" {
-  value = aws_lb.main.dns_name
+  value = one(aws_lb.main[*].dns_name)
 }
 
 output "ecr_repository_url" {
@@ -11,7 +11,7 @@ output "ecs_cluster" {
 }
 
 output "ecs_service" {
-  value = aws_ecs_service.app.name
+  value = one(aws_ecs_service.app[*].name)
 }
 
 output "ecs_task_family" {

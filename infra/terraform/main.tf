@@ -232,6 +232,7 @@ resource "aws_db_subnet_group" "main" {
 }
 
 resource "aws_db_instance" "main" {
+  count                  = var.hibernate ? 0 : 1
   identifier             = local.name
   engine                 = "postgres"
   engine_version         = "16"
@@ -242,6 +243,7 @@ resource "aws_db_instance" "main" {
   db_name                = "wartide"
   username               = "wartide"
   password               = random_password.db.result
+  snapshot_identifier    = var.db_restore_snapshot
   db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [aws_security_group.rds.id]
   publicly_accessible    = false
@@ -250,17 +252,19 @@ resource "aws_db_instance" "main" {
   backup_retention_period      = var.db_backup_retention_days
   deletion_protection          = var.db_deletion_protection
   skip_final_snapshot          = var.db_skip_final_snapshot
-  final_snapshot_identifier    = var.db_skip_final_snapshot ? null : "${local.name}-final"
+  final_snapshot_identifier    = var.db_skip_final_snapshot ? null : "${local.name}-final-${var.db_final_snapshot_tag}"
   performance_insights_enabled = false
   monitoring_interval          = 0 # no enhanced monitoring
   auto_minor_version_upgrade   = true
   apply_immediately            = true
   copy_tags_to_snapshot        = true
 
-  # Guard against accidental data loss. To destroy on purpose: remove this block, set
-  # db_deletion_protection = false, apply, then destroy (docs/DEPLOY.md).
+  # Data-loss guard is AWS-side deletion_protection (db_deletion_protection); prevent_destroy cannot be
+  # conditional and would break `hibernate = true`. scripts/aws-hibernate.sh turns protection off, applies,
+  # then destroys with a final snapshot. snapshot_identifier only matters at create (wake); ignoring it
+  # keeps later applies without db_restore_snapshot from replacing the instance.
   lifecycle {
-    prevent_destroy = true
+    ignore_changes = [snapshot_identifier]
   }
 }
 
@@ -276,8 +280,9 @@ resource "aws_secretsmanager_secret" "database_url" {
 }
 
 resource "aws_secretsmanager_secret_version" "database_url" {
+  count         = var.hibernate ? 0 : 1
   secret_id     = aws_secretsmanager_secret.database_url.id
-  secret_string = "postgres://${aws_db_instance.main.username}:${random_password.db.result}@${aws_db_instance.main.address}:${aws_db_instance.main.port}/${aws_db_instance.main.db_name}"
+  secret_string = "postgres://${aws_db_instance.main[0].username}:${random_password.db.result}@${aws_db_instance.main[0].address}:${aws_db_instance.main[0].port}/${aws_db_instance.main[0].db_name}"
 }
 
 resource "aws_secretsmanager_secret" "session_secret" {
@@ -397,14 +402,15 @@ resource "aws_acm_certificate_validation" "main" {
 
 # -------------------------------------------------------------------- ALB
 resource "aws_lb" "main" {
+  count                      = var.hibernate ? 0 : 1
   name                       = local.name
   load_balancer_type         = "application"
   subnets                    = aws_subnet.public[*].id
   security_groups            = [aws_security_group.alb.id]
   idle_timeout               = 120 # WebSocket friendliness
   drop_invalid_header_fields = true
-  # Destroy needs this set to false first (docs/DEPLOY.md).
-  enable_deletion_protection = true
+  # Destroy needs this set to false first (alb_deletion_protection; scripts/aws-hibernate.sh does it).
+  enable_deletion_protection = var.alb_deletion_protection
 
   access_logs {
     bucket  = aws_s3_bucket.alb_logs.id
@@ -488,6 +494,7 @@ resource "aws_s3_bucket_policy" "alb_logs" {
 }
 
 resource "aws_lb_target_group" "app" {
+  count                = var.hibernate ? 0 : 1
   name                 = local.name
   port                 = 8080
   protocol             = "HTTP"
@@ -505,7 +512,8 @@ resource "aws_lb_target_group" "app" {
 }
 
 resource "aws_lb_listener" "http" {
-  load_balancer_arn = aws_lb.main.arn
+  count             = var.hibernate ? 0 : 1
+  load_balancer_arn = aws_lb.main[0].arn
   port              = 80
   protocol          = "HTTP"
 
@@ -520,7 +528,8 @@ resource "aws_lb_listener" "http" {
 }
 
 resource "aws_lb_listener" "https" {
-  load_balancer_arn = aws_lb.main.arn
+  count             = var.hibernate ? 0 : 1
+  load_balancer_arn = aws_lb.main[0].arn
   port              = 443
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
@@ -528,18 +537,18 @@ resource "aws_lb_listener" "https" {
 
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.app.arn
+    target_group_arn = aws_lb_target_group.app[0].arn
   }
 }
 
 resource "aws_route53_record" "app" {
-  count   = local.use_r53 ? 1 : 0
+  count   = local.use_r53 && !var.hibernate ? 1 : 0
   zone_id = local.route53_zone_id
   name    = var.domain_name
   type    = "A"
   alias {
-    name                   = aws_lb.main.dns_name
-    zone_id                = aws_lb.main.zone_id
+    name                   = aws_lb.main[0].dns_name
+    zone_id                = aws_lb.main[0].zone_id
     evaluate_target_health = true
   }
 }
@@ -660,6 +669,7 @@ resource "aws_ecs_task_definition" "app" {
 }
 
 resource "aws_ecs_service" "app" {
+  count           = var.hibernate ? 0 : 1
   name            = "app"
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.app.arn
@@ -688,7 +698,7 @@ resource "aws_ecs_service" "app" {
   }
 
   load_balancer {
-    target_group_arn = aws_lb_target_group.app.arn
+    target_group_arn = aws_lb_target_group.app[0].arn
     container_name   = "app"
     container_port   = 8080
   }
@@ -710,16 +720,16 @@ resource "aws_ecs_service" "app" {
 }
 
 resource "aws_appautoscaling_target" "app" {
-  count              = var.enable_autoscaling ? 1 : 0
+  count              = var.enable_autoscaling && !var.hibernate ? 1 : 0
   min_capacity       = var.desired_count
   max_capacity       = var.max_count
-  resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.app.name}"
+  resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.app[0].name}"
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"
 }
 
 resource "aws_appautoscaling_policy" "cpu" {
-  count              = var.enable_autoscaling ? 1 : 0
+  count              = var.enable_autoscaling && !var.hibernate ? 1 : 0
   name               = "${local.name}-cpu"
   policy_type        = "TargetTrackingScaling"
   resource_id        = aws_appautoscaling_target.app[0].resource_id
@@ -806,7 +816,7 @@ data "aws_iam_policy_document" "deploy" {
   }
   statement {
     actions   = ["ecs:UpdateService", "ecs:DescribeServices"]
-    resources = [aws_ecs_service.app.id]
+    resources = ["arn:aws:ecs:${var.region}:${data.aws_caller_identity.current.account_id}:service/${aws_ecs_cluster.main.name}/app"]
   }
   statement {
     actions   = ["ecs:DescribeServices"]
@@ -827,4 +837,35 @@ resource "aws_iam_role_policy" "deploy" {
   name   = "deploy"
   role   = aws_iam_role.deploy.id
   policy = data.aws_iam_policy_document.deploy.json
+}
+
+# ------------------------------------------------- hibernate: count moves
+# These resources gained `count` for var.hibernate; the moves keep existing state at index 0.
+moved {
+  from = aws_db_instance.main
+  to   = aws_db_instance.main[0]
+}
+moved {
+  from = aws_secretsmanager_secret_version.database_url
+  to   = aws_secretsmanager_secret_version.database_url[0]
+}
+moved {
+  from = aws_lb.main
+  to   = aws_lb.main[0]
+}
+moved {
+  from = aws_lb_target_group.app
+  to   = aws_lb_target_group.app[0]
+}
+moved {
+  from = aws_lb_listener.http
+  to   = aws_lb_listener.http[0]
+}
+moved {
+  from = aws_lb_listener.https
+  to   = aws_lb_listener.https[0]
+}
+moved {
+  from = aws_ecs_service.app
+  to   = aws_ecs_service.app[0]
 }
