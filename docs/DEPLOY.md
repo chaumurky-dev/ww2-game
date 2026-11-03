@@ -93,6 +93,9 @@ terraform apply -target=aws_route53_zone.main -target=aws_ecr_repository.app
 terraform output route53_name_servers
 
 # e. MANUAL at DreamHost (DNS host of chaumurky.net): four NS records, host `ww2`, one per name server. Wait for:
+#    (Optional but recommended: first run `AWS_PROFILE=default scripts/aws-bootstrap.sh delegation-set`, put the printed
+#    `route53_delegation_set_id` in terraform.tfvars before step d, and use ITS four name servers here; the zone then
+#    keeps them across hibernate/wake. See section 7.)
 dig NS ww2.chaumurky.net +short
 
 # f. First image (so ECS has one before the first full apply); later images come only from CI
@@ -170,6 +173,7 @@ Account 243963726301, us-east-1, executed 2026-10-24.
 | 17 | 2026-10-27: `gh api -X PUT repos/chaumurky-dev/ww2-game/environments/production`; deploy job moved into `environment: production` by PR #5 (also SHA-pins actions, restricts the trigger to pushes of `main` from this repo, verifies the SHA is on `main`) | Deploy tokens now carry the `environment:production` subject accepted by the trust policy |
 
 | 18 | 2026-10-27 incident: `infra/terraform/tfplan` (a binary plan file, which embeds the previous state) was committed to the public repo by mistake in PR #14 (merged 14:25 UTC) and removed from the tree in PR #23 (15:4x UTC). The embedded state held the RDS master password and `DATABASE_URL`, `SESSION_SECRET`, and the SES SMTP IAM access key `AKIATRTK7BHOYOZRARDD` with its secret and SMTP password. Checked at 15:50 UTC: that key was last used 14:04 UTC (before the leak), SES sent 4 mails in 24 h, no bounces/complaints; RDS is reachable only from the task security group. Response, on the owner's instruction ("get all of the credentials out of the github repo and commit history and rotate the secrets"): `terraform apply` of `plan -replace=random_password.db -replace=random_password.session -replace=aws_iam_access_key.ses_smtp` at 15:48-15:50 UTC (RDS password modified in place, new `AWSCURRENT` versions of `DATABASE_URL`/`SESSION_SECRET`/`SMTP_USER`/`SMTP_PASS`, leaked key destroyed, new key `AKIATRTK7BHO3ANAN4PE`), then `aws ecs update-service --force-new-deployment` at 15:52 UTC so the tasks read the new secrets (all user sessions invalidated). History purge, run by the account owner 2026-10-27 ~17:00 UTC: `git filter-repo --invert-paths --path infra/terraform/tfplan` on a mirror clone, then force-push of every branch and tag. `main` protection was changed for the duration of the push only (force pushes allowed and required status checks removed, because GitHub rejects a rewritten commit that has no check runs with GH006 even when force pushes are allowed) and restored immediately after: checks `lint`/`test`/`web-build`, strict up-to-date, admins enforced, no force pushes or deletions. Verified from a fresh mirror clone: 0 commits on any branch or tag touch the file; `main` moved `6a96d62` → `1694bc7` (same tree). The 4 rewritten commits (`2e1ecdc4`, `51c9be76`, `a78d6393`, `4cf4e4a8`) remain reachable only through GitHub's read-only `refs/pull/*` refs and cached views. The owner decided not to ask GitHub support to clear those: the secrets are rotated and the residual exposure is judged low. Plan files are git-ignored | Closed: secrets rotated and live, history purged from all branches and tags, support ticket deliberately not filed |
+| 19 | 2026-10-29 19:12 UTC: `scripts/aws-hibernate.sh down` (PR #41 design) run by the account owner; step 1 applied (RDS and ALB deletion protection off, WARTIDE_HIBERNATED=true) and the machine lost power before step 2; found on 2026-11-03 with the stack fully up (RDS available, ALB present, 1 task, no final snapshot). Replaced by the deep hibernate in this PR | Superseded; see row 20 once the deep hibernate has run |
 
 Pending: nothing as of 2026-10-27 17:10 UTC.
 
@@ -271,59 +275,115 @@ CI again on the merge commit and, when green, the Deploy workflow.
 Numbers are rough list prices and vary with usage.
 
 Measured: the October 2026 bill was about $6.50 for 1-28 Oct, mostly covered by the free tier (RDS, ALB hours),
-so expect the table above once the free tier is used up. To pay almost nothing while the game is idle, see
-section 7.
+so expect the table above once the free tier is used up. To pay under $0.10/month while the game is idle, use the
+deep hibernate in section 7.
 
 ## 7. Hibernate and wake
 
-`scripts/aws-hibernate.sh` shuts down everything that is billed by the hour and brings it back with one command,
-keeping all data. Use it for a week or more away; for a few days the saving is small.
+`scripts/aws-hibernate.sh` removes everything that has an hourly or fixed monthly price and brings it back with one
+command, keeping all data. While hibernated the account costs under $0.10/month. Use it for a week or more away; for
+a few days the saving is small and the wake takes about 15 minutes.
 
-**Torn down:** ECS service (and autoscaling), ALB with listeners and target group, Route53 app record, the ALB
-request alarm, the `DATABASE_URL` secret version, and the RDS instance (a final snapshot is taken first).
+**Torn down:** ECS service and autoscaling, ALB with listeners and target group, RDS instance, the Route53 hosted
+zone and every record in it (app alias, ACM validation, SES records), the SES domain identity and DKIM, the four
+Secrets Manager secrets and their versions, both ECS task definitions (`app` and the one-off `dbtool`), both
+CloudWatch alarms, the GuardDuty detector, and (by the script, outside Terraform) all images in the ECR repository.
 
-**Kept:** VPC, subnets, security groups, ECR repository and images, secrets (the secret objects, session/SMTP values),
-SES identity, ACM certificate, Route53 zone and its SES/ACM records, S3 buckets, SNS, budget, anomaly subscription,
-GuardDuty, log group, ECS cluster and task definition, IAM and OIDC. Names are unchanged, so the GitHub repository
-variables stay valid.
+**Kept (all free):** VPC, subnets and security groups, ECS cluster, ECR repository (empty), IAM roles, users, access
+key and OIDC provider, ACM certificate, S3 buckets, SNS topic, budget, cost-anomaly subscription, log group, account
+settings. Names are unchanged, so the GitHub repository variables stay valid.
+
+### Where the data lives
+
+`down` runs a one-off Fargate task (`wartide-prod-dbtool`, image `postgres:16-alpine`, script
+`infra/terraform/dbtool.sh`) in the public ECS subnets with the ECS security group, which can reach both RDS and the
+internet. It `pg_dump`s the database (custom format), restores the dump into a scratch database on the same server as
+a trial, drops that scratch database, and uploads the file to
+`s3://wartide-terraform-state-243963726301/db-backups/wartide-prod-<UTC date-time>.dump` with a presigned PUT URL.
+The task role's permissions boundary deliberately has no S3 rights, so the file moves through a single-object URL
+that the operator signs with `scripts/s3-presign.py` (stdlib only, valid one hour). The script then checks that the S3
+object's size and ETag equal the byte count and md5 the task printed. Only if all of that matches does it destroy
+anything. The bucket is private, SSE-S3 encrypted and versioned; a dump of this database is well under a megabyte.
+The log lines (`dbtool: ...`) contain counts and checksums only, never data.
+
+There is no RDS snapshot: the 20 GB volume would cost about $0.15/month to keep, more than the whole hibernated
+budget, and the trial-restored dump is equivalent for a database this size.
 
 ### Why two applies
 
-RDS and the ALB have deletion protection on. Terraform's destroy uses the values recorded in state, so protection
-must be switched off, and the final snapshot name recorded, by a normal apply before the destroy. `down` therefore
-runs `terraform apply` twice: (1) `hibernate=false` with `db_deletion_protection=false`,
-`alb_deletion_protection=false` and `db_final_snapshot_tag=<UTC date-time>`; (2) `hibernate=true`, which destroys the
-resources above and creates snapshot `wartide-prod-final-<tag>`. The earlier `prevent_destroy = true` on the RDS
-instance was dropped because a lifecycle flag cannot be conditional and would make `hibernate=true` fail at plan time;
+RDS and the ALB have deletion protection on, and Secrets Manager secrets have a 7-day recovery window. Terraform's
+destroy uses the values recorded in state, so both must be changed by a normal apply before the destroying one.
+`down` therefore runs `terraform apply` twice, with the dump in between:
+
+1. `hibernate=false`, `db_deletion_protection=false`, `alb_deletion_protection=false`,
+   `secret_recovery_window_days=0`, `db_final_snapshot_tag=<tag>`. This also creates the `dbtool` task definition;
+   nothing is destroyed.
+2. Dump, trial restore, upload, verify.
+3. `hibernate=true` plus `db_skip_final_snapshot=true`: destroys the resources above. With a zero recovery window the
+   secret names are free immediately on wake. All four values are reproducible from Terraform state
+   (`random_password.db`, `random_password.session`, the SES SMTP access key), so nothing is lost: sessions and
+   mail credentials survive, and the wake recreates the database with the same master password.
+
+The earlier `prevent_destroy = true` on the RDS instance was dropped because a lifecycle flag cannot be conditional;
 AWS-side `deletion_protection` (default on) is the guard instead, see DECISIONS.md. Each apply asks for confirmation.
+`down` is resumable: if it is interrupted after step 1 (or step 3 is declined), run it again.
 
 ### Commands
 
 ```
 export AWS_PROFILE=wartide
-scripts/aws-hibernate.sh down              # snapshot, destroy, wait for the snapshot to be available
-scripts/aws-hibernate.sh status            # state file, RDS, ALB, ECS count, WARTIDE_HIBERNATED, snapshots
-scripts/aws-hibernate.sh up                # newest wartide-prod-final-* snapshot; or: up wartide-prod-final-<tag>
+scripts/aws-hibernate.sh down                 # dump + verify, then destroy; also empties ECR and checks for stray costs
+scripts/aws-hibernate.sh backup               # ad-hoc verified dump while running
+scripts/aws-hibernate.sh up                   # wake from the newest dump; or: up db-backups/<file>.dump; or: up --empty
+scripts/aws-hibernate.sh status               # state file, what exists, dumps in S3 (no Cost Explorer calls)
 ```
 
 `down` refuses to run if any open PR has auto-merge enabled or a workflow run is in progress on `main`, then sets the
-repository variable `WARTIDE_HIBERNATED=true`. `up` restores the database from the snapshot (same identifier, so the
-endpoint and the `DATABASE_URL` value are unchanged; the password is reapplied from Terraform state), recreates the
-ALB and service, deletes the variable, dispatches the Deploy workflow, and polls `/healthz` for up to 10 minutes.
-The script keeps its choice in the gitignored `infra/terraform/hibernate.auto.tfvars`, so a plain `terraform apply`
-later keeps the same state; never edit it by hand.
+repository variable `WARTIDE_HIBERNATED=true`. `up` recreates everything (a fresh RDS instance takes about 10
+minutes), restores the dump with the same dbtool task before the app starts (an already-populated database is
+skipped), deletes the variable, dispatches the Deploy workflow (which builds and pushes a fresh image), compares the
+zone's name servers with what the parent delegates, and polls `/healthz`. It is idempotent: re-run it after fixing
+whatever it reports. The script keeps its choice in the gitignored `infra/terraform/hibernate.auto.tfvars`, so a plain
+`terraform apply` later keeps the same state; never edit it by hand.
+
+### DNS: reusable delegation set
+
+A new hosted zone normally gets four new name servers, which would need a DreamHost update on every wake. A reusable
+delegation set (free) pins them. Once, as the admin profile:
+
+```
+AWS_PROFILE=default scripts/aws-bootstrap.sh delegation-set
+```
+
+It prints the id and the four name servers. Put `route53_delegation_set_id = "<id>"` in `infra/terraform/terraform.tfvars`
+(this replaces the existing zone once, on the next apply) and set the NS records for host `ww2` at DreamHost to the four
+servers. From then on every hibernate/wake cycle keeps the delegation. Without it the wake still works, but the
+site, SES verification and ACM renewal stay broken until you update the NS records; `up` prints the new servers and
+keeps polling for 2 minutes, and re-running `up` re-checks.
 
 ### Cost while hibernated
 
-Route53 zone $0.50, four secrets $1.60, the 20 GB manual snapshot about $1.90, ECR/S3/CloudWatch a few cents:
-about $4/month. GuardDuty is also still on (cents at idle).
+| Item | Monthly |
+|---|---|
+| S3: state, ALB-log bucket and the dump (well under 1 MB each) | cents (< $0.01) |
+| CloudWatch log group `/ecs/wartide-prod` (stored logs) | cents (< $0.05) |
+| VPC, security groups, ECS cluster, ECR (empty), IAM, ACM, SNS, budget, anomaly subscription | $0 |
+| Route53, Secrets Manager, alarms, GuardDuty, RDS snapshot, ALB, public IPv4 | $0 (removed) |
+| Total | under $0.10 |
+
+`down` warns if any Elastic IP or manual RDS snapshot exists, since those would break the budget.
 
 ### Caveats
 
-- `ww2.chaumurky.net` does not resolve while down (the app record is removed); expect a few minutes of DNS lag after wake.
+- The site is down while hibernated (no zone, no ALB); expect DNS lag after wake, and see the delegation section.
+- ACM renews the certificate automatically only while its DNS validation CNAME exists, and that record lives in the
+  deleted zone. The current certificate is valid until about August 2027: if still hibernated by then, wake briefly
+  (the wake recreates the validation record) so it renews.
+- SES verification is redone on every wake and needs the delegation to be in place. Production access is an account
+  setting and is kept.
+- ECR images are deleted; the wake deploy builds a fresh one. Until it pushes, the ECS service flaps because
+  `:latest` does not exist; that is expected.
 - While `WARTIDE_HIBERNATED` is set the Deploy workflow skips, so Dependabot and merges to `main` do not deploy.
   CI still runs. The wake dispatches a deploy so the newest image goes out.
-- The restore uses the snapshot's engine version (not `engine_version` in Terraform); a later minor upgrade is not undone.
-- Automated backups of the old instance are deleted with it; only the final (manual) snapshot remains. Do not delete it
-  until the wake has been verified.
-- Manual snapshots are not rotated; delete old `wartide-prod-final-*` snapshots yourself once a newer one is verified.
+- The dumps are not rotated; delete old objects under `db-backups/` yourself (the bucket is versioned, so also their
+  old versions) once a newer one is verified.
