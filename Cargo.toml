@@ -21,7 +21,7 @@ thiserror = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 rand = "0.9"
-rand_chacha = "0.9"
+rand_chacha = "0.10"
 tracing = "0.1"
 
 # Debug builds run the integration tests; the bot planner and rules engine dominate their
