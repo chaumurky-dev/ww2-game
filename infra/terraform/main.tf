@@ -9,7 +9,7 @@ locals {
   azs     = slice(data.aws_availability_zones.available.names, 0, 2)
   use_r53 = var.create_route53_zone || var.route53_zone_id != ""
   # When create_route53_zone is true the zone apex IS var.domain_name (delegated from the parent at the registrar).
-  route53_zone_id = var.create_route53_zone ? aws_route53_zone.main[0].zone_id : var.route53_zone_id
+  route53_zone_id = var.create_route53_zone ? one(aws_route53_zone.main[*].zone_id) : var.route53_zone_id
   boundary_arn    = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/wartide-boundary"
   initial_image   = var.container_image != "" ? var.container_image : "${aws_ecr_repository.app.repository_url}:latest"
 }
@@ -17,10 +17,14 @@ locals {
 # -------------------------------------------------------------- Route53
 # Optional hosted zone whose apex is the app hostname (e.g. ww2.chaumurky.net). The parent zone
 # stays at the registrar; add the NS records from output route53_name_servers there.
+# A hosted zone costs $0.50/month, so hibernate destroys it (with all its records) and wake recreates it.
+# With route53_delegation_set_id (a reusable delegation set, free) the recreated zone gets the same name
+# servers, so the registrar's NS records stay valid across hibernate/wake cycles.
 resource "aws_route53_zone" "main" {
-  count   = var.create_route53_zone ? 1 : 0
-  name    = var.domain_name
-  comment = "Wartide ${var.env}"
+  count             = var.create_route53_zone && !var.hibernate ? 1 : 0
+  name              = var.domain_name
+  comment           = "Wartide ${var.env}"
+  delegation_set_id = var.route53_delegation_set_id
 }
 
 # ---------------------------------------------------------------- Network
@@ -260,9 +264,12 @@ resource "aws_db_instance" "main" {
   copy_tags_to_snapshot        = true
 
   # Data-loss guard is AWS-side deletion_protection (db_deletion_protection); prevent_destroy cannot be
-  # conditional and would break `hibernate = true`. scripts/aws-hibernate.sh turns protection off, applies,
-  # then destroys with a final snapshot. snapshot_identifier only matters at create (wake); ignoring it
-  # keeps later applies without db_restore_snapshot from replacing the instance.
+  # conditional and would break `hibernate = true`. scripts/aws-hibernate.sh first takes a pg_dump with the
+  # dbtool task, trial-restores it and verifies it in the state bucket, turns protection off, applies, and
+  # destroys with db_skip_final_snapshot = true (a snapshot of the 20 GB volume would cost about $0.15/month).
+  # Without the script the default path still takes a final snapshot; setting db_restore_snapshot by hand
+  # restores from one. snapshot_identifier only matters at create; ignoring it keeps later applies without
+  # db_restore_snapshot from replacing the instance.
   lifecycle {
     ignore_changes = [snapshot_identifier]
   }
@@ -275,71 +282,80 @@ resource "random_password" "session" {
 }
 
 resource "aws_secretsmanager_secret" "database_url" {
+  count                   = var.hibernate ? 0 : 1
   name                    = "${local.name}/DATABASE_URL"
-  recovery_window_in_days = var.env == "prod" ? 7 : 0
+  recovery_window_in_days = var.env == "prod" ? var.secret_recovery_window_days : 0
 }
 
 resource "aws_secretsmanager_secret_version" "database_url" {
   count         = var.hibernate ? 0 : 1
-  secret_id     = aws_secretsmanager_secret.database_url.id
+  secret_id     = aws_secretsmanager_secret.database_url[0].id
   secret_string = "postgres://${aws_db_instance.main[0].username}:${random_password.db.result}@${aws_db_instance.main[0].address}:${aws_db_instance.main[0].port}/${aws_db_instance.main[0].db_name}"
 }
 
 resource "aws_secretsmanager_secret" "session_secret" {
+  count                   = var.hibernate ? 0 : 1
   name                    = "${local.name}/SESSION_SECRET"
-  recovery_window_in_days = var.env == "prod" ? 7 : 0
+  recovery_window_in_days = var.env == "prod" ? var.secret_recovery_window_days : 0
 }
 
 resource "aws_secretsmanager_secret_version" "session_secret" {
-  secret_id     = aws_secretsmanager_secret.session_secret.id
+  count         = var.hibernate ? 0 : 1
+  secret_id     = aws_secretsmanager_secret.session_secret[0].id
   secret_string = random_password.session.result
 }
 
 resource "aws_secretsmanager_secret" "smtp_user" {
+  count                   = var.hibernate ? 0 : 1
   name                    = "${local.name}/SMTP_USER"
-  recovery_window_in_days = var.env == "prod" ? 7 : 0
+  recovery_window_in_days = var.env == "prod" ? var.secret_recovery_window_days : 0
 }
 
 resource "aws_secretsmanager_secret_version" "smtp_user" {
-  secret_id     = aws_secretsmanager_secret.smtp_user.id
+  count         = var.hibernate ? 0 : 1
+  secret_id     = aws_secretsmanager_secret.smtp_user[0].id
   secret_string = aws_iam_access_key.ses_smtp.id
 }
 
 resource "aws_secretsmanager_secret" "smtp_pass" {
+  count                   = var.hibernate ? 0 : 1
   name                    = "${local.name}/SMTP_PASS"
-  recovery_window_in_days = var.env == "prod" ? 7 : 0
+  recovery_window_in_days = var.env == "prod" ? var.secret_recovery_window_days : 0
 }
 
 resource "aws_secretsmanager_secret_version" "smtp_pass" {
-  secret_id     = aws_secretsmanager_secret.smtp_pass.id
+  count         = var.hibernate ? 0 : 1
+  secret_id     = aws_secretsmanager_secret.smtp_pass[0].id
   secret_string = aws_iam_access_key.ses_smtp.ses_smtp_password_v4
 }
 
 # -------------------------------------------------------------------- SES
 resource "aws_ses_domain_identity" "main" {
+  count  = var.hibernate ? 0 : 1
   domain = var.domain_name
 }
 
 resource "aws_ses_domain_dkim" "main" {
-  domain = aws_ses_domain_identity.main.domain
+  count  = var.hibernate ? 0 : 1
+  domain = aws_ses_domain_identity.main[0].domain
 }
 
 resource "aws_route53_record" "ses_verification" {
-  count   = local.use_r53 ? 1 : 0
+  count   = local.use_r53 && !var.hibernate ? 1 : 0
   zone_id = local.route53_zone_id
   name    = "_amazonses.${var.domain_name}"
   type    = "TXT"
   ttl     = 600
-  records = [aws_ses_domain_identity.main.verification_token]
+  records = [aws_ses_domain_identity.main[0].verification_token]
 }
 
 resource "aws_route53_record" "ses_dkim" {
-  count   = local.use_r53 ? 3 : 0
+  count   = local.use_r53 && !var.hibernate ? 3 : 0
   zone_id = local.route53_zone_id
-  name    = "${aws_ses_domain_dkim.main.dkim_tokens[count.index]}._domainkey.${var.domain_name}"
+  name    = "${aws_ses_domain_dkim.main[0].dkim_tokens[count.index]}._domainkey.${var.domain_name}"
   type    = "CNAME"
   ttl     = 600
-  records = ["${aws_ses_domain_dkim.main.dkim_tokens[count.index]}.dkim.amazonses.com"]
+  records = ["${aws_ses_domain_dkim.main[0].dkim_tokens[count.index]}.dkim.amazonses.com"]
 }
 
 resource "aws_iam_user" "ses_smtp" {
@@ -353,9 +369,11 @@ resource "aws_iam_user_policy" "ses_smtp" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect   = "Allow"
-      Action   = ["ses:SendRawEmail", "ses:SendEmail"]
-      Resource = [aws_ses_domain_identity.main.arn]
+      Effect = "Allow"
+      Action = ["ses:SendRawEmail", "ses:SendEmail"]
+      # Constructed, not aws_ses_domain_identity.main[0].arn: the identity is gone while hibernated, the IAM user
+      # and its access key are free and stay, and the policy must not change across hibernate/wake.
+      Resource = ["arn:aws:ses:${var.region}:${data.aws_caller_identity.current.account_id}:identity/${var.domain_name}"]
       Condition = {
         StringLike = { "ses:FromAddress" = "*@${var.domain_name}" }
       }
@@ -375,7 +393,7 @@ resource "aws_acm_certificate" "main" {
 }
 
 resource "aws_route53_record" "cert_validation" {
-  for_each = local.use_r53 ? {
+  for_each = local.use_r53 && !var.hibernate ? {
     for dvo in aws_acm_certificate.main.domain_validation_options : dvo.domain_name => {
       name   = trimsuffix(dvo.resource_record_name, ".")
       record = dvo.resource_record_value
@@ -395,7 +413,7 @@ resource "aws_route53_record" "cert_validation" {
 # creation fails until you add the validation CNAME (output acm_validation_records)
 # and re-run apply.
 resource "aws_acm_certificate_validation" "main" {
-  count                   = local.use_r53 ? 1 : 0
+  count                   = local.use_r53 && !var.hibernate ? 1 : 0
   certificate_arn         = aws_acm_certificate.main.arn
   validation_record_fqdns = [for r in aws_route53_record.cert_validation : r.fqdn]
 }
@@ -601,12 +619,8 @@ resource "aws_iam_role_policy" "task_execution_secrets" {
     Statement = [{
       Effect = "Allow"
       Action = ["secretsmanager:GetSecretValue"]
-      Resource = [
-        aws_secretsmanager_secret.database_url.arn,
-        aws_secretsmanager_secret.session_secret.arn,
-        aws_secretsmanager_secret.smtp_user.arn,
-        aws_secretsmanager_secret.smtp_pass.arn,
-      ]
+      # Constructed ARN pattern (names are fixed), so the policy is stable while the secrets are hibernated away.
+      Resource = ["arn:aws:secretsmanager:${var.region}:${data.aws_caller_identity.current.account_id}:secret:${local.name}/*"]
     }]
   })
 }
@@ -618,6 +632,7 @@ resource "aws_iam_role" "task" {
 }
 
 resource "aws_ecs_task_definition" "app" {
+  count                    = var.hibernate ? 0 : 1
   family                   = local.name
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
@@ -647,10 +662,10 @@ resource "aws_ecs_task_definition" "app" {
       { name = "SMTP_FROM", value = "Wartide <${var.ses_from_local_part}@${var.domain_name}>" },
     ]
     secrets = [
-      { name = "DATABASE_URL", valueFrom = aws_secretsmanager_secret.database_url.arn },
-      { name = "SESSION_SECRET", valueFrom = aws_secretsmanager_secret.session_secret.arn },
-      { name = "SMTP_USER", valueFrom = aws_secretsmanager_secret.smtp_user.arn },
-      { name = "SMTP_PASS", valueFrom = aws_secretsmanager_secret.smtp_pass.arn },
+      { name = "DATABASE_URL", valueFrom = aws_secretsmanager_secret.database_url[0].arn },
+      { name = "SESSION_SECRET", valueFrom = aws_secretsmanager_secret.session_secret[0].arn },
+      { name = "SMTP_USER", valueFrom = aws_secretsmanager_secret.smtp_user[0].arn },
+      { name = "SMTP_PASS", valueFrom = aws_secretsmanager_secret.smtp_pass[0].arn },
     ]
     logConfiguration = {
       logDriver = "awslogs"
@@ -668,11 +683,52 @@ resource "aws_ecs_task_definition" "app" {
   }
 }
 
+# One-off task used by scripts/aws-hibernate.sh to dump the database to S3 before hibernating and restore it
+# after waking. It moves the file through a presigned URL because the task-role permissions boundary
+# deliberately has no S3 rights. Costs nothing while not running.
+resource "aws_ecs_task_definition" "dbtool" {
+  count                    = var.hibernate ? 0 : 1
+  family                   = "${local.name}-dbtool"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = 256
+  memory                   = 512
+  execution_role_arn       = aws_iam_role.task_execution.arn
+  task_role_arn            = aws_iam_role.task.arn
+
+  runtime_platform {
+    operating_system_family = "LINUX"
+    cpu_architecture        = "X86_64"
+  }
+
+  container_definitions = jsonencode([{
+    name      = "dbtool"
+    image     = "public.ecr.aws/docker/library/postgres:16-alpine"
+    essential = true
+    command   = ["sh", "-c", file("${path.module}/dbtool.sh")]
+    environment = [
+      { name = "MODE", value = "" },
+      { name = "URL", value = "" },
+    ]
+    secrets = [
+      { name = "DATABASE_URL", valueFrom = aws_secretsmanager_secret.database_url[0].arn },
+    ]
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        awslogs-group         = aws_cloudwatch_log_group.app.name
+        awslogs-region        = var.region
+        awslogs-stream-prefix = "dbtool"
+      }
+    }
+  }])
+}
+
 resource "aws_ecs_service" "app" {
   count           = var.hibernate ? 0 : 1
   name            = "app"
   cluster         = aws_ecs_cluster.main.id
-  task_definition = aws_ecs_task_definition.app.arn
+  task_definition = aws_ecs_task_definition.app[0].arn
   desired_count   = var.desired_count
 
   # FARGATE_SPOT is ~70% cheaper but tasks can be interrupted (2 min warning) and replaced;
@@ -840,7 +896,8 @@ resource "aws_iam_role_policy" "deploy" {
 }
 
 # ------------------------------------------------- hibernate: count moves
-# These resources gained `count` for var.hibernate; the moves keep existing state at index 0.
+# These resources gained `count` for var.hibernate (hourly-billed ones first, then the ones with a fixed monthly
+# price or per-use billing); the moves keep existing state at index 0 so the plan shows moves, not replacements.
 moved {
   from = aws_db_instance.main
   to   = aws_db_instance.main[0]
@@ -868,4 +925,44 @@ moved {
 moved {
   from = aws_ecs_service.app
   to   = aws_ecs_service.app[0]
+}
+moved {
+  from = aws_secretsmanager_secret.database_url
+  to   = aws_secretsmanager_secret.database_url[0]
+}
+moved {
+  from = aws_secretsmanager_secret.session_secret
+  to   = aws_secretsmanager_secret.session_secret[0]
+}
+moved {
+  from = aws_secretsmanager_secret.smtp_user
+  to   = aws_secretsmanager_secret.smtp_user[0]
+}
+moved {
+  from = aws_secretsmanager_secret.smtp_pass
+  to   = aws_secretsmanager_secret.smtp_pass[0]
+}
+moved {
+  from = aws_secretsmanager_secret_version.session_secret
+  to   = aws_secretsmanager_secret_version.session_secret[0]
+}
+moved {
+  from = aws_secretsmanager_secret_version.smtp_user
+  to   = aws_secretsmanager_secret_version.smtp_user[0]
+}
+moved {
+  from = aws_secretsmanager_secret_version.smtp_pass
+  to   = aws_secretsmanager_secret_version.smtp_pass[0]
+}
+moved {
+  from = aws_ecs_task_definition.app
+  to   = aws_ecs_task_definition.app[0]
+}
+moved {
+  from = aws_ses_domain_identity.main
+  to   = aws_ses_domain_identity.main[0]
+}
+moved {
+  from = aws_ses_domain_dkim.main
+  to   = aws_ses_domain_dkim.main[0]
 }
