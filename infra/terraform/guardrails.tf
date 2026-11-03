@@ -123,7 +123,10 @@ resource "aws_ce_anomaly_subscription" "service" {
 # ------------------------------------------------------------ GuardDuty
 # If the account already has a detector in this region, import it instead:
 #   terraform import aws_guardduty_detector.main <detector-id>
+# GuardDuty is billed per event analysed and its free trial is over, so hibernate removes the detector
+# (nothing runs to analyse) and wake recreates it.
 resource "aws_guardduty_detector" "main" {
+  count  = var.hibernate ? 0 : 1
   enable = true
 }
 
@@ -152,6 +155,7 @@ resource "aws_account_alternate_contact" "owner" {
 # --------------------------------------------------------------- Alarms
 # Log flood / abuse: more than 200 MB ingested into the app log group in an hour.
 resource "aws_cloudwatch_metric_alarm" "log_ingest" {
+  count               = var.hibernate ? 0 : 1
   alarm_name          = "${local.name}-log-incoming-bytes"
   alarm_description   = "App log group ingested more than 200 MB in one hour (log flood or abuse)."
   namespace           = "AWS/Logs"
@@ -186,4 +190,14 @@ resource "aws_cloudwatch_metric_alarm" "alb_requests" {
 moved {
   from = aws_cloudwatch_metric_alarm.alb_requests
   to   = aws_cloudwatch_metric_alarm.alb_requests[0]
+}
+
+moved {
+  from = aws_cloudwatch_metric_alarm.log_ingest
+  to   = aws_cloudwatch_metric_alarm.log_ingest[0]
+}
+
+moved {
+  from = aws_guardduty_detector.main
+  to   = aws_guardduty_detector.main[0]
 }

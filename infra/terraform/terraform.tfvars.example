@@ -22,5 +22,10 @@ alert_phone = "+10000000000" # replace with a real E.164 number for the account 
 # Reuse the account's existing service anomaly monitor (one per account; see `aws ce get-anomaly-monitors`)
 # anomaly_monitor_arn = "arn:aws:ce::123456789012:anomalymonitor/00000000-0000-0000-0000-000000000000"
 
-# Hibernate (hibernate, alb_deletion_protection, db_final_snapshot_tag, db_restore_snapshot) is driven by
-# scripts/aws-hibernate.sh via the gitignored hibernate.auto.tfvars; do not set these by hand.
+# Optional: keep the Route53 zone's name servers stable across hibernate/wake. Create the delegation set once
+# with `scripts/aws-bootstrap.sh delegation-set` (admin profile) and paste its id here, then point the parent's NS at it.
+# route53_delegation_set_id = "N1PA6795SAMPLE"
+
+# Hibernate (hibernate, db_deletion_protection, alb_deletion_protection, secret_recovery_window_days,
+# db_skip_final_snapshot, db_final_snapshot_tag) is driven by scripts/aws-hibernate.sh via the gitignored
+# hibernate.auto.tfvars; do not set these by hand.

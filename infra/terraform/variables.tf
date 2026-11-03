@@ -130,7 +130,7 @@ variable "db_deletion_protection" {
 }
 
 variable "db_skip_final_snapshot" {
-  description = "Skip the final snapshot on destroy. Keep false in production."
+  description = "Skip the final RDS snapshot on destroy. Keep false in production. scripts/aws-hibernate.sh sets it true for the destroying apply because a trial-restored pg_dump is already verified in S3 (docs/DEPLOY.md section 7)."
   type        = bool
   default     = false
 }
@@ -159,7 +159,7 @@ variable "monthly_budget_usd" {
 }
 
 variable "hibernate" {
-  description = "Tear down everything billed by the hour (ECS service, ALB, RDS) and keep the data (final RDS snapshot), network, secrets, ECR, S3, DNS zone, guardrails. Managed by scripts/aws-hibernate.sh."
+  description = "Tear down everything with an hourly or fixed monthly price (ECS service and autoscaling, ALB, RDS, Route53 zone and all its records, SES identity and DKIM, the four secrets, both task definitions, both alarms, GuardDuty detector); keep the free resources (VPC, security groups, ECS cluster, ECR repository, IAM/OIDC, ACM certificate, S3 buckets, SNS, budget, anomaly subscription, log group, account settings). The data is kept as a pg_dump in the state bucket by scripts/aws-hibernate.sh."
   type        = bool
   default     = false
 }
@@ -178,6 +178,18 @@ variable "db_final_snapshot_tag" {
 
 variable "db_restore_snapshot" {
   description = "RDS snapshot identifier to restore from when waking (see scripts/aws-hibernate.sh)."
+  type        = string
+  default     = null
+}
+
+variable "secret_recovery_window_days" {
+  description = "Secrets Manager recovery window for the prod secrets. scripts/aws-hibernate.sh sets it to 0 in the apply before hibernating so the names are free immediately on wake (destroy uses the value recorded in state)."
+  type        = number
+  default     = 7
+}
+
+variable "route53_delegation_set_id" {
+  description = "Id (just the id, e.g. N1PA6795SAMPLE, not the /delegationset/ prefix) of a reusable delegation set so the hosted zone keeps the same name servers when it is destroyed and recreated. Created once by the account owner with scripts/aws-bootstrap.sh delegation-set. Changing it replaces the zone."
   type        = string
   default     = null
 }

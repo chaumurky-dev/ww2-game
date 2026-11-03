@@ -111,4 +111,16 @@
   (destroy uses the recorded state values), so an accidental `terraform destroy` still fails unless protection was
   deliberately turned off. `ignore_changes = [snapshot_identifier]` keeps later applies from replacing a database
   that was restored from a snapshot. ALB deletion protection became `alb_deletion_protection` for the same reason.
-
+- 2026-11-03 (infra): hibernation now removes everything with a fixed monthly price, and the data is kept as a
+  trial-restored `pg_dump` in the Terraform state bucket (`db-backups/`, versioned, SSE-S3). The owner's target is
+  under $0.10/month while idle; an RDS snapshot of the 20 GB volume (about $0.15/month), the Route53 zone ($0.50),
+  four secrets ($1.60), two alarms ($0.20), the GuardDuty detector (per-event billing, free trial over) and ~250 MB
+  of ECR images all exceed it, so all of them are destroyed and recreated on wake (`hibernate` gates them; ECR images
+  are deleted by the script). The dump moves through a presigned single-object URL (`scripts/s3-presign.py`) used by
+  a one-off Fargate task (`aws_ecs_task_definition.dbtool`) so the task-role permissions boundary keeps zero S3 rights.
+  The dump is restored into a scratch database and its size and md5 checked against S3 before anything is destroyed.
+  A reusable Route53 delegation set (`route53_delegation_set_id`, created once by the admin with
+  `scripts/aws-bootstrap.sh delegation-set`) keeps the zone's name servers stable so DreamHost is updated once. The
+  secrets are deleted with a zero recovery window (set by an apply before the destroying one, because destroy reads
+  the window from state) since every value is reproducible from Terraform state. This replaces the 2026-10-29
+  snapshot-based hibernate; its first run was interrupted after step 1 (bootstrap record row 19).

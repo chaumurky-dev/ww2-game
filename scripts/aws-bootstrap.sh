@@ -3,6 +3,7 @@
 #
 # Subcommands (see docs/DEPLOY.md):
 #   operator-role  [admin profile] create/update the `wartide-terraform` role + policy and the `wartide-boundary` permissions boundary
+#   delegation-set [admin profile] create a reusable Route53 delegation set (stable name servers across hibernate/wake)
 #   profile        write the `wartide` CLI profile that assumes that role
 #   state-bucket   [wartide profile] create the private, versioned, encrypted Terraform state bucket
 #   github         set GitHub secret/variables from `terraform output`
@@ -34,6 +35,7 @@ usage() {
   cat <<USAGE
 Usage: scripts/aws-bootstrap.sh [--yes] <subcommand> [args]
   operator-role              run as admin: AWS_PROFILE=default ADMIN_PRINCIPAL_ARN=arn:aws:iam::<acct>:user/<you> $0 operator-role
+  delegation-set             run as admin: AWS_PROFILE=default $0 delegation-set (stable Route53 name servers for hibernate)
   profile [SRC_PROFILE] [REGION]   write CLI profile 'wartide' (defaults: default, us-east-1)
   state-bucket               run as the role: AWS_PROFILE=wartide $0 state-bucket
   github [TERRAFORM_DIR]     set GitHub secret/variables (default: infra/terraform); needs gh auth
@@ -148,6 +150,44 @@ cmd_operator_role() {
   echo "Role ready: arn:aws:iam::${acct}:role/${ROLE_NAME}"
 }
 
+# ---------------------------------------------------------------- delegation-set
+# A reusable delegation set (free) gives the Route53 zone the same four name servers every time it is created,
+# so hibernate (which deletes the zone) and wake do not need a new NS update at the parent DNS host.
+cmd_delegation_set() {
+  : "${AWS_PROFILE:?set AWS_PROFILE to an admin profile (not wartide)}"
+  export AWS_PROFILE
+  local existing id ns ref
+  existing="$(aws route53 list-reusable-delegation-sets \
+    --query 'DelegationSets[].[Id,join(`,`,NameServers)]' --output text)"
+  if [ -n "$existing" ]; then
+    echo "Existing reusable delegation set(s):"
+    printf '%s\n' "$existing" | sed 's|/delegationset/||;s/^/  /'
+    if [ "$ASSUME_YES" != 1 ]; then
+      read -r -p "Create another one anyway? [y/N] " ref
+      case "$ref" in y | Y | yes) ;; *) echo "Not creating one. Use an id above as route53_delegation_set_id."; return 0 ;; esac
+    fi
+  fi
+  ref="wartide-$(date -u +%Y%m%d%H%M%S)"
+  run aws route53 create-reusable-delegation-set --caller-reference "$ref"
+  id="$(aws route53 list-reusable-delegation-sets \
+    --query "DelegationSets[?CallerReference=='$ref'].Id | [0]" --output text)"
+  id="${id#/delegationset/}"
+  [ -n "$id" ] && [ "$id" != None ] || { echo "could not read back the new delegation set" >&2; exit 1; }
+  ns="$(aws route53 get-reusable-delegation-set --id "$id" --query 'DelegationSet.NameServers[]' --output text)"
+  cat <<EOF
+
+Delegation set id: $id
+Name servers:
+$(printf '%s\n' $ns | sed 's/^/  /')
+
+1. Add this line to infra/terraform/terraform.tfvars:
+     route53_delegation_set_id = "$id"
+   (Terraform then creates the zone with these name servers; an existing zone is replaced once.)
+2. In the DNS host of the parent domain (DreamHost for chaumurky.net), set the NS records for host 'ww2'
+   to exactly the four servers above. After that the delegation stays valid across hibernate/wake cycles.
+EOF
+}
+
 # ---------------------------------------------------------------- profile
 cmd_profile() {
   local src="${1:-default}" region="${2:-$REGION}" acct
@@ -241,6 +281,7 @@ done
 sub="${args[0]}"; rest=("${args[@]:1}")
 case "$sub" in
   operator-role) cmd_operator_role ;;
+  delegation-set) cmd_delegation_set ;;
   profile) cmd_profile "${rest[@]+"${rest[@]}"}" ;;
   state-bucket) cmd_state_bucket ;;
   github) cmd_github "${rest[@]+"${rest[@]}"}" ;;
