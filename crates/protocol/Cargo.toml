@@ -12,7 +12,7 @@ serde_json = { workspace = true }
 uuid = { version = "1", default-features = false, features = ["serde"] }
 chrono = { version = "0.4", default-features = false, features = ["serde", "std"] }
 # Server-only: derive sqlx::Type for the TEXT-backed enums. The web must not enable this.
-sqlx = { version = "0.8", default-features = false, optional = true }
+sqlx = { version = "0.9", default-features = false, optional = true }
 
 [features]
 sqlx = ["dep:sqlx"]
